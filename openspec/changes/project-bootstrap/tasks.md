@@ -41,4 +41,4 @@
 - [x] 6.3 `pnpm -r build` 四 app 产物齐全（含 pdf-tool vendored UMD 进 dist）
 - [x] 6.4 scripts/webmcp-check.mjs：headless Chromium + WebMCP flag 下 getTools() 枚举断言（黄页 2 工具 + 三工具各 2 工具）＋ executeTool(pack_url) 往返字节一致
 - [x] 6.5 浏览器冒烟：scripts/smoke-check.mjs 12/12 过（三工具参数契约抽测 + ?decode= 往返 + 黄页搜索 + WebMCP 投影）
-- [ ] 6.6 git init + gh repo create jixoai/fde2e-tools --public --source . --push（小步多次中文提交）
+- [x] 6.6 git init + gh repo create jixoai/fde2e-tools --public --source . --push（小步多次中文提交）
