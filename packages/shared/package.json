@@ -1,0 +1,28 @@
+{
+  "name": "@fde2e-tools/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "fde2e-tools 共享层：工具 registry 单源（黄页与各工具共用）/ solid-glass 主题 vendor / shadcn 官方组件收编",
+  "exports": {
+    ".": "./src/index.ts",
+    "./registry": "./src/registry.ts",
+    "./ui/*": "./src/ui/*.tsx",
+    "./theme/*": "./src/theme/*",
+    "./ai-guide": "./src/ai-guide.tsx",
+    "./status": "./src/status.ts",
+    "./webmcp": "./src/webmcp.ts"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.9.0",
+    "class-variance-authority": "^0.7.1",
+    "cn": "^0.5.0"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "typescript": "^5.9.3"
+  }
+}
