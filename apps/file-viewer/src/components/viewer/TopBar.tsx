@@ -170,7 +170,7 @@ export function ViewerTopBar({ file, resolvedId, forcedId, onSelectDecoder }: To
           >
             <SelectTrigger
               size="sm"
-              className="w-44 max-[479px]:w-28 [&>span]:block [&>span]:truncate"
+              className="w-44 min-w-0 max-w-full overflow-hidden max-[479px]:w-28 [&>span]:block [&>span]:max-w-full [&>span]:truncate"
               aria-label="解码器"
               data-decoder-select="true"
               data-decoder-value={forcedId ?? 'auto'}
