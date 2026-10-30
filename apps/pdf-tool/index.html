@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PDF 工具站 · 把网页内容变成 PDF</title>
+    <!--
+      PDF 工具站（纯静态，零后端）
+      - Markdown 渲染：/assets/marked.min.js（vendored，UMD → window.marked）
+      - PDF 导出：/assets/html2pdf.bundle.min.js（vendored，UMD → window.html2pdf，含 html2canvas + jsPDF）
+      两个库必须在模块脚本之前以普通 <script> 载入（保持「全部 JS 本地内嵌、无外网依赖」契约）。
+      - 面向 AI 自动化代理的说明见页首 <pre id="ai-guide">
+    -->
+    <script src="/assets/marked.min.js"></script>
+    <script src="/assets/html2pdf.bundle.min.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
