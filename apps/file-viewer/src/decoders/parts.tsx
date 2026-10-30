@@ -30,9 +30,9 @@ export function DecoderShell({
 }) {
   return (
     <div className="relative flex h-full min-h-0 flex-col">
-      <div className="min-h-0 flex-1 p-4">
+      <div className="min-h-0 flex-1 p-4 max-sm:p-0">
         <div
-          className="glass-panel h-full min-h-0 overflow-hidden rounded-xl"
+          className="glass-panel h-full min-h-0 overflow-hidden rounded-xl max-sm:rounded-none"
           data-decoder-surface="true"
         >
           {main}
@@ -97,7 +97,8 @@ export function UnsupportedState({
   return (
     <DecoderShell
       main={
-        <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center" data-viewer-error="true" data-viewer-error-kind="unsupported-binary">
+        <div className="h-full overflow-y-auto" data-viewer-error="true" data-viewer-error-kind="unsupported-binary">
+        <div className="flex min-h-full flex-col items-center justify-center gap-4 p-8 text-center">
           <div className="glass-control flex size-16 items-center justify-center rounded-2xl">
             <TriangleAlertIcon className="size-7 text-muted-foreground" aria-hidden />
           </div>
@@ -113,6 +114,7 @@ export function UnsupportedState({
             <DownloadIcon data-icon="inline-start" aria-hidden />
             下载文件
           </Button>
+        </div>
         </div>
       }
     />
@@ -132,7 +134,8 @@ export function DecoderErrorState({
   return (
     <DecoderShell
       main={
-        <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center" data-viewer-error="true" data-viewer-error-kind="decoder-failed">
+        <div className="h-full overflow-y-auto" data-viewer-error="true" data-viewer-error-kind="decoder-failed">
+        <div className="flex min-h-full flex-col items-center justify-center gap-4 p-8 text-center">
           <div className="glass-control flex size-16 items-center justify-center rounded-2xl">
             <TriangleAlertIcon className="size-7 text-muted-foreground" aria-hidden />
           </div>
@@ -144,6 +147,7 @@ export function DecoderErrorState({
             <DownloadIcon data-icon="inline-start" aria-hidden />
             下载文件
           </Button>
+        </div>
         </div>
       }
     />

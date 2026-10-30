@@ -13,11 +13,15 @@ import { Button } from '@fde2e-tools/shared/ui/button';
 import { Skeleton } from '@fde2e-tools/shared/ui/skeleton';
 import { DECODERS } from '@/decoders/registry';
 
-/** 居中卡纸态的公共骨架（E2E 标记：data-viewer-error——壳级错误态统一可断言）。 */
+/** 居中卡纸态的公共骨架（E2E 标记：data-viewer-error——壳级错误态统一可断言）。
+ *  首页（契约错误态）即本骨架：ai-guide 长内容时必须可滚动——overflow-y-auto＋
+ *  m-auto 居中（justify-center 在内容超高时会裁掉顶部，经典陷阱）。 */
 function StatePane({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center" data-viewer-error="true">
-      {children}
+    <div className="h-full overflow-y-auto" data-viewer-error="true">
+      <div className="flex min-h-full flex-col items-center justify-center gap-4 p-8 text-center">
+        {children}
+      </div>
     </div>
   );
 }
