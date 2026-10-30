@@ -18,6 +18,10 @@ SRC="${REPO_ROOT}/apps/${app}/dist"
 [ -f "${SRC}/index.html" ] || { echo "✗ ${SRC} 缺 index.html"; exit 1; }
 
 DEST_ROOT="${TOOLS_DEST:-}"
+case "${DEST_ROOT}" in
+  /opt/1panel/apps/openresty/openresty/www/tools) ;;
+  *) echo "✗ TOOLS_DEST 必须为宿主路径 /opt/1panel/apps/openresty/openresty/www/tools（白名单校验，防误写任意目录）"; exit 2 ;;
+esac
 if [ -z "${DEST_ROOT}" ]; then
   echo "✗ 未设置 TOOLS_DEST（目标目录由编排者给定，如 /opt/1panel/apps/openresty/openresty/www/tools，容器内即 /www/tools）——不猜测目标"
   echo "  用法示例: TOOLS_DEST=/opt/1panel/apps/openresty/openresty/www/tools bash deploy/tools-upload.sh ${app}"
