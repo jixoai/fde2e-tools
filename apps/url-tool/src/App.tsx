@@ -411,7 +411,12 @@ export default function App() {
               onInput={() => buildResult()}
             />
             <Label className="text-muted-foreground">参数（键值对，可增删）：</Label>
-            <div id="params-rows" ref={rowsElRef} className="flex flex-col gap-2">
+            <div
+              id="params-rows"
+              ref={rowsElRef}
+              className="flex flex-col gap-2"
+              onInput={() => buildResult()}
+            >
               {rows.map((row) => (
                 <div key={row.id} className="prow flex items-stretch gap-2">
                   <Input
@@ -448,6 +453,10 @@ export default function App() {
                 ＋ 添加参数
               </Button>
             </div>
+            {/* RadioGroupItem 组合面覆盖（视觉打磨 2026-10-30 修复项 4）：solid-glass
+                主题下官方选中态＝墨底白点（primary 实心）观感过重，这里改回经典
+                shadcn 语言——玻璃底 + 墨环 + 墨点，明暗随主题 token 自动翻面。
+                仅组合面 className，不改官方源文件。 */}
             <RadioGroup
               value={mode}
               onValueChange={(v) => switchMode(v as Mode)}
@@ -455,10 +464,20 @@ export default function App() {
               aria-label="拼接模式"
             >
               <Label htmlFor="mode-query" className="cursor-pointer gap-2 font-semibold text-foreground">
-                <RadioGroupItem id="mode-query" value="query" /> 查询串（标准 query）
+                <RadioGroupItem
+                  id="mode-query"
+                  value="query"
+                  className="data-checked:border-primary data-checked:bg-background [&>span>span]:bg-primary"
+                />{" "}
+                查询串（标准 query）
               </Label>
               <Label htmlFor="mode-packed" className="cursor-pointer gap-2 font-semibold text-foreground">
-                <RadioGroupItem id="mode-packed" value="packed" /> packed（紧凑包 ?q=）
+                <RadioGroupItem
+                  id="mode-packed"
+                  value="packed"
+                  className="data-checked:border-primary data-checked:bg-background [&>span>span]:bg-primary"
+                />{" "}
+                packed（紧凑包 ?q=）
               </Label>
             </RadioGroup>
             <p id="mode-hint" className="m-0 text-sm text-muted-foreground">

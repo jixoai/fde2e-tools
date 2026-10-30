@@ -18,6 +18,7 @@ import { Button } from "@fde2e-tools/shared/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@fde2e-tools/shared/ui/card";
 import { Label } from "@fde2e-tools/shared/ui/label";
 import { CONTENT_CSS } from "./content-css";
+import { installExportColorGuard } from "./export-color-guard";
 import { SAMPLE_MD } from "./sample";
 import { registerAppTools } from "./webmcp";
 
@@ -84,6 +85,7 @@ export default function App() {
     kind: "ok",
   });
   const [previewSrcDoc, setPreviewSrcDoc] = useState("");
+  const [fileName, setFileName] = useState("");
 
   // 把内容排版样式注入主文档（选择器都带 .pdf-content 前缀，不影响页面本身）
   useEffect(() => {
@@ -138,6 +140,7 @@ export default function App() {
       if (!inputRef.current) return;
       inputRef.current.value = String(r.result || "");
       if (render()) {
+        setFileName(f.name);
         setStatus({ msg: "已载入文件 " + f.name + "，预览已更新。", kind: "ok" });
       }
     };
@@ -159,6 +162,9 @@ export default function App() {
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
       pagebreak: { mode: ["css", "legacy"] },
     };
+    // B1 色守卫：导出前把全文档 oklch 变量钉成 sRGB（html2canvas 1.4.x 不识别
+    // oklch 会直接抛错），导出落定后卸载恢复主题原样
+    const uninstallGuard = installExportColorGuard();
     window
       .html2pdf()
       .set(opt)
@@ -170,7 +176,8 @@ export default function App() {
           msg: "导出失败：" + (err instanceof Error && err.message ? err.message : String(err)),
           kind: "error",
         });
-      });
+      })
+      .finally(() => uninstallGuard());
   }
 
   // WebMCP：render_preview / export_pdf（原生或官方 polyfill，均幂等）
@@ -226,14 +233,28 @@ export default function App() {
             <Label htmlFor="file-input" className="text-muted-foreground">
               或选择文件（.html / .md / .txt）：
             </Label>
-            <input
-              id="file-input"
-              ref={fileRef}
-              type="file"
-              accept=".html,.md,.txt,text/html,text/markdown,text/plain"
-              onChange={onFileChange}
-              className="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium"
-            />
+            {/* 原生 input sr-only 保形：id/fileInput 契约不变（agent 程序化
+                setInputFiles 兼容），视觉走官方按钮（视觉打磨 2026-10-30 修复项 3） */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              <input
+                id="file-input"
+                ref={fileRef}
+                type="file"
+                accept=".html,.md,.txt,text/html,text/markdown,text/plain"
+                onChange={onFileChange}
+                className="sr-only"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => fileRef.current?.click()}
+              >
+                选择文件
+              </Button>
+              {fileName && (
+                <span className="text-sm text-muted-foreground">{fileName}</span>
+              )}
+            </div>
           </CardContent>
         </Card>
 
@@ -242,14 +263,28 @@ export default function App() {
             <CardTitle>2 · 预览与导出</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
-            <iframe
-              id="preview"
-              ref={previewRef}
-              sandbox=""
-              title="渲染预览"
-              srcDoc={previewSrcDoc}
-              className="h-[560px] w-full rounded-lg border border-input bg-white"
-            />
+            {/* 视觉打磨 2026-10-30 修复项 2：空态暗色占位覆盖层（iframe 常驻保
+                id=preview 契约；有渲染内容后覆盖层卸载，白底文档正常显示） */}
+            <div className="relative">
+              <iframe
+                id="preview"
+                ref={previewRef}
+                sandbox=""
+                title="渲染预览"
+                srcDoc={previewSrcDoc}
+                className="h-[560px] w-full rounded-lg border border-input bg-white"
+              />
+              {!previewSrcDoc && (
+                <div
+                  aria-hidden
+                  className="bg-background pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1 rounded-lg"
+                >
+                  <p className="m-0 text-sm text-muted-foreground">
+                    载入内容后此处显示预览
+                  </p>
+                </div>
+              )}
+            </div>
             <div className="flex flex-wrap gap-2.5">
               <Button id="export-btn" size="lg" className="flex-1" onClick={onExport}>
                 导出 PDF

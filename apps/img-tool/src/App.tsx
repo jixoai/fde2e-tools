@@ -66,6 +66,7 @@ export default function App() {
     kind: "ok",
   });
   const [dragOver, setDragOver] = useState(false);
+  const [fileName, setFileName] = useState("");
 
   function setKind(msg: string, kind: StatusKind = "ok") {
     setStatus({ msg, kind });
@@ -151,6 +152,7 @@ export default function App() {
     const r = new FileReader();
     r.onload = () => {
       loadImage(String(r.result || ""), false);
+      setFileName(file.name);
       setKind("已载入本地图片 " + file.name + "，正在渲染…", "ok");
     };
     r.onerror = () => setKind("本地文件读取失败，请重试。", "error");
@@ -403,14 +405,28 @@ data: URL 底图不受此限制，导出永远可用。`}
               <Label htmlFor="file-input" className="text-muted-foreground">
                 或选择本地图片：
               </Label>
-              <input
-                id="file-input"
-                ref={fileRef}
-                type="file"
-                accept="image/*"
-                onChange={() => readLocalFile(fileRef.current?.files?.[0] ?? null)}
-                className="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium"
-              />
+              {/* 原生 input sr-only 保形：id/fileInput 契约不变（agent 程序化
+                  setInputFiles 兼容），视觉走官方按钮（视觉打磨 2026-10-30 修复项 3） */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                <input
+                  id="file-input"
+                  ref={fileRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={() => readLocalFile(fileRef.current?.files?.[0] ?? null)}
+                  className="sr-only"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileRef.current?.click()}
+                >
+                  选择本地图片
+                </Button>
+                {fileName && (
+                  <span className="text-sm text-muted-foreground">{fileName}</span>
+                )}
+              </div>
               <p className="m-0 text-sm text-muted-foreground">
                 也可以直接 Ctrl/Cmd+V 粘贴截图，或把图片文件拖进本框。
               </p>

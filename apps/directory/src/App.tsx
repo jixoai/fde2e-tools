@@ -8,7 +8,7 @@
  * 服务器侧放行）渲染 iframe 实况嵌各工具子域；本地构建一律「新窗口打开」兜底，
  * 不做 iframe。
  */
-import { useMemo, useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { livePreviewAvailable, searchTools, toolHomeUrl, type ToolMeta } from "@fde2e-tools/shared";
 import { AiGuide } from "@fde2e-tools/shared/ai-guide";
 import { Badge } from "@fde2e-tools/shared/ui/badge";
@@ -46,13 +46,9 @@ function ToolCard({ tool, previewable }: { tool: ToolMeta; previewable: boolean 
           ))}
         </div>
         {previewable ? (
-          <iframe
-            title={tool.name + " 实况预览"}
-            src={home}
-            className="h-[360px] w-full rounded-lg border border-input"
-          />
+          <LivePreview home={home} name={tool.name} />
         ) : (
-          <div className="glass-well flex h-[160px] flex-col items-center justify-center gap-2 rounded-lg border border-input px-4 text-center">
+          <div className="bg-background flex h-[160px] flex-col items-center justify-center gap-2 rounded-lg border border-input px-4 text-center">
             <p className="m-0 text-sm text-muted-foreground">
               实况预览仅在生产域开放（本地构建走新窗口兜底）
             </p>
@@ -79,6 +75,54 @@ function ToolCard({ tool, previewable }: { tool: ToolMeta; previewable: boolean 
         </span>
       </CardFooter>
     </Card>
+  );
+}
+
+/*
+ * 实况预览（视觉打磨 2026-10-30，视觉验收回单修复项 1/5）：
+ * - loading="eager" 显式压制 Chromium LazyEmbeds 启发式（视口外 iframe 默认延迟
+ *   加载——黄页第三卡/窄屏深处 iframe 截图空白的根因）；
+ * - 加载态化：onLoad 前显示 bg-background 占位骨架，8s 超时未加载给出失败提示 +
+ *   新窗口入口——任何时序/子域问题都不再呈现为纯空白；
+ * - 缩略化：scale-75 首屏缩略（等效截首屏缩略图方案），iframe 内容 pointer-events-none
+ *   ——缩放后点击坐标会错位，预览只读看形态，交互一律走「打开工具」。
+ */
+function LivePreview({ home, name }: { home: string; name: string }) {
+  const [state, setState] = useState<"loading" | "ready" | "timeout">("loading");
+  useEffect(() => {
+    if (state !== "loading") return;
+    const t = window.setTimeout(() => {
+      setState((s) => (s === "loading" ? "timeout" : s));
+    }, 8000);
+    return () => window.clearTimeout(t);
+  }, [state]);
+  return (
+    <div className="relative h-[300px] overflow-hidden rounded-lg border border-input">
+      {/* 占位骨架：加载中/超时提示。iframe 在上层，未加载时透明不遮挡；加载完成后
+          自带文档白底自然盖住占位。iframe 永远只读（缩放后点击坐标错位，交互走
+          「打开工具」），因此占位里的按钮永远可点。 */}
+      <div className="bg-background absolute inset-0 flex flex-col items-center justify-center gap-2">
+        {state === "timeout" ? (
+          <>
+            <p className="m-0 text-sm text-muted-foreground">预览子域暂未就绪——请直接打开工具</p>
+            <a href={home} target="_blank" rel="noreferrer">
+              <Button variant="outline" size="sm">
+                新窗口打开
+              </Button>
+            </a>
+          </>
+        ) : (
+          <p className="m-0 animate-pulse text-sm text-muted-foreground">实况预览加载中…</p>
+        )}
+      </div>
+      <iframe
+        title={name + " 实况预览"}
+        src={home}
+        loading="eager"
+        onLoad={() => setState("ready")}
+        className="absolute left-0 top-0 h-[133.33%] w-[133.33%] origin-top-left scale-75 border-0 bg-transparent pointer-events-none"
+      />
+    </div>
   );
 }
 
@@ -122,7 +166,7 @@ export default function App() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid items-start gap-4 md:grid-cols-2">
+        <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
           {tools.map((tool) => (
             <ToolCard key={tool.id} tool={tool} previewable={previewable} />
           ))}
