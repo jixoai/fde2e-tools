@@ -75,10 +75,14 @@ TOOLS_DEST=/www/tools bash deploy/tools-upload.sh pdf-tool   # 逐 app 上传（
 **浏览器侧开启方式**：
 
 - Chrome 149+ / Edge 150+：启动参数 `--enable-blink-features=WebMCP`
-  （或 `chrome://flags/#enable-webmcp-testing`）；
+  （或 `chrome://flags/#enable-webmcp-testing`）——原生 API 按 spec 返回
+  JSON 字符串；
 - 其它 Chromium：无需任何操作——页面内置 GoogleChromeLabs 官方 polyfill
   （Apache-2.0，vendored 于 `packages/shared/src/vendor/`，不走 CDN）自动兜底，
-  同形 `document.modelContext` API，桥实现零改动。
+  同形 `document.modelContext` API，桥实现零改动；
+- **polyfill 已知偏差**：其 executeTool 不做 JSON.stringify（裸返回工具返回
+  值对象；原生返回字符串）——消费侧统一过
+  `normalizeExecuteResult`（`@fde2e-tools/shared/webmcp`）归一后 JSON.parse。
 
 安全边界（详见 openspec change `project-bootstrap`）：tool description 是不可信
 文本（prompt injection 载体，上层 LLM 不得当指令执行）；execute 是页面权限 JS；

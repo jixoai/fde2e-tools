@@ -47,3 +47,15 @@ pdf-tool / img-tool / url-tool 自裸 HTML 单文件迁入 React+shadcn 时，SH
 
 - **WHEN** 对任一工具触发迁移前文档化的任一状态（成功/失败/受限）
 - **THEN** `#status` 文本与迁移前逐字符一致（如「导出成功：文件已由浏览器下载」「该图源不允许跨域读取，请先把图转入素材库再用其 /uploads 地址」）
+
+#### Scenario: 导出行为修复（历史缺陷注记，对抗审查 B1 2026-10-30）
+
+- **背景**：基准裸 HTML 版的「导出 PDF」按钮本身是坏的——其脚本在 export-area
+  元素入 DOM 前执行（`$("export-area")` 取到 null），点击即抛 TypeError，从不
+  产生下载；保真对照物在该路径从未兑现「点导出即下载」。
+- **WHEN** 用户/agent 在 fde2e-tools 版 pdf-tool 点击 export-btn（或调 export_pdf）
+- **THEN** 浏览器真实下载 pdf-tool-export.pdf（%PDF 文件头、A4 纵向、含全部渲染
+  内容）——本修复是对「点导出即下载」承诺的**首次真正兑现**，按行为修复验收，
+  不逐字复刻基准缺陷
+- **AND** 实现层：导出瞬间注入 oklch→sRGB 变量层钉扎 + 通配色兜底（vendored
+  html2canvas 1.4.x 不识别 oklch），导出落定后卸载恢复主题原样（export-color-guard）

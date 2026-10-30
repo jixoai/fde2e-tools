@@ -43,6 +43,10 @@ GoogleChromeLabs/webmcp-tools 的 webmcp-polyfill.js（Apache-2.0，文件头保
 - **WHEN** agent 桥（BU 执行器等）在无原生支持的 Chromium 上调用页面工具
 - **THEN** polyfill 暴露与原生同形的 document.modelContext，桥命令
   （webmcp_list/webmcp_call）无需感知差异
+- **AND** 已知偏差（B2，对抗审查 2026-10-30）：polyfill 的 executeTool 裸返回
+  工具返回值对象（不做 JSON.stringify，vendor 副本不改）——消费侧统一过
+  `normalizeExecuteResult` 归一后再 JSON.parse，与原生（返回 DOMString）同形；
+  绿门 webmcp-check 对原生/ polyfill 双路径分别断言此形态
 
 ### Requirement: WebMCP 安全边界
 

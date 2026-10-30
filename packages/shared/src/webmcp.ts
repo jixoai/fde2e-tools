@@ -116,6 +116,17 @@ export function schemaFromUrlParams(
   };
 }
 
+/**
+ * 归一 executeTool 返回值 —— B2（对抗审查 2026-10-30）。
+ *
+ * 偏差事实：官方 polyfill 的 executeTool **不做 JSON.stringify**（裸返回工具
+ * execute 的对象；vendor 副本不改），原生 API 按 spec 返回 Promise<DOMString>。
+ * 消费侧（BU 桥/断言脚本）统一过本帮手后 JSON.parse，两条路径同形。
+ */
+export function normalizeExecuteResult(result: unknown): string {
+  return typeof result === "string" ? result : JSON.stringify(result);
+}
+
 // ---------- 页面状态读取助手（工具 execute 复用页面既有 id 惯例） ----------
 
 /** 读 #status 的文本与成败（与 statusTextClass 的色类约定对齐） */
@@ -127,27 +138,56 @@ export function readStatus(): { message: string; ok: boolean } {
 }
 
 /**
- * 等 #status 发生变化（带超时兜底）——工具触发页面动作后读取最终状态。
- * 返回变化后的状态；超时返回当前状态（ok=false 防误报成功）。
+ * 三工具 #status 的终态词表：全部终态文案（成功/失败/完成/已按/已生成/已载入…）
+ * 必含其一；中间态（「正在加载底图…」「正在导出 PDF…」「正在渲染…」）刻意不含
+ * 任何词——防止 B3（对抗审查 2026-10-30）：首变即返回把中间态谎报成成功。
  */
-export function waitForStatusChange(timeoutMs = 15000): Promise<{ message: string; ok: boolean }> {
+export const STATUS_TERMINAL_PATTERN =
+  /(成功|失败|完成|已按|已生成|已载入|已接收|等待输入|请先|还没有|没有可|受限|为空)/;
+
+/**
+ * 等 #status 进入终态（B3 修复：对抗审查 2026-10-30）。
+ *
+ * 解析条件＝文案命中 STATUS_TERMINAL_PATTERN 且经 stableMs 稳定窗确认不再变化
+ * （防连变截断）；中间态一律继续等待。整体超时仍未进终态 → 返回当前快照且
+ * ok=false（防误报成功——中间态「正在导出…」永不谎报完成）。
+ */
+export function waitForStatusChange(
+  timeoutMs = 15000,
+  stableMs = 400,
+): Promise<{ message: string; ok: boolean }> {
   const el = document.getElementById("status");
   if (!el) return Promise.resolve(readStatus());
-  const before = el.textContent ?? "";
   return new Promise((resolve) => {
-    const timer = window.setTimeout(finish, timeoutMs);
-    let observer: MutationObserver | null = null;
-    function finish() {
-      observer?.disconnect();
-      window.clearTimeout(timer);
+    let settled = false;
+    let lastText = el.textContent ?? "";
+    let confirmTimer = 0;
+    const observer = new MutationObserver(watch);
+    const finish = (okOverride?: boolean) => {
+      if (settled) return;
+      settled = true;
+      observer.disconnect();
+      window.clearTimeout(confirmTimer);
+      window.clearTimeout(timeoutTimer);
       const snapshot = readStatus();
-      const changed = snapshot.message !== before;
-      resolve(changed ? snapshot : { ...snapshot, ok: false });
+      resolve({ message: snapshot.message, ok: okOverride ?? snapshot.ok });
+    };
+    const timeoutTimer = window.setTimeout(() => finish(false), timeoutMs);
+    function watch() {
+      const text = el!.textContent ?? "";
+      if (text === lastText) return;
+      lastText = text;
+      window.clearTimeout(confirmTimer);
+      evaluate();
     }
-    observer = new MutationObserver(() => {
-      if ((el.textContent ?? "") !== before) finish();
-    });
+    function evaluate() {
+      const text = el!.textContent ?? "";
+      if (STATUS_TERMINAL_PATTERN.test(text)) {
+        confirmTimer = window.setTimeout(() => finish(), stableMs);
+      }
+    }
     observer.observe(el, { characterData: true, childList: true, subtree: true });
+    evaluate(); // 启动时文案可能已是终态
   });
 }
 

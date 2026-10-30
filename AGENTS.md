@@ -27,9 +27,13 @@
 - **WebMCP**：工具注册走 `@fde2e-tools/shared/webmcp` 统一助手（原生探测＋
   polyfill 兜底），不要各 app 自写注册循环；新工具的 inputSchema 用
   schemaFromUrlParams 从 registry 派生；输出含用户可控内容必须标
-  `untrustedContentHint`。
+  `untrustedContentHint`。**polyfill 偏差**：executeTool 裸返回对象（不 stringify，
+  vendor 不能改）——消费侧必须过 `normalizeExecuteResult` 归一（原生返回
+  字符串），两条路径才同形。
 - **绿门**：`pnpm -r check && pnpm -r build` 全绿；涉工具注册/页面的改动加跑
-  `node scripts/webmcp-check.mjs` 与 `node scripts/smoke-check.mjs`。
+  `pnpm webmcp:check`（原生+polyfill 双路径）与 `pnpm smoke:check`（含 pdf
+  导出真下载断言）。改动 pdf 导出路径必须过 B1 色守卫（export-color-guard）
+  ——html2canvas 1.4.x 不识别 oklch，守卫缺失＝导出 100% 抛错。
 - **TW4 扫描面**：各 app 的 app.css 已 `source("../")` 收窄并把 shared 加源；
   给 shared/ui 新增组件类名后无需改 CSS 配置，但新增目录要确认被 `@source`
   覆盖。

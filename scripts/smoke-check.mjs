@@ -8,7 +8,7 @@
  * 用法：pnpm -r build 后 node scripts/smoke-check.mjs
  */
 import { createServer } from "node:http";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -130,6 +130,34 @@ async function main() {
       });
     });
 
+    // 绿门补强（对抗审查 B1/B3）：headless 真下载断言——点 export-btn 捕获
+    // download 事件、验文件名契约与 %PDF 文件头（oklch 色守卫修复的回归门）
+    await check("pdf-tool 导出真下载：pdf-tool-export.pdf（%PDF 头）", async () => {
+      await withPage("pdf-tool", "?autoload=sample", async (page) => {
+        await page.waitForFunction(
+          () => (document.getElementById("status")?.textContent ?? "").includes("示例周报"),
+          { timeout: 10000 },
+        );
+        const dlPromise = page.waitForEvent("download", { timeout: 90000 });
+        await page.click("#export-btn");
+        const download = await dlPromise;
+        if (download.suggestedFilename() !== "pdf-tool-export.pdf") {
+          throw new Error(`下载文件名不符: ${download.suggestedFilename()}`);
+        }
+        const dlPath = await download.path();
+        if (!dlPath) throw new Error("下载产物不可读");
+        const head = readFileSync(dlPath).subarray(0, 5).toString("latin1");
+        if (!head.startsWith("%PDF")) throw new Error(`产物非 PDF（头: ${head}）`);
+        const size = readFileSync(dlPath).length;
+        if (size < 1000) throw new Error(`PDF 产物过小（${size}B），疑似空文档`);
+        // 终态断言（B3）：状态行必须走到「导出成功」而非停在「正在导出…」
+        await page.waitForFunction(
+          () => (document.getElementById("status")?.textContent ?? "").includes("导出成功"),
+          { timeout: 90000 },
+        );
+      });
+    });
+
     // ---------- img-tool ----------
     await check("img-tool URL 直调：sample + cover 裁切 + 文字 + 角标", async () => {
       await withPage(
@@ -204,6 +232,27 @@ async function main() {
       await withPage("url-tool", "?base=%2Fapi%2Fendpoint&k=v", async (page) => {
         const result = (await page.textContent("#result-url")).trim();
         if (result !== "/api/endpoint?k=v") throw new Error(`结果不符: got ${result}`);
+      });
+    });
+
+    // 近阻塞回归门（对抗审查 2026-10-30）：ai-guide 承诺「结果实时更新」——
+    // 手工键入（触发 input 事件，不经任何按钮）必须实时重建结果
+    await check("url-tool 手工键入：结果实时更新（input 事件路径）", async () => {
+      await withPage("url-tool", "", async (page) => {
+        await page.fill("#base-url", "https://example.com/api");
+        await page.locator(".prow .pkey").first().fill("title");
+        await page.locator(".prow .pval").first().fill("你好");
+        const result = (await page.textContent("#result-url")).trim();
+        if (!result.includes("title=%E4%BD%A0%E5%A5%BD")) {
+          throw new Error(`键入后结果未实时更新: ${result}`);
+        }
+        // 再增删一行仍实时
+        await page.click("#add-param-btn");
+        await page.locator(".prow .pkey").last().fill("tag");
+        const result2 = (await page.textContent("#result-url")).trim();
+        if (!result2.includes("&tag=")) {
+          throw new Error(`加行后结果未实时更新: ${result2}`);
+        }
       });
     });
 
