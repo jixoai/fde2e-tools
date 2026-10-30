@@ -1,0 +1,23 @@
+{
+  "name": "fde2e-tools",
+  "private": true,
+  "version": "0.1.0",
+  "description": "FDE2E 工具集（tool.fde2e.com 工具黄页 + 各工具独立站）——全静态、零后端的公共工具仓库",
+  "type": "module",
+  "packageManager": "pnpm@12.10.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "check": "pnpm -r run check",
+    "build": "pnpm -r run build",
+    "webmcp:check": "node scripts/webmcp-check.mjs",
+    "dev:directory": "pnpm --filter directory dev",
+    "dev:pdf-tool": "pnpm --filter pdf-tool dev",
+    "dev:img-tool": "pnpm --filter img-tool dev",
+    "dev:url-tool": "pnpm --filter url-tool dev"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.55.0"
+  }
+}
