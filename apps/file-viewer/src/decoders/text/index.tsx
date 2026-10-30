@@ -4,16 +4,18 @@
  * 全站兜底：未知/未支持格式一律先进这里。职责：
  * 1. 二进制嗅探（looksBinary）——命中则呈「未支持格式＋下载」态，绝不渲染乱码；
  * 2. 编码切换：auto（jschardet 探测）/UTF-8/GBK/Big5/Shift_JIS/Latin-1；
- * 3. shiki 高亮（按扩展名选语言，未知 → text 纯文本；大文件降级纯 pre 防主线程卡死）；
- * 4. >1MB 截断提示（可下载全文）；底部信息：编码/行数/文件大小。
+ * 3. shiki 高亮（按扩展名选语言，未知 → text 纯文本；内容 >64KB 走尺寸门降级
+ *    纯 <pre>——shiki token span 随字符数爆炸，大文件高亮会卡死主线程）；
+ * 4. >1MB 截断提示（可下载全文）；底部信息：编码/行数/文件大小＋高亮关断诚实标注。
  */
 import { useEffect, useMemo, useState } from 'react';
 import jschardet from 'jschardet';
-import { TriangleAlertIcon } from 'lucide-react';
+import { TriangleAlertIcon, ZapOffIcon } from 'lucide-react';
 import { DecoderShell, InfoItem, UnsupportedState, downloadBytes } from '@/decoders/parts';
 import type { DecoderFile } from '@/decoders/registry';
 import { looksBinary } from '@/lib/sniff';
 import { highlightToHtml, langForFile } from '@/lib/highlight';
+import { textPreviewPath } from '@/lib/preview-gate';
 import { formatBytes } from '@/lib/format';
 import { Button } from '@fde2e-tools/shared/ui/button';
 import {
@@ -26,8 +28,6 @@ import {
 
 /** 截断阈值：1MB（规格）。超过只解码前 1MB，横幅提示＋下载全文出路。 */
 const TRUNCATE_BYTES = 1_000_000;
-/** 高亮上限：shiki 对超大文本会卡主线程，超限降级纯 <pre>。 */
-const HIGHLIGHT_LIMIT = 200_000;
 
 /** 编码清单（TextDecoder label；auto = jschardet 探测）。 */
 const ENCODINGS = [
@@ -113,9 +113,12 @@ export default function TextFileDecoder({ name, mime, bytes }: DecoderFile) {
   const effective = encoding === 'auto' ? (autoEncoding ?? 'utf-8') : encoding;
   const text = useMemo(() => (binary ? '' : decodeWith(working, effective)), [binary, working, effective]);
 
-  // 高亮（≤200KB 才走 shiki；否则纯 pre）
+  // 尺寸门：≤64KB 才走 shiki（token span 成本与字符数同阶，大文件直接零 token 化）
+  const previewPath = textPreviewPath(text.length);
+
+  // 高亮（门内走 shiki；门外纯 pre 快路径，主线程零阻塞）
   useEffect(() => {
-    if (binary || text.length > HIGHLIGHT_LIMIT) {
+    if (binary || previewPath === 'plain') {
       setRendered(null);
       return;
     }
@@ -126,7 +129,7 @@ export default function TextFileDecoder({ name, mime, bytes }: DecoderFile) {
     return () => {
       cancelled = true;
     };
-  }, [binary, text, name]);
+  }, [binary, previewPath, text, name]);
 
   if (binary) {
     return <UnsupportedState name={name} mime={mime} onDownload={() => downloadBytes(bytes, name, mime)} />;
@@ -185,6 +188,13 @@ export default function TextFileDecoder({ name, mime, bytes }: DecoderFile) {
           </span>
           <InfoItem label="行数" value={lines.toLocaleString('zh-CN')} />
           <InfoItem label="大小" value={formatBytes(bytes.byteLength)} />
+          {/* 尺寸门诚实呈现：关了高亮就明说，不谎报渲染形态 */}
+          {previewPath === 'plain' ? (
+            <span className="ml-auto flex items-center gap-1 whitespace-nowrap">
+              <ZapOffIcon className="size-3.5" aria-hidden />
+              大文件已关闭高亮
+            </span>
+          ) : null}
         </>
       }
     />
