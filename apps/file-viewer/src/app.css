@@ -1,0 +1,217 @@
+/*
+ * 全局样式入口 —— src/app.css（Tailwind v4）
+ *
+ * 导入顺序遵循 solid-glass 官方头注要求：tailwindcss → tw-animate-css →
+ * shadcn/tailwind.css（shadcn 包自带的基础样式表）→ solid-glass 令牌层
+ * （替代 shadcn init 写入的语义调色板）。
+ * 迁移归一（2026-10-30 并入 fde2e-tools）：solid-glass 改消费
+ * @fde2e-tools/shared/theme（全仓单源 vendor，原仓本地副本退役）；
+ * source() 收窄与 shared 加源照 pdf-tool 同款纪律（TW4 缺省从 git 仓库根
+ * 扫全仓，openspec/README 里的类名字符串会被当源喂进编译）。
+ *
+ * 末段「本仓桥接层」是业务接线 CSS（非 shadcn 底座件、非 solid-glass 原件）：
+ * 1. syn-* 语法色映射成 Tailwind 工具类（solid-glass 定义了 --syn-＊ 令牌但未
+ *    注册 @theme——这里是桥接，不是改原件）；
+ * 2. .viewer-prose / .viewer-code：markdown 渲染与代码高亮的排版层
+ *    （shiki/strong 自带内联色，这里只管结构排版与代码块容器）。
+ */
+@import "tailwindcss" source("../");
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fde2e-tools/shared/theme/solid-glass.css";
+
+@source "../../../packages/shared/src";
+
+/* 滚动条统一细样（解码器主体/表格/清单滚动区共用）。 */
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    overflow: hidden;
+  }
+}
+
+/* ---- 本仓桥接层（业务接线 CSS）---------------------------------------- */
+
+@theme inline {
+  /* solid-glass 的语法色令牌 → Tailwind 工具类（text-syn-string 等） */
+  --color-syn-keyword: var(--syn-keyword);
+  --color-syn-string: var(--syn-string);
+  --color-syn-number: var(--syn-number);
+  --color-syn-name: var(--syn-name);
+}
+
+/* 文档类解码器（md/text/json）的中性纸面底色——solid-glass 原件不动，桥接层
+   自备：亮皮近白冷灰纸，暗皮比页面底亮一档（读得出「一张纸」的层次）。 */
+:root {
+  --paper: oklch(0.985 0.003 265);
+}
+.dark {
+  --paper: oklch(0.21 0 0);
+}
+
+@layer utilities {
+  /* 文档纸面：撑满解码器面板主体（修「半张纸」构图，vision P1-1 文档类条目） */
+  .decoder-paper {
+    background-color: var(--paper);
+  }
+
+  /* shiki 产物容器：代码块外观（圆角 + 内边距 + 横向滚动 + 细描边）。
+     shiki 以 defaultColor:false 双主题形态产出——span 只带 CSS 变量
+     （--shiki-light/dark），必须由这里把变量落成 color（P1-8 着色失效根因之一）。 */
+  .viewer-code pre,
+  pre.md-code-fallback {
+    margin: 0.75rem 0;
+    padding: 0.875rem 1rem;
+    border-radius: var(--radius-md);
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.6;
+    background-color: var(--shiki-light-bg, oklch(0.97 0 0)) !important;
+    color: var(--shiki-light, var(--foreground));
+    box-shadow: inset 0 0 0 1px var(--glass-edge);
+    scrollbar-width: thin;
+  }
+
+  .dark .viewer-code pre,
+  .dark pre.md-code-fallback {
+    background-color: var(--shiki-dark-bg, oklch(0.19 0 0)) !important;
+    color: var(--shiki-dark, var(--foreground));
+  }
+
+  /* shiki 令元着色：span 自带双主题变量，这里按皮肤各取一支落成 color */
+  .viewer-code pre span {
+    color: var(--shiki-light, inherit);
+  }
+  .dark .viewer-code pre span {
+    color: var(--shiki-dark, inherit);
+  }
+
+  /* 纯 pre 兜底（shiki 不可用/超大文件降级路径）的容器外观 */
+  .viewer-code-plain {
+    margin: 0;
+    padding: 0.875rem 1rem;
+    border-radius: var(--radius-md);
+    background-color: var(--panel);
+    box-shadow: inset 0 0 0 1px var(--glass-edge);
+  }
+}
+
+/* ---- docx-preview 库样式覆盖（白纸直接落在玻璃面板上，vision P1-6）----
+   库默认给 .docx-wrapper 铺 gray 桌面带（#808080）+ 30px 内边距——与玻璃面板
+   语言冲突；收掉后由面板提供底，库的 section.docx 白纸保持原位。 */
+
+.docx-host .docx-wrapper {
+  background: transparent;
+  padding: 0;
+}
+.docx-host .docx-wrapper > section.docx {
+  /* 库默认阴影过重（0 0 10px 50% 黑）；换成壳语言的柔和落影，页间距收半 */
+  box-shadow: 0 1px 2px var(--glass-contact), 0 12px 32px -16px var(--glass-shade);
+  margin-bottom: 16px;
+}
+.docx-host .docx-wrapper > section.docx:last-child {
+  margin-bottom: 0;
+}
+
+/* ---- Markdown 排版层（viewer-prose）------------------------------------ */
+
+.viewer-prose {
+  font-size: 0.9375rem;
+  line-height: 1.75;
+  overflow-wrap: break-word;
+}
+
+.viewer-prose h1,
+.viewer-prose h2,
+.viewer-prose h3,
+.viewer-prose h4,
+.viewer-prose h5,
+.viewer-prose h6 {
+  margin: 1.6em 0 0.6em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.viewer-prose h1 { font-size: 1.6em; }
+.viewer-prose h2 { font-size: 1.35em; }
+.viewer-prose h3 { font-size: 1.15em; }
+.viewer-prose h4,
+.viewer-prose h5,
+.viewer-prose h6 { font-size: 1em; }
+
+.viewer-prose p {
+  margin: 0.7em 0;
+}
+
+.viewer-prose ul,
+.viewer-prose ol {
+  margin: 0.7em 0;
+  padding-left: 1.5em;
+}
+.viewer-prose ul { list-style: disc; }
+.viewer-prose ol { list-style: decimal; }
+.viewer-prose li { margin: 0.25em 0; }
+.viewer-prose li > ul,
+.viewer-prose li > ol { margin: 0.25em 0; }
+
+.viewer-prose blockquote {
+  margin: 0.9em 0;
+  padding: 0.1em 1em;
+  border-left: 3px solid var(--glass-edge);
+  color: var(--muted-foreground);
+}
+
+.viewer-prose hr {
+  margin: 1.5em 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.viewer-prose a {
+  color: var(--link);
+  text-underline-offset: 3px;
+}
+
+.viewer-prose img,
+.viewer-prose video {
+  max-width: 100%;
+  border-radius: var(--radius-md);
+}
+
+.viewer-prose table {
+  margin: 0.9em 0;
+  width: auto;
+  max-width: 100%;
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.875em;
+}
+.viewer-prose th,
+.viewer-prose td {
+  padding: 0.4em 0.8em;
+  border: 1px solid var(--border);
+}
+.viewer-prose th {
+  background-color: var(--panel);
+  font-weight: 600;
+}
+
+.viewer-prose :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  padding: 0.15em 0.4em;
+  border-radius: 5px;
+  background-color: var(--muted);
+  color: var(--code-inline);
+}
+
+.viewer-prose input[type="checkbox"] {
+  margin-right: 0.4em;
+  accent-color: var(--primary);
+}

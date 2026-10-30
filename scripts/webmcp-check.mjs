@@ -29,6 +29,7 @@ const EXPECT = {
   "pdf-tool": { tools: ["render_preview", "export_pdf"] },
   "img-tool": { tools: ["overlay_text", "export_png"] },
   "url-tool": { tools: ["pack_url", "decode_url"] },
+  "file-viewer": { tools: ["preview_file"] },
 };
 
 /** 与 @fde2e-tools/shared/webmcp 的 normalizeExecuteResult 同义（脚本侧独立实现） */

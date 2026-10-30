@@ -1,0 +1,5 @@
+{
+  "site": "fileviewer.fde2e.com",
+  "decoders": ["image", "video", "audio", "pdf", "markdown", "text", "json", "csv", "html", "svg", "docx", "xlsx", "pptx", "zip"],
+  "sandboxed": true
+}

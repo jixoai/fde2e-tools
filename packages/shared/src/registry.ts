@@ -163,6 +163,49 @@ export const TOOLS: ToolMeta[] = [
     ],
     repoPath: "apps/url-tool",
   },
+  {
+    id: "file-viewer",
+    name: "通用文件预览站",
+    tagline: "浏览器里直接看一切文件",
+    description:
+      "带 url 参数打开即预览：14 类解码器（image/video/audio/pdf/markdown/text〔含编码切换 UTF-8/auto/GBK/Big5/Shift_JIS/Latin-1〕/json/csv/html/svg/docx/xlsx/pptx/zip）按需加载；未支持格式优雅兜底＋二进制嗅探拒渲染。纯前端零后端，文件字节不落任何服务器。",
+    tags: ["文件预览", "解码器", "markdown", "csv", "docx", "xlsx", "pptx", "zip", "视频", "音频", "url参数"],
+    subdomain: "file-viewer.tool.fde2e.com",
+    aiGuideSummary:
+      "/?url=<encodeURIComponent(绝对URL)>（必填）&name=<显示名>&decoder=<解码器id> 打开即预览；decoder 可选 14 解码器 id（svg/image/video/audio/pdf/markdown/json/csv/html/docx/xlsx/pptx/zip/text），缺省自动判定（扩展名 > Content-Type > 文本兜底）；页内 #ai-guide 有同源 demo 示例链接。",
+    urlParams: [
+      { name: "url", description: "必填：文件的绝对 URL（http/https，encodeURIComponent 编码后放入），打开即拉取并预览" },
+      { name: "name", description: "可选：显示名（缺省取 URL 路径末段；影响解码判定与下载命名）" },
+      {
+        name: "decoder",
+        description: "可选：强制解码器 id（未知 id 视为无效，回自动判定）；缺省按 扩展名 > Content-Type > 文本兜底",
+        enum: [
+          "svg",
+          "image",
+          "video",
+          "audio",
+          "pdf",
+          "markdown",
+          "json",
+          "csv",
+          "html",
+          "docx",
+          "xlsx",
+          "pptx",
+          "zip",
+          "text",
+        ],
+      },
+    ],
+    tools: [
+      {
+        name: "preview_file",
+        description:
+          "带 url（必填）/name/decoder 参数打开文件预览：页面写 URL 即渲染（与浏览器返回键同一条 popstate 通路），返回渲染结果（解码器 id 与状态文本）",
+      },
+    ],
+    repoPath: "apps/file-viewer",
+  },
 ];
 
 export function getTool(id: string): ToolMeta | undefined {
