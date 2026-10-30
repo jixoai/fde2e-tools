@@ -103,3 +103,7 @@ node scripts/smoke-check.mjs    # 参数契约冒烟：URL 契约/状态行文�
 本仓对外保持**全静态、无认证**。未来若出现网络代理类动态功能（如图片代理解
 跨域），**必须加认证限制**并另立 openspec change（规格：static-tools-hosting）。
 变更管理走 openspec（`openspec/`）。
+
+## License
+
+[Apache-2.0](./LICENSE) © 昭智羽名(厦门)科技有限公司
