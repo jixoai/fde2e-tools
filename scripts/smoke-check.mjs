@@ -18,6 +18,7 @@ import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { rmSync, writeFileSync } from 'node:fs';
+import { assertPdfText, pdfPageInkRatio } from './pdf-assert.mjs';
 // 真文件反读：xlsx 用 SheetJS 社区版（根 devDeps，与页面同库但走 Node 侧独立
 // 路径反读）；docx/pptx 用 adm-zip 解 zip（MIT）核对 OOXML 关键内容；
 // 编辑器三站（office-editorial-upgrade）另用 mammoth（BSD-2，docx 导出桥的
@@ -512,7 +513,7 @@ async function main() {
             fmt[key] = r.ok === true && Array.isArray(r.applied) && r.applied.includes(key);
           }
           const snap = await call("get_snapshot", {});
-          const sheet = snap.sheets.find((s) => s.name === "业绩");
+          const sheet = snap.sheets.find((s) => s.name === "房源价格表");
           return { r1ok: r1.ok, r2ok: r2.ok, r2value: r2.value, fmt, a9: sheet.cellData[8]?.[0]?.v, b9: sheet.cellData[8]?.[1]?.v, b10: sheet.cellData[9]?.[1] };
         }`);
         if (!write.r1ok || !write.r2ok) throw new Error(`写入工具未成功: ${JSON.stringify(write)}`);
@@ -527,8 +528,8 @@ async function main() {
         if (!exp.ok) throw new Error(`export_xlsx 未成功: ${JSON.stringify(exp)}`);
         const bytes = readFileSync(await download.path());
         const wb = XLSX.read(bytes, { type: "buffer" });
-        const ws = wb.Sheets["业绩"];
-        if (!ws) throw new Error(`反读缺业绩表（实际 ${wb.SheetNames.join(",")}）`);
+        const ws = wb.Sheets["房源价格表"];
+        if (!ws) throw new Error(`反读缺房源价格表（实际 ${wb.SheetNames.join(",")}）`);
         if (ws["A9"]?.v !== "绿门探针") throw new Error(`A9 反读不符: ${ws["A9"]?.v}`);
         if (ws["B9"]?.v !== 42.5 || ws["B9"]?.t !== "n") throw new Error(`B9 反读不符（应数字 42.5）: ${ws["B9"]?.v}`);
         if (ws["B10"]?.f !== "B9*2") throw new Error(`B10 公式反读不符: ${ws["B10"]?.f}`);
@@ -579,7 +580,7 @@ async function main() {
           window.__officeTest.forcePending(false);
           const released = await call("set_cells", { values: [["门禁释放探针"]] });
           const snap = await call("get_snapshot", {});
-          const sheet = snap.sheets.find((s) => s.name === "业绩");
+          const sheet = snap.sheets.find((s) => s.name === "房源价格表");
           const landed = JSON.stringify(sheet?.cellData ?? {}).includes("门禁释放探针");
           return { blockedOk: blocked.ok, blockedErr: String(blocked.error ?? ""), releasedOk: released.ok, landed };
         });
@@ -641,7 +642,7 @@ async function main() {
           return { r1ok: r1.ok, r2ok: r2.ok, r3ok: r3.ok, idx, total: deck.total, targetTexts: JSON.stringify(deck.slides[idx]?.texts ?? []) };
         }`);
         if (!write.r1ok || !write.r2ok || !write.r3ok) throw new Error(`写入工具未成功: ${JSON.stringify(write)}`);
-        if (write.total !== 3) throw new Error(`deck 页数不符: ${write.total}（期望 3）`);
+        if (write.total !== 4) throw new Error(`deck 页数不符: ${write.total}（期望 4＝三页示例＋探针页）`);
         const joined = write.targetTexts;
         if (!joined.includes("绿门探针页（核验改名）") || !joined.includes("追加要点丙") || !joined.includes("要点甲：绿门")) {
           throw new Error(`deck 核验不符: ${joined.slice(0, 120)}`);
@@ -654,14 +655,16 @@ async function main() {
         const bytes = readFileSync(await download.path());
         const zip = new AdmZip(bytes);
         const names = zip.getEntries().map((e) => e.entryName);
-        for (const must of ["ppt/presentation.xml", "ppt/slides/slide2.xml"]) {
+        for (const must of ["ppt/presentation.xml"]) {
           if (!names.includes(must)) throw new Error(`OOXML 结构缺 ${must}（实际 ${names.length} 项）`);
         }
-        const slide2 = zip.readAsText("ppt/slides/slide2.xml");
+        // 探针页序号随示例页数变化（示例 3 页 → 新页 index=3？按工具返回 index 定位）
+        const slideEntry = `ppt/slides/slide${Number(write.idx) + 1}.xml`;
+        const slideXml = zip.readAsText(slideEntry);
         for (const probe of ["绿门探针页（核验改名）", "要点甲：绿门", "追加要点丙"]) {
-          if (!slide2.includes(probe)) throw new Error(`slide2.xml 缺写入内容: ${probe}`);
+          if (!slideXml.includes(probe)) throw new Error(`${slideEntry} 缺写入内容: ${probe}`);
         }
-        console.log(`      反读证据：zip ${names.length} 项 · slide2.xml 含改名标题/要点/追加要点`);
+        console.log(`      反读证据：zip ${names.length} 项 · ${slideEntry} 含改名标题/要点/追加要点`);
       });
     });
 
@@ -712,6 +715,12 @@ async function main() {
         if (pdfDl.suggestedFilename() !== "xlsx-export.pdf") throw new Error(`PDF 文件名契约不符: ${pdfDl.suggestedFilename()}`);
         const pdfBytes = readFileSync(await pdfDl.path());
         const pages = assertPdfHead(pdfBytes, "xlsx export_pdf");
+        // v2 硬门：文本层非空＋中文在场＋关键词＋无编辑器 UI 特征词（P0-1/P0-2 回归）
+        assertPdfText(pdfBytes, "xlsx export_pdf", {
+          requireChinese: true,
+          keywords: ["青旅", "周营收"],
+          forbidden: ["Start", "Formulas", "Arial", "Univer", "sample"],
+        });
         await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("已生成"), { timeout: 20000 });
         dl = page.waitForEvent("download", { timeout: 90000 });
         await page.click("#export-png-btn");
@@ -720,7 +729,7 @@ async function main() {
         const pngBytes = readFileSync(await pngDl.path());
         assertPngHead(pngBytes, "xlsx export_png");
         const px = await assertPngContentful(page, pngBytes, "xlsx export_png");
-        console.log(`      反读证据：PDF ${pages} 页（%PDF 头）· PNG ${px.w}×${px.h} 非白像素 ${(px.ratio * 100).toFixed(1)}%（内容非空）`);
+        console.log(`      反读证据：PDF ${pages} 页（%PDF 头＋文本层含「青旅」）· PNG ${px.w}×${px.h} 非白像素 ${(px.ratio * 100).toFixed(1)}%（内容非空）`);
       });
     });
 
@@ -738,7 +747,13 @@ async function main() {
         await page.click("#export-pdf-btn");
         const pdfDl = await dl;
         if (pdfDl.suggestedFilename() !== "docx-export.pdf") throw new Error(`PDF 文件名契约不符: ${pdfDl.suggestedFilename()}`);
-        const pages = assertPdfHead(readFileSync(await pdfDl.path()), "docx export_pdf");
+        const docxBytes = readFileSync(await pdfDl.path());
+        const pages = assertPdfHead(docxBytes, "docx export_pdf");
+        // v2 硬门：文本层非空＋中文关键词（P0-2 回归）
+        assertPdfText(docxBytes, "docx export_pdf", {
+          requireChinese: true,
+          keywords: ["第1节", "展示级导出长度探针"],
+        });
         await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("已生成"), { timeout: 30000 });
         dl = page.waitForEvent("download", { timeout: 90000 });
         await page.click("#export-png-btn");
@@ -748,7 +763,7 @@ async function main() {
         assertPngHead(pngBytes, "docx export_png");
         const w2 = pngBytes.readUInt32BE(16), h2 = pngBytes.readUInt32BE(20);
         if (!(h2 > w2)) throw new Error(`长图纵横比不符: ${w2}×${h2}（应高>宽——长文档撑屏）`);
-        console.log(`      反读证据：PDF ${pages} 页（%PDF 头）· PNG ${w2}×${h2}（高>宽 ✓）`);
+        console.log(`      反读证据：PDF ${pages} 页（%PDF 头＋文本层含「第 1 节」）· PNG ${w2}×${h2}（高>宽 ✓）`);
       });
     });
 
@@ -759,7 +774,19 @@ async function main() {
         await page.click("#export-pdf-btn");
         const pdfDl = await dl;
         if (pdfDl.suggestedFilename() !== "pptx-export.pdf") throw new Error(`PDF 文件名契约不符: ${pdfDl.suggestedFilename()}`);
-        const pages = assertPdfHead(readFileSync(await pdfDl.path()), "pptx export_pdf", 2);
+        const pptxBytes = readFileSync(await pdfDl.path());
+        const pages = assertPdfHead(pptxBytes, "pptx export_pdf", 2);
+        // v2 硬门：文本层非空＋中文关键词（P0-2）＋每页版面利用率 ≥3%（P0-3 空洞回归）
+        assertPdfText(pptxBytes, "pptx export_pdf", {
+          requireChinese: true,
+          keywords: ["青旅门店周会汇报", "入住间夜"],
+        });
+        for (let p = 1; p <= pages; p++) {
+          const ink = await pdfPageInkRatio(page, pptxBytes, "pptx export_pdf", p);
+          if (ink.ratio < 0.03) {
+            throw new Error(`pptx export_pdf 第 ${p} 页版面利用率不足：非白像素 ${(ink.ratio * 100).toFixed(2)}% < 3%（空洞版式回归）`);
+          }
+        }
         await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("已生成"), { timeout: 30000 });
         // 逐页 PNG（2 页示例 → 2 个 download；page.on 数组收集——waitForEvent
         // 双挂会把两个 promise 都解析到第一个事件上，首跑实证双双报 page-01）
@@ -782,7 +809,7 @@ async function main() {
         assertPngHead(longBytes, "pptx export_long_png");
         const lw = longBytes.readUInt32BE(16), lh = longBytes.readUInt32BE(20);
         if (!(lh > lw)) throw new Error(`长图纵横比不符: ${lw}×${lh}（应高>宽）`);
-        console.log(`      反读证据：PDF ${pages} 页（=幻灯页数）· 逐页 ${names.join("/")}（PNG 头）· 长图 ${lw}×${lh}（高>宽 ✓）`);
+        console.log(`      反读证据：PDF ${pages} 页（=幻灯页数，文本层含「青旅门店周会汇报」，每页非白 ≥3%）· 逐页 ${names.join("/")}（PNG 头）· 长图 ${lw}×${lh}（高>宽 ✓）`);
       });
     });
 

@@ -23,6 +23,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertPdfText } from "./pdf-assert.mjs";
 import { chromium } from "playwright-core";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -77,34 +78,43 @@ const FULL_CHAIN = [
 const EDITOR_FULL_CHAIN = [
   {
     app: "xlsx",
+    sampleQuery: "?sample=1",
     steps: [{ tool: "set_cells", input: { values: [["webmcp-check", 1.5]] } }],
     exportTool: "export_xlsx",
     filename: "xlsx-export.xlsx",
     // export-pdf-png 扩容：展示级导出真下载断言（%PDF / PNG 头）
     extraExports: [
-      { tool: "export_pdf", filename: "xlsx-export.pdf", header: "%PDF" },
+      {
+        tool: "export_pdf",
+        filename: "xlsx-export.pdf",
+        header: "%PDF",
+        keywords: ["青旅", "周营收"],
+        forbidden: ["Start", "Formulas", "Arial"],
+      },
       { tool: "export_png", filename: "xlsx-long.png", header: "png" },
     ],
     readyMs: 90000,
   },
   {
     app: "docx",
+    sampleQuery: "?sample=1",
     steps: [{ tool: "set_content", input: { content: "# webmcp-check\n\n探针段落", format: "markdown" } }],
     exportTool: "export_docx",
     filename: "docx-export.docx",
     extraExports: [
-      { tool: "export_pdf", filename: "docx-export.pdf", header: "%PDF" },
+      { tool: "export_pdf", filename: "docx-export.pdf", header: "%PDF", keywords: ["青旅", "房型表现"] },
       { tool: "export_png", filename: "docx-long.png", header: "png" },
     ],
     readyMs: 30000,
   },
   {
     app: "pptx",
+    sampleQuery: "?sample=1",
     steps: [{ tool: "add_slide", input: { layout: "title", title: "webmcp-check 探针页" } }],
     exportTool: "export_pptx",
     filename: "pptx-export.pptx",
     extraExports: [
-      { tool: "export_pdf", filename: "pptx-export.pdf", header: "%PDF" },
+      { tool: "export_pdf", filename: "pptx-export.pdf", header: "%PDF", keywords: ["青旅门店周会汇报", "入住间夜"] },
       { tool: "export_png", filename: "pptx-page-01.png", header: "png" },
       { tool: "export_long_png", filename: "pptx-long.png", header: "png" },
     ],
@@ -433,7 +443,8 @@ async function assertNativePath(browser) {
       try {
         const server = await serveDir(join(ROOT, "apps", chain.app, "dist"));
         const page = await browser.newPage();
-        await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: "load" });
+        // 展示级导出面在 ?sample=1（真实业务示例）上断言——与主链（探针内容）分离
+        await page.goto(`http://127.0.0.1:${server.address().port}/${chain.sampleQuery ?? ""}`, { waitUntil: "load" });
         const dlPromise = page.waitForEvent("download", { timeout: chain.readyMs }).catch(() => null);
         // 先等编辑器自报就绪再低频枚举（Chrome 原生注册队列对高频 getTools 轮询
         // 敏感的怪癖与本文件头部注记同源——waitForFunction 高频轮询会令后注册
@@ -478,9 +489,17 @@ async function assertNativePath(browser) {
         if (download) {
           const dlPath = await download.path();
           if (dlPath) {
-            const bytes = (await readFile(dlPath)).subarray(0, 8);
-            const head = bytes.toString("latin1");
+            const full = await readFile(dlPath);
+            const head = full.subarray(0, 8).toString("latin1");
             headOk = extra.header === "png" ? head.startsWith(PNG_MAGIC) : head.startsWith(extra.header);
+            // v2 硬门：矢量 PDF 文本层（非空＋中文＋关键词＋无 UI 特征词）
+            if (extra.header === "%PDF") {
+              assertPdfText(full, `${chain.app} ${extra.tool}`, {
+                requireChinese: true,
+                keywords: extra.keywords ?? [],
+                forbidden: extra.forbidden ?? [],
+              });
+            }
           }
         }
         await page.close();
@@ -489,7 +508,7 @@ async function assertNativePath(browser) {
         if (!download) throw new Error(`未捕获到 download 事件`);
         if (suggested !== extra.filename) throw new Error(`下载文件名契约不符: got ${suggested}, want ${extra.filename}`);
         if (!headOk) throw new Error(`产物头不符（期望 ${extra.header === "png" ? "PNG 魔数" : extra.header}）`);
-        record(`[原生] ${chain.app} ${extra.tool} 展示级导出：真下载 ${suggested} + 产物头 OK`, true);
+        record(`[原生] ${chain.app} ${extra.tool} 展示级导出：真下载 ${suggested} + 产物头 OK${extra.header === "%PDF" ? " + 文本层 OK" : ""}`, true);
       } catch (e) {
         record(`[原生] ${chain.app} ${extra.tool} 展示级导出`, false, e.message);
       }
