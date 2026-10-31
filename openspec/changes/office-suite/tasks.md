@@ -40,3 +40,22 @@
     slide3.xml 含第三页标题。
 - 体积纪律：xlsx chunk 492KB / pptxgen chunk 368KB / docx chunk 独立；黄页与其余
   工具站产物 grep 零生成库代码（registry 描述文案除外）。
+
+## 附：对抗审查闭合（2026-10-31 回单 8.5/10，逐项修复）
+
+- [x] **B1（阻塞）** add_sheet_sample TSV-only 静默丢数据：readWorkbookFromPage
+  与页面真相源 resolveSpec 同语义（JSON 优先、TSV 兜底归一 WorkbookSpec，写回归一
+  JSON 并清空 TSV 区）；绿门补 TSV-only 回归断言（smoke 25→25→26 项，产物必须含
+  TSV 表）；线上复验同款通过（表A / 线上复验表 双表在产物）。
+- [x] **小项 1** registry pptx 摘要数组笔误 → 对象形态 {"slides":[…]}（dist grep
+  字节级验证 + 线上 directory 卡片断言通过；directory 因 registry 变更**补重传**——
+  回单「directory 不变」前提对 registry 单源编译进黄页产物不成立，按证据偏离并记录）。
+- [x] **小项 2** 三站 filenameOf 状态行反提移除 → safeFilename 闭包返回（点击前
+  算好，与页面 setExportName 同函数同参）。
+- [x] **小项 3** 示例表日期改执行时构造（sampleSheetRows()，跨午夜不过期）。
+- [x] **追加（视觉验收）** 生成反馈折叠线：shared status.ts 出统一模式
+  scrollStatusIntoView（block:nearest 最小滚动），三站 setStatus 收口 showStatus
+  接线；smoke 补 docx 小视口（640px）回归门；线上自查 640px 场景 status 从视口外
+  top=1262 → 滚入视口 top=499。pdf-tool 未动（家族级备忘另行决策：移动端 ai-guide
+  墙折叠需与 pdf-tool 一并决策，单独记录）。
+- 绿门终态：check/build 全绿 · webmcp-check 20/20 · smoke-check 26/26 · 线上复验 6/6。
