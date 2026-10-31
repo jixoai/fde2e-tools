@@ -59,3 +59,20 @@
   top=1262 → 滚入视口 top=499。pdf-tool 未动（家族级备忘另行决策：移动端 ai-guide
   墙折叠需与 pdf-tool 一并决策，单独记录）。
 - 绿门终态：check/build 全绿 · webmcp-check 20/20 · smoke-check 26/26 · 线上复验 6/6。
+
+## 附：轻量线更名 easy-*（Owner 裁决 2026-10-31 追记）
+
+- **裁决内容**：轻量开箱即用档更名 easy-xlsx / easy-docx / easy-pptx（子域
+  easy-*.tool.fde2e.com，apps/ 目录、package.json name、registry id 同步改名；
+  主域名 xlsx/docx/pptx.tool.fde2e.com **让位**给另线开发的专业编辑器——打开/
+  编辑/格式转换的重型能力）。
+- **registry 单源落位**：三条现役目改名（name 加「简易」前缀、description/tagline
+  标注「开箱即用快速档」、subdomain 改 easy-*）＋ ToolMeta 新增可选 `comingSoon`
+  字段 ＋ 三条建设中占位目（id=xlsx/docx/pptx、subdomain=主域、comingSoon:true）。
+- **黄页形态**：comingSoon 卡渲染「建设中」Badge＋虚线占位框，禁用「打开工具」，
+  卡内直达轻量快速档按钮（easy-<id> 同族查表引流）；WebMCP list_tools /
+  search_tools 投影加 comingSoon 字段。
+- **绿门**：smoke-check / webmcp-check 的 app 名与 URL 全改 easy-*；黄页卡片
+  断言 7→10 卡（新增 3 个建设中 Badge 断言）；webmcp 20/20 与 smoke 29/29 不缩水。
+- **部署**：三站上传 easy-* 子域目录（tools-upload.sh 白名单同步改名）；黄页因
+  registry 编译进产物补重传（先例：office-suite 小项 1）。
