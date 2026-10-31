@@ -105,6 +105,10 @@ let island: PPTistModules | null = null;
  *    固定亮态色板），系统暗色下不再出现白底白字幽灵态。
  */
 export const PPTIST_ISLAND_CLASS = "pptist-island";
+/** 作用域化前缀用的选择器形态（带点；PPTIST_ISLAND_CLASS 是 className 形态无点——
+ * 两者混用会让 :where(无点形态) 变成匹配不到任何元素的类型选择器，整份 reset
+ * 静默缺席——2026-10-31 N1/N2 实证根因） */
+const PPTIST_ISLAND_SELECTOR = ".pptist-island";
 
 function scopePptistGlobalCss(css: string): string {
   if (/@(media|keyframes|supports|font-face|import|charset|layer)\b/.test(css)) {
@@ -112,15 +116,26 @@ function scopePptistGlobalCss(css: string): string {
     throw new Error("PPTist global.scss 出现未支持的 at-rule，作用域化中止——请人工复核后扩展转换器");
   }
   const noBodyRoot = css.replace(/html,\s*body\s*\{[^{}]*\}/, "");
-  return noBodyRoot.replace(/([^{}]+)\{([^{}]*)\}/g, (_m, sel: string, body: string) => {
-    const scoped = sel
+  const scoped = noBodyRoot.replace(/([^{}]+)\{([^{}]*)\}/g, (_m, sel: string, body: string) => {
+    const parts = sel
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean)
-      .map((s) => (s === "body" || s === "html" ? `:where(${PPTIST_ISLAND_CLASS})` : `:where(${PPTIST_ISLAND_CLASS}) ${s}`))
-      .join(",\n");
-    return `${scoped} {${body}}`;
+      .map((s) => (s === "body" || s === "html" ? `:where(${PPTIST_ISLAND_SELECTOR})` : `:where(${PPTIST_ISLAND_SELECTOR}) ${s}`))
+      .join(",");
+    return `${parts} {${body}}`;
   });
+  // 转换后自检（防「转换完实际缺席」类静默失败——本次 N1/N2 即此形态）：
+  // 前缀必须带点且命中数与原始规则数一致
+  if (!scoped.includes(PPTIST_ISLAND_SELECTOR)) {
+    throw new Error("global reset 作用域化自检失败：前缀缺失");
+  }
+  const rawRules = (noBodyRoot.match(/\{/g) ?? []).length;
+  const scopedRules = (scoped.match(/\{/g) ?? []).length;
+  if (rawRules !== scopedRules || scopedRules === 0) {
+    throw new Error(`global reset 作用域化自检失败：规则数不一致（${rawRules} → ${scopedRules}）`);
+  }
+  return scoped;
 }
 
 function injectScopedGlobalCss(): void {
