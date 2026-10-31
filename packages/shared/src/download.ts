@@ -29,3 +29,23 @@ export function safeFilename(name: string | undefined, fallback: string, ext: st
   if (!base) return fallback;
   return base.toLowerCase().endsWith(ext.toLowerCase()) ? base : base + ext;
 }
+
+/** 下载文件名长度上限（超长截 base 保留扩展名——防选择导出 tag 撑爆文件名） */
+const FILENAME_MAX = 180;
+
+/**
+ * 选择性导出文件名（openspec: selective-export）：在缺省契约名的扩展名前插入
+ * 选择 tag——pptx-export-p2-3.pdf / xlsx-export-表1-表2.pdf；超长按上限截断
+ * （保留扩展名）。tag 由调用方保证不含路径分隔符（页码 tag 全 ASCII，表名 tag
+ * 走本函数截断；最终交付名仍建议过一次 safeFilename）。
+ */
+export function withSelectionTag(defaultName: string, tag: string): string {
+  const dot = defaultName.lastIndexOf(".");
+  if (dot <= 0) return defaultName;
+  const stem = defaultName.slice(0, dot);
+  const ext = defaultName.slice(dot);
+  const out = `${stem}-${tag}${ext}`;
+  if (out.length <= FILENAME_MAX) return out;
+  const keep = FILENAME_MAX - ext.length - 1;
+  return `${stem.slice(0, Math.max(1, keep))}-${tag.slice(0, Math.max(1, keep - stem.length))}${ext}`;
+}

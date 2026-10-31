@@ -17,6 +17,10 @@
  * 码位，OFL-1.1，来源与再分发说明见同目录 OFL.txt），addFileToVFS + addFont
  * 注册为 Identity-H Type0 字体——probe 实证 pdftotext 能提取中文、jsPDF 只
  * 嵌入实际使用的字形（10.5MB 全字库 → 2.2MB 子集 → 单份 PDF 约 170KB）。
+ *
+ * 终验返工（F2）：断行算法抽为模块级 wrapByMeasure（measure 注入），pptx
+ * 位图模板渲染器共享同一断行/样式源；CJK_FONT_URLS 供 canvas FontFace 加载
+ * 同一字体资产——两种介质字形/断行完全一致。
  */
 import { createJsPdfDocument, type JsPdfDoc } from "./export-kit";
 
@@ -26,6 +30,17 @@ const PT_TO_MM = 25.4 / 72;
 const CJK_FAMILY = "FDE2ECJK";
 const CJK_REGULAR_FILE = "NotoSansSC-Regular.ttf";
 const CJK_BOLD_FILE = "NotoSansSC-Bold.ttf";
+
+/**
+ * 子集字体资产 URL（Vite 构建各站 dist 各出一份）。位图渲染器（pptx 模板通道
+ * 的 canvas 文本）经 FontFace 加载同一字体源——PDF 与位图两种介质字形一致。
+ */
+export const CJK_FONT_URLS = {
+  regular: new URL(`../assets/fonts/${CJK_REGULAR_FILE}`, import.meta.url).href,
+  bold: new URL(`../assets/fonts/${CJK_BOLD_FILE}`, import.meta.url).href,
+};
+
+export { CJK_FAMILY };
 
 /** 缺字替身（ASCII，恒在子集内） */
 const MISSING_GLYPH = "?";
@@ -82,9 +97,10 @@ function loadFontAssets(): Promise<FontAssets> {
     fontAssetsPromise = (async () => {
       // Vite 资产管线：new URL(..., import.meta.url) 会被构建器改写成产物 URL，
       // 各站 dist 自带一份字体（站点独立可部署）；shared 单源只存一份源文件。
-      const regularUrl = new URL("../assets/fonts/NotoSansSC-Regular.ttf", import.meta.url).href;
-      const boldUrl = new URL("../assets/fonts/NotoSansSC-Bold.ttf", import.meta.url).href;
-      const [regularB64, boldB64] = await Promise.all([fetchFontBase64(regularUrl), fetchFontBase64(boldUrl)]);
+      const [regularB64, boldB64] = await Promise.all([
+        fetchFontBase64(CJK_FONT_URLS.regular),
+        fetchFontBase64(CJK_FONT_URLS.bold),
+      ]);
       return { regularB64, boldB64 };
     })().catch((e) => {
       fontAssetsPromise = null; // 失败不缓存（下次导出重试）
@@ -110,6 +126,7 @@ function isCjkChar(ch: string): boolean {
 /** 行首禁则（避免「，。」等落在行首） */
 const NO_LINE_START = "，。、；：！？）》」』】〕｝〉》”’…—·,.;:!?)]}%";
 
+/** 行内 token：拉丁词整词、空格、CJK/全角单字 */
 export function tokenizeText(text: string): string[] {
   const tokens: string[] = [];
   let latin = "";
@@ -132,6 +149,74 @@ export function tokenizeText(text: string): string[] {
   }
   flushLatin();
   return tokens;
+}
+
+/**
+ * 中英混排断行（共享算法本体）：CJK 逐字断、拉丁按词断、超长词硬切；
+ * 行首禁则把标点黏回上一行。measure 由调用方注入（jsPDF getTextWidth 或
+ * canvas measureText——pptx 位图模板渲染器与矢量 PDF 共享同一断行源）。
+ */
+export function wrapByMeasure(text: string, maxWidth: number, measure: (s: string) => number): string[] {
+  const tokens = tokenizeText(text);
+  const lines: string[] = [];
+  let line = "";
+  let lineW = 0;
+
+  const pushLine = () => {
+    lines.push(line.replace(/\s+$/g, ""));
+    line = "";
+    lineW = 0;
+  };
+
+  for (const token of tokens) {
+    if (token === " ") {
+      if (!line) continue;
+      const w = measure(" ");
+      if (lineW + w <= maxWidth) {
+        line += " ";
+        lineW += w;
+      }
+      continue;
+    }
+    const w = measure(token);
+    if (lineW + w <= maxWidth) {
+      line += token;
+      lineW += w;
+      continue;
+    }
+    if (line) {
+      // 行首禁则：标点类 token 硬留在本行（允许轻微溢出）
+      if (token.length === 1 && NO_LINE_START.includes(token)) {
+        line += token;
+        lineW += w;
+        continue;
+      }
+      pushLine();
+    }
+    if (w <= maxWidth) {
+      line = token;
+      lineW = w;
+      continue;
+    }
+    // 超长拉丁词：按字符硬切
+    let cur = "";
+    let curW = 0;
+    for (const ch of token) {
+      const cw = measure(ch);
+      if (cur && curW + cw > maxWidth) {
+        lines.push(cur);
+        cur = ch;
+        curW = cw;
+      } else {
+        cur += ch;
+        curW += cw;
+      }
+    }
+    line = cur;
+    lineW = curW;
+  }
+  if (line || !lines.length) pushLine();
+  return lines;
 }
 
 /* ---------- VectorPdf ---------- */
@@ -240,70 +325,11 @@ export class VectorPdf {
 
   /**
    * 中英混排断行：CJK 逐字断、拉丁按词断、超长词硬切；行首禁则把标点黏回上一行。
+   * （算法本体在模块级 wrapByMeasure——pptx 位图模板渲染器共享同一断行源。）
    */
   wrap(text: string, maxWidth: number, size = 11, bold = false): string[] {
     const safe = this.sanitize(text).replace(/\r/g, "");
-    const tokens = tokenizeText(safe);
-    const width = (s: string): number => this.measure(s, size, bold);
-    const lines: string[] = [];
-    let line = "";
-    let lineW = 0;
-
-    const pushLine = () => {
-      lines.push(line.replace(/\s+$/g, ""));
-      line = "";
-      lineW = 0;
-    };
-
-    for (const token of tokens) {
-      if (token === " ") {
-        if (!line) continue;
-        const w = width(" ");
-        if (lineW + w <= maxWidth) {
-          line += " ";
-          lineW += w;
-        }
-        continue;
-      }
-      const w = width(token);
-      if (lineW + w <= maxWidth) {
-        line += token;
-        lineW += w;
-        continue;
-      }
-      if (line) {
-        // 行首禁则：标点类 token 硬留在本行（允许轻微溢出）
-        if (token.length === 1 && NO_LINE_START.includes(token)) {
-          line += token;
-          lineW += w;
-          continue;
-        }
-        pushLine();
-      }
-      if (w <= maxWidth) {
-        line = token;
-        lineW = w;
-        continue;
-      }
-      // 超长拉丁词：按字符硬切
-      let cur = "";
-      let curW = 0;
-      for (const ch of token) {
-        const cw = width(ch);
-        if (cur && curW + cw > maxWidth) {
-          lines.push(cur);
-          cur = ch;
-          curW = cw;
-        } else {
-          cur += ch;
-          curW += cw;
-        }
-      }
-      line = cur;
-      lineW = curW;
-    }
-    if (line || !lines.length) pushLine();
-    return lines;
+    return wrapByMeasure(safe, maxWidth, (s: string) => this.measure(s, size, bold));
   }
 
   /** 单行文本（y 为基线；调用方一般用 textBlock） */
