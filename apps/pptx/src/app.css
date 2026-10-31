@@ -1,0 +1,17 @@
+/*
+ * 全局样式 —— Tailwind v4 + shadcn（base-nova）+ solid-glass 官方主题。
+ *
+ * 导入顺序＝官方安装顺序（solid-glass.css 文件头约定）：tailwindcss →
+ * tw-animate-css → shadcn/tailwind.css → solid-glass.css（registry 原件，
+ * vendor 于 @fde2e-tools/shared/theme）。
+ *
+ * source() 收窄（omni 同款纪律）：TW4 缺省从 git 仓库根扫全仓——openspec/
+ * README 里的类名字符串会被当源喂进编译；收窄到本 app 目录，再把 shared 包
+ * （官方组件收编层的真实类名消费面）显式加回。
+ */
+@import "tailwindcss" source("../");
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fde2e-tools/shared/theme/solid-glass.css";
+
+@source "../../../packages/shared/src";
