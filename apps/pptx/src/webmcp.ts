@@ -381,6 +381,8 @@ function attachTestHooks(): void {
       const wait = () => new Promise((r) => setTimeout(r, 100));
       void (async () => {
         while (!m.slides.slides.length && Date.now() < deadline) await wait();
+        // 文稿名同步置为示例主题（否则页眉带/PDF 元数据露出「未命名演示文稿」占位）
+        m.slides.$patch({ title: "青旅门店周会汇报" });
         m.slides.setSlides(sampleDeck());
         m.slides.updateSlideIndex(0);
       })();
