@@ -14,6 +14,7 @@ import { scrollStatusIntoView, statusTextClass, type StatusKind } from "@fde2e-t
 import { Button } from "@fde2e-tools/shared/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@fde2e-tools/shared/ui/card";
 import { getIsland, mountPPTist, PPTIST_ISLAND_CLASS, type StatusSink } from "./bridge";
+import { exportSlidesLongPng, exportSlidesPdf, exportSlidesPng } from "./export";
 import { resolveExportName } from "./export-name";
 import { importFromBytes, loadSampleDeck, registerAppTools } from "./webmcp";
 
@@ -29,10 +30,14 @@ WebMCP 工具（store 驱动；编辑器未就绪时返回 ok:false——请重�
 - add_bullets({slideIndex?, items[]})：向指定页追加要点列表（自动排版在既有内容下方）。
 - export_pptx({filename?})：导出真 .pptx 下载（缺省 pptx-export.pptx；文本/形状/表格/图表基础项可靠）。
 - import_pptx({base64})：导入 .pptx 置换画布（pptxtojson 解析，复杂版式有损）。
+- export_pdf({filename?})：每页幻灯一页 PDF 下载（缺省 pptx-export.pdf；页面随幻灯纵横比横向）。
+- export_png()：逐页 PNG 多文件下载（pptx-page-01.png 起；多文件间隔触发）。
+- export_long_png({filename?})：全部幻灯纵向拼一张长图（缺省 pptx-long.png；超 16384px 自动缩放）。
 
 操作提示：
 - 页面按钮：载入示例（load-sample-btn，重置为确定性双页示例）、导入 .pptx（import-pptx-btn）、
-  导出 .pptx（export-pptx-btn）；画布本身是完整 PPTist 编辑器（页签/元素/主题/放映原生交互）。
+  导出 .pptx（export-pptx-btn）、导出 PDF（export-pdf-btn）、导出逐页 PNG（export-png-btn）、
+  导出长图 PNG（export-long-png-btn）；画布本身是完整 PPTist 编辑器（页签/元素/主题/放映原生交互）。
 - 状态行 id=status 实时反馈（成功 ok 色 / 失败 error 色）。
 - URL 参数 ?sample=1（或 sample/示例）：重置为内置示例演示。
 - PPTist 自带的「AI 生成/图片搜索」等云特性依赖其上游服务端（server.pptist.cn），本站纯静态
@@ -126,6 +131,24 @@ export default function App() {
     }
   }
 
+  /** 展示级导出（openspec: export-pdf-png）：PDF／逐页 PNG／长图，人机同路径 */
+  async function onExportShow(kind: "pdf" | "png" | "long") {
+    showStatus(kind === "pdf" ? "正在导出 PDF…" : kind === "png" ? "正在导出逐页 PNG…" : "正在导出长图 PNG…", "ok");
+    try {
+      const r = kind === "pdf" ? await exportSlidesPdf() : kind === "png" ? await exportSlidesPng() : await exportSlidesLongPng();
+      if (!r.ok) throw new Error(r.error);
+      const detail =
+        kind === "pdf"
+          ? `（${r.pages} 页横向）`
+          : kind === "png"
+            ? `（${r.pages} 个文件：${(r.files ?? []).join("、")}）`
+            : `（${r.width}×${r.height} px${r.notice ? ` · ${r.notice}` : ""}）`;
+      showStatus(`已生成 ${r.filename}${detail}`, "ok");
+    } catch (e) {
+      showStatus("导出失败：" + (e instanceof Error ? e.message : String(e)), "error");
+    }
+  }
+
   async function onImportFile(file: File) {
     try {
       showStatus(`正在导入 ${file.name}…`, "ok");
@@ -183,6 +206,15 @@ export default function App() {
           />
           <Button id="export-pptx-btn" disabled={!booted} onClick={() => void onExport()}>
             导出 .pptx
+          </Button>
+          <Button id="export-pdf-btn" variant="outline" disabled={!booted} onClick={() => void onExportShow("pdf")}>
+            导出 PDF
+          </Button>
+          <Button id="export-png-btn" variant="outline" disabled={!booted} onClick={() => void onExportShow("png")}>
+            导出逐页 PNG
+          </Button>
+          <Button id="export-long-png-btn" variant="outline" disabled={!booted} onClick={() => void onExportShow("long")}>
+            导出长图 PNG
           </Button>
           <p id="status" className={"min-w-[280px] flex-1 text-base font-semibold " + statusTextClass(status.kind)}>
             {status.msg}

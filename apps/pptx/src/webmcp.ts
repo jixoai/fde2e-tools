@@ -10,6 +10,7 @@
  * （untrustedContentHint 纪律）。
  */
 import { registerWebMCPTools, type WebMCPToolDef } from "@fde2e-tools/shared/webmcp";
+import { exportSlidesLongPng, exportSlidesPdf, exportSlidesPng } from "./export";
 import {
   buildBulletsElement,
   buildTitleElement,
@@ -243,6 +244,53 @@ function buildTools(): WebMCPToolDef[] {
           };
         });
         return res.ok ? { ok: true, ...(res.value as Record<string, unknown>) } : res;
+      },
+    },
+    {
+      name: "export_pdf",
+      title: "导出 PDF",
+      description:
+        "把当前演示导出为 PDF 下载（缺省 pptx-export.pdf；每页幻灯一页，页面随幻灯纵横比横向——" +
+        "ThumbnailSlide 离屏渲染逐页捕获）。编辑器未就绪时返回 ok:false。返回页数与文件名契约。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          filename: { type: "string", description: "可选下载文件名（缺省 pptx-export.pdf）" },
+        },
+        additionalProperties: false,
+      },
+      annotations: { untrustedContentHint: true },
+      async execute(input) {
+        return await exportSlidesPdf(typeof input.filename === "string" ? input.filename : undefined);
+      },
+    },
+    {
+      name: "export_png",
+      title: "导出逐页 PNG",
+      description:
+        "把每页幻灯导出为独立 PNG 文件批量下载（pptx-page-01.png 起两位序号；多文件间隔触发防浏览器拦截）。返回文件清单与页数。",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      annotations: { untrustedContentHint: true },
+      async execute() {
+        return await exportSlidesPng();
+      },
+    },
+    {
+      name: "export_long_png",
+      title: "导出长图 PNG",
+      description:
+        "把全部幻灯纵向拼接为一张长图 PNG 下载（缺省 pptx-long.png；总高超 16384px 自动等比缩放，" +
+        "过小则截断并在产物与返回值标注）。返回尺寸与文件名契约。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          filename: { type: "string", description: "可选下载文件名（缺省 pptx-long.png）" },
+        },
+        additionalProperties: false,
+      },
+      annotations: { untrustedContentHint: true },
+      async execute(input) {
+        return await exportSlidesLongPng(typeof input.filename === "string" ? input.filename : undefined);
       },
     },
   ];

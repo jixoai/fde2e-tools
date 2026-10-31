@@ -81,6 +81,12 @@ interface PPTistModules {
   slides: SlidesStoreApi;
   export: ExportApi;
   import: ImportApi;
+  /**
+   * pinia 实例（export-pdf-png：离屏 Vue 岛渲染 ThumbnailSlide 逐页捕获时
+   * app.use 复用——ThumbnailSlide 内部 useSlidesStore 读 viewportRatio 等全局
+   * 状态，必须与主岛同一个 pinia 才能读到真实画布参数）。
+   */
+  pinia: import("pinia").Pinia;
   /** 语义钩子（useCreateElement/createTextElement 同形）暂只走自建元素工厂 */
   ready: true;
 }
@@ -185,6 +191,7 @@ export function mountPPTist(container: HTMLElement, onStatus: StatusSink): Promi
       slides: slides as unknown as SlidesStoreApi,
       export: exportApi as unknown as ExportApi,
       import: importApi as unknown as ImportApi,
+      pinia,
       ready: true,
     };
     // 初始 deck 落定门：App.vue onMounted 异步载 mock（setSlides），就绪信号
