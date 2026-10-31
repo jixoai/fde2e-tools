@@ -251,47 +251,83 @@ function buildTools(): WebMCPToolDef[] {
       title: "导出 PDF",
       description:
         "把当前演示导出为矢量 PDF 下载（缺省 pptx-export.pdf；16:9 横向，每页幻灯一页；" +
-        "真实文本层可搜索可复制；标题 32pt/要点 18pt/右下页码）。" +
-        "编辑器未就绪时返回 ok:false。返回页数与文件名契约。",
+        "真实文本层可搜索可复制；标题 32pt/要点 18pt/页眉带/右下页码）。" +
+        "可选 pages 选择页码（数组 [2, 3] 或区间 \"2-3\"，1-based；越界人话报错；选择导出文件名 pptx-export-p2-3.pdf）。" +
+        "编辑器未就绪时返回 ok:false。返回页数、文件名契约与 selected（实际导出的页码清单）。",
       inputSchema: {
         type: "object",
         properties: {
           filename: { type: "string", description: "可选下载文件名（缺省 pptx-export.pdf）" },
+          pages: {
+            anyOf: [
+              { type: "array", items: { type: "integer", minimum: 1 } },
+              { type: "string", pattern: "^\\s*\\d+\\s*-\\s*\\d+\\s*$" },
+            ],
+            description: '可选页码选择（1-based）：数组 [2, 3] 或区间 "2-3"；缺省全部页。选择导出时文件名带 -p2-3 标记',
+          },
         },
         additionalProperties: false,
       },
       annotations: { untrustedContentHint: true },
       async execute(input) {
-        return await exportSlidesPdf(typeof input.filename === "string" ? input.filename : undefined);
+        return await exportSlidesPdf(
+          typeof input.filename === "string" ? input.filename : undefined,
+          input.pages !== undefined && input.pages !== null ? (input.pages as unknown) : undefined,
+        );
       },
     },
     {
       name: "export_png",
       title: "导出逐页 PNG",
       description:
-        "把每页幻灯导出为独立 PNG 文件批量下载（pptx-page-01.png 起两位序号；多文件间隔触发防浏览器拦截）。返回文件清单与页数。",
-      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        "把每页幻灯导出为独立 PNG 文件批量下载（pptx-page-01.png 起两位序号＝原 deck 页码；多文件间隔触发防浏览器拦截）。" +
+        "可选 pages 选择页码（数组 [2, 3] 或区间 \"2-3\"，1-based；越界人话报错）。返回文件清单、页数与 selected（实际导出的页码清单）。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          pages: {
+            anyOf: [
+              { type: "array", items: { type: "integer", minimum: 1 } },
+              { type: "string", pattern: "^\\s*\\d+\\s*-\\s*\\d+\\s*$" },
+            ],
+            description: '可选页码选择（1-based）：数组 [2, 3] 或区间 "2-3"；缺省全部页。选择导出时文件名带 -p2-3 标记',
+          },
+        },
+        additionalProperties: false,
+      },
       annotations: { untrustedContentHint: true },
-      async execute() {
-        return await exportSlidesPng();
+      async execute(input) {
+        return await exportSlidesPng(input.pages !== undefined && input.pages !== null ? (input.pages as unknown) : undefined);
       },
     },
     {
       name: "export_long_png",
       title: "导出长图 PNG",
       description:
-        "把全部幻灯纵向拼接为一张长图 PNG 下载（缺省 pptx-long.png；总高超 16384px 自动等比缩放，" +
-        "过小则截断并在产物与返回值标注）。返回尺寸与文件名契约。",
+        "把幻灯纵向拼接为一张长图 PNG 下载（缺省 pptx-long.png；每页卡框＋间隔带＋「— i/n —」页码标注；" +
+        "总高超 16384px 自动等比缩放，过小则截断并在产物与返回值标注）。" +
+        "可选 pages 选择页码（数组 [2, 3] 或区间 \"2-3\"，1-based；选择导出文件名 pptx-long-p2-3.png）。" +
+        "返回尺寸、文件名契约与 selected（实际导出的页码清单）。",
       inputSchema: {
         type: "object",
         properties: {
           filename: { type: "string", description: "可选下载文件名（缺省 pptx-long.png）" },
+          pages: {
+            anyOf: [
+              { type: "array", items: { type: "integer", minimum: 1 } },
+              { type: "string", pattern: "^\\s*\\d+\\s*-\\s*\\d+\\s*$" },
+            ],
+            description: '可选页码选择（1-based）：数组 [2, 3] 或区间 "2-3"；缺省全部页。选择导出时文件名带 -p2-3 标记',
+          },
         },
         additionalProperties: false,
       },
       annotations: { untrustedContentHint: true },
       async execute(input) {
-        return await exportSlidesLongPng(typeof input.filename === "string" ? input.filename : undefined);
+        return await exportSlidesLongPng(
+          typeof input.filename === "string" ? input.filename : undefined,
+          input.pages !== undefined && input.pages !== null ? (input.pages as unknown) : undefined,
+        );
       },
     },
   ];

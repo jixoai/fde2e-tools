@@ -30,11 +30,12 @@ WebMCP 工具（store 驱动；编辑器未就绪时返回 ok:false——请重�
 - add_bullets({slideIndex?, items[]})：向指定页追加要点列表（自动排版在既有内容下方）。
 - export_pptx({filename?})：导出真 .pptx 下载（缺省 pptx-export.pptx；文本/形状/表格/图表基础项可靠）。
 - import_pptx({base64})：导入 .pptx 置换画布（pptxtojson 解析，复杂版式有损）。
-- export_pdf({filename?})：矢量 PDF 下载（缺省 pptx-export.pdf；16:9 横向，每页幻灯一页；真实文本层
-  可搜索可复制；标题 32pt 加粗/要点 18pt 项目符号/右下页码）。
-- export_png()：逐页 PNG 多文件下载（pptx-page-01.png 起；多文件间隔触发）。
-- export_long_png({filename?})：全部幻灯纵向拼一张长图（缺省 pptx-long.png；每页卡框＋间隔带＋
-  「— i/n —」页码标注；超 16384px 自动缩放）。
+- export_pdf({filename?, pages?})：矢量 PDF 下载（缺省 pptx-export.pdf；16:9 横向，每页幻灯一页；真实文本层
+  可搜索可复制；标题 32pt 加粗/要点 18pt 项目符号/右下页码）。可选 pages 选页（[2,3] 或 "2-3"，1-based；
+  越界报错；选择导出文件名 pptx-export-p2-3.pdf）。
+- export_png({pages?})：逐页 PNG 多文件下载（pptx-page-01.png 起＝原 deck 页码；多文件间隔触发）。可选 pages 选页。
+- export_long_png({filename?, pages?})：幻灯纵向拼一张长图（缺省 pptx-long.png；每页卡框＋间隔带＋
+  「— i/n —」页码标注；超 16384px 自动缩放）。可选 pages 选页（选择导出文件名 pptx-long-p2-3.png）。
 
 操作提示：
 - 页面按钮：载入示例（load-sample-btn，重置为确定性三页示例）、导入 .pptx（import-pptx-btn）、
