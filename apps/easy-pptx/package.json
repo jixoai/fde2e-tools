@@ -8,13 +8,13 @@
     "preview": "vite preview",
     "check": "tsc --noEmit"
   },
-  "name": "xlsx",
-  "description": "表格生成站 · 从数据生成真正的 .xlsx 文件（SheetJS 社区版 Apache-2.0，纯客户端）",
+  "name": "easy-pptx",
+  "description": "幻灯生成站 · 从大纲 JSON 生成真正的 .pptx 文件（pptxgenjs MIT，纯客户端）",
   "dependencies": {
     "@fde2e-tools/shared": "workspace:*",
+    "pptxgenjs": "^4.0.1",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1",
-    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

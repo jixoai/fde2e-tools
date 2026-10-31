@@ -7,9 +7,10 @@ FDE2E 工具集——**全静态、零后端**的公共工具仓库。
   - `pdf-tool` — PDF 工具站：粘贴 Markdown/HTML → 预览 → 导出 PDF
   - `img-tool` — 图片处理工具站：URL 参数即绘制指令（「网页链接＝函数调用」）
   - `url-tool` — URL 拼接器：query / packed（JSON→base64url）双模式 + 反向解码
-  - `xlsx` — 表格生成站：JSON（sheets）或粘贴表格 → 生成 .xlsx 下载（SheetJS 社区版）
-  - `docx` — 文档生成站：Markdown 子集 → 生成 .docx 下载（docx 库，解析单源）
-  - `pptx` — 幻灯生成站：大纲 JSON（slides）→ 生成 .pptx 下载（pptxgenjs）
+  - `easy-xlsx` — 简易表格生成站：JSON（sheets）或粘贴表格 → 生成 .xlsx 下载（SheetJS 社区版；开箱即用快速档）
+  - `easy-docx` — 简易文档生成站：Markdown 子集 → 生成 .docx 下载（docx 库，解析单源；开箱即用快速档）
+  - `easy-pptx` — 简易幻灯生成站：大纲 JSON（slides）→ 生成 .pptx 下载（pptxgenjs；开箱即用快速档）
+  - `xlsx` / `docx` / `pptx` — 专业表格/文档/幻灯编辑器（建设中占位，主域名留给专业编辑器）
   - `editor`（二期）— ranuts/document 编辑器站：AGPL 未修改上游镜像独立部署（见下「办公编辑器（二期）」）
 - 对外仓库：`github.com/jixoai/fde2e-tools`（public）
 
@@ -21,9 +22,9 @@ apps/
   pdf-tool/    HTML/MD → PDF（vendored marked + html2pdf，UMD 直引）
   img-tool/    canvas 绘制管线（src/text/pos/size/color/bg/pad/w/h/label）
   url-tool/    URL 拼接器（query/packed 双模式 + ?decode= 反向解码）
-  xlsx/        数据 → .xlsx（SheetJS 社区版动态 import 独立分包；JSON/TSV 双输入）
-  docx/        md 子集 → .docx（docx 库独立分包；AST 单源驱动预览与产物）
-  pptx/        大纲 JSON → .pptx（pptxgenjs 独立分包；16:9 + 备注）
+  easy-xlsx/   数据 → .xlsx（SheetJS 社区版动态 import 独立分包；JSON/TSV 双输入）
+  easy-docx/   md 子集 → .docx（docx 库独立分包；AST 单源驱动预览与产物）
+  easy-pptx/   大纲 JSON → .pptx（pptxgenjs 独立分包；16:9 + 备注）
 packages/
   shared/      工具 registry 单源 / solid-glass 主题 vendor / shadcn 官方组件收编 /
                WebMCP 注册助手 + 官方 polyfill vendor / 下载助手（downloadBlob/safeFilename）
@@ -55,9 +56,9 @@ pnpm dev:directory   # http://127.0.0.1:5271（黄页）
 pnpm dev:pdf-tool    # http://127.0.0.1:5272
 pnpm dev:img-tool    # http://127.0.0.1:5273
 pnpm dev:url-tool    # http://127.0.0.1:5274
-pnpm dev:xlsx        # http://127.0.0.1:5275
-pnpm dev:docx        # http://127.0.0.1:5276
-pnpm dev:pptx        # http://127.0.0.1:5277
+pnpm dev:easy-xlsx   # http://127.0.0.1:5275（轻量快速档）
+pnpm dev:easy-docx   # http://127.0.0.1:5276（轻量快速档）
+pnpm dev:easy-pptx   # http://127.0.0.1:5277（轻量快速档）
 ```
 
 dev server 仅绑 IPv4 回环，不对外暴露。黄页的 iframe 实况预览仅生产域开放；
@@ -84,9 +85,9 @@ TOOLS_DEST=/www/tools bash deploy/tools-upload.sh pdf-tool   # 逐 app 上传（
 | pdf-tool | `render_preview` / `export_pdf` |
 | img-tool | `overlay_text` / `export_png` |
 | url-tool | `pack_url` / `decode_url`（纯函数） |
-| xlsx | `create_xlsx` / `add_sheet_sample` |
-| docx | `create_docx` / `append_docx_markdown` |
-| pptx | `create_pptx` / `add_slide` |
+| easy-xlsx | `create_xlsx` / `add_sheet_sample` |
+| easy-docx | `create_docx` / `append_docx_markdown` |
+| easy-pptx | `create_pptx` / `add_slide` |
 
 **浏览器侧开启方式**：
 

@@ -8,11 +8,11 @@
     "preview": "vite preview",
     "check": "tsc --noEmit"
   },
-  "name": "pptx",
-  "description": "幻灯生成站 · 从大纲 JSON 生成真正的 .pptx 文件（pptxgenjs MIT，纯客户端）",
+  "name": "easy-docx",
+  "description": "文档生成站 · 从 Markdown 生成真正的 .docx 文件（docx 库 MIT，纯客户端）",
   "dependencies": {
     "@fde2e-tools/shared": "workspace:*",
-    "pptxgenjs": "^4.0.1",
+    "docx": "^9.15.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

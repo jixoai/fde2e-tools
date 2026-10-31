@@ -19,9 +19,9 @@
     "dev:url-tool": "pnpm --filter url-tool dev",
     "dev:file-viewer": "pnpm --filter file-viewer dev",
     "test:file-viewer": "pnpm --filter file-viewer test",
-    "dev:xlsx": "pnpm --filter xlsx dev",
-    "dev:docx": "pnpm --filter docx dev",
-    "dev:pptx": "pnpm --filter pptx dev"
+    "dev:easy-xlsx": "pnpm --filter easy-xlsx dev",
+    "dev:easy-docx": "pnpm --filter easy-docx dev",
+    "dev:easy-pptx": "pnpm --filter easy-pptx dev"
   },
   "devDependencies": {
     "playwright-core": "^1.55.0",
