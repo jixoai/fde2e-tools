@@ -665,6 +665,127 @@ async function main() {
       });
     });
 
+    // ---------- 展示级导出（export-pdf-png）----------
+    /** PNG 头断言 */
+    function assertPngHead(bytes, label) {
+      const head = bytes.subarray(0, 8).toString("latin1");
+      if (!head.startsWith("\x89PNG\r\n\x1a\n")) throw new Error(`${label} 产物非 PNG（头: ${head.slice(0, 8)}）`);
+    }
+    /** PDF 头＋页数断言（/Type /Page 计数） */
+    function assertPdfHead(bytes, label, minPages = 1) {
+      const head = bytes.subarray(0, 5).toString("latin1");
+      if (!head.startsWith("%PDF")) throw new Error(`${label} 产物非 PDF（头: ${head}）`);
+      const pages = (bytes.toString("latin1").match(/\/Type\s*\/Page[^s]/g) || []).length;
+      if (pages < minPages) throw new Error(`${label} 页数不符: ${pages} < ${minPages}`);
+      return pages;
+    }
+    /** PNG 像素非平凡断言（空图证伪）：字节回灌页面解码后统计非白像素占比 */
+    async function assertPngContentful(page, bytes, label) {
+      const b64 = bytes.toString("base64");
+      const r = await page.evaluate(async (b64) => {
+        const img = new Image();
+        await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error("PNG 解码失败")); img.src = "data:image/png;base64," + b64; });
+        const c = document.createElement("canvas");
+        const k = Math.min(1, 900 / img.width);
+        c.width = Math.max(1, Math.round(img.width * k));
+        c.height = Math.max(1, Math.round(img.height * k));
+        const ctx = c.getContext("2d");
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        const d = ctx.getImageData(0, 0, c.width, c.height).data;
+        let nw = 0, n = 0;
+        for (let i = 0; i < d.length; i += 16) { n++; if (d[i] < 250 || d[i + 1] < 250 || d[i + 2] < 250) nw++; }
+        return { ratio: nw / n, w: img.width, h: img.height };
+      }, b64);
+      if (!(r.ratio > 0.01)) throw new Error(`${label} 空图证伪失败：非白像素占比 ${(r.ratio * 100).toFixed(2)}%（疑似空白产物）`);
+      return r;
+    }
+
+    await check("xlsx 展示级导出：export_pdf（%PDF）＋export_png（空图证伪：像素解码非平凡）", async () => {
+      await withPage("xlsx", "?sample=1", async (page) => {
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例工作簿已载入"), { timeout: 90000 });
+        // 写入探针内容（长图数据面非平凡）
+        const w = await editorCall(page, `async (call) => call("set_cells", { values: [["产品", "数量"], ["Widget", 3], ["Gadget", 5], ["合计", { f: "=SUM(B2:B3)" }]] })`);
+        if (!w.ok) throw new Error(`set_cells 未成功: ${JSON.stringify(w)}`);
+        let dl = page.waitForEvent("download", { timeout: 90000 });
+        await page.click("#export-pdf-btn");
+        const pdfDl = await dl;
+        if (pdfDl.suggestedFilename() !== "xlsx-export.pdf") throw new Error(`PDF 文件名契约不符: ${pdfDl.suggestedFilename()}`);
+        const pdfBytes = readFileSync(await pdfDl.path());
+        const pages = assertPdfHead(pdfBytes, "xlsx export_pdf");
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("已生成"), { timeout: 20000 });
+        dl = page.waitForEvent("download", { timeout: 90000 });
+        await page.click("#export-png-btn");
+        const pngDl = await dl;
+        if (pngDl.suggestedFilename() !== "xlsx-long.png") throw new Error(`PNG 文件名契约不符: ${pngDl.suggestedFilename()}`);
+        const pngBytes = readFileSync(await pngDl.path());
+        assertPngHead(pngBytes, "xlsx export_png");
+        const px = await assertPngContentful(page, pngBytes, "xlsx export_png");
+        console.log(`      反读证据：PDF ${pages} 页（%PDF 头）· PNG ${px.w}×${px.h} 非白像素 ${(px.ratio * 100).toFixed(1)}%（内容非空）`);
+      });
+    });
+
+    await check("docx 展示级导出：export_pdf（%PDF）＋export_png（高>宽长图）", async () => {
+      await withPage("docx", "?sample=1", async (page) => {
+        // 等 ?sample= 重置完全落定再写长文（写完就被 sample 重置覆盖＝长图竞态，
+        // 首跑实证 1720×1672 即 sample 高度）
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例文档已载入"), { timeout: 30000 });
+        // 先写入长文档（>一屏，保证长图高>宽）
+        const w = await editorCall(page, `async (call) => call("set_content", { content: ${JSON.stringify(
+          Array.from({ length: 24 }, (_, i) => `## 第 ${i + 1} 节\n\n这是展示级导出长度探针的第 ${i + 1} 段正文，用来把文档撑过一屏高度（**粗体**与*斜体*混排）。`).join("\n\n"),
+        )}, format: "markdown" })`);
+        if (!w.ok) throw new Error(`set_content 未成功: ${JSON.stringify(w)}`);
+        let dl = page.waitForEvent("download", { timeout: 90000 });
+        await page.click("#export-pdf-btn");
+        const pdfDl = await dl;
+        if (pdfDl.suggestedFilename() !== "docx-export.pdf") throw new Error(`PDF 文件名契约不符: ${pdfDl.suggestedFilename()}`);
+        const pages = assertPdfHead(readFileSync(await pdfDl.path()), "docx export_pdf");
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("已生成"), { timeout: 30000 });
+        dl = page.waitForEvent("download", { timeout: 90000 });
+        await page.click("#export-png-btn");
+        const pngDl = await dl;
+        if (pngDl.suggestedFilename() !== "docx-long.png") throw new Error(`PNG 文件名契约不符: ${pngDl.suggestedFilename()}`);
+        const pngBytes = readFileSync(await pngDl.path());
+        assertPngHead(pngBytes, "docx export_png");
+        const w2 = pngBytes.readUInt32BE(16), h2 = pngBytes.readUInt32BE(20);
+        if (!(h2 > w2)) throw new Error(`长图纵横比不符: ${w2}×${h2}（应高>宽——长文档撑屏）`);
+        console.log(`      反读证据：PDF ${pages} 页（%PDF 头）· PNG ${w2}×${h2}（高>宽 ✓）`);
+      });
+    });
+
+    await check("pptx 展示级导出：export_pdf（%PDF 页数=页数）＋export_png（逐页文件）＋export_long_png（高>宽）", async () => {
+      await withPage("pptx", "?sample=1", async (page) => {
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例演示已载入"), { timeout: 120000 });
+        let dl = page.waitForEvent("download", { timeout: 90000 });
+        await page.click("#export-pdf-btn");
+        const pdfDl = await dl;
+        if (pdfDl.suggestedFilename() !== "pptx-export.pdf") throw new Error(`PDF 文件名契约不符: ${pdfDl.suggestedFilename()}`);
+        const pages = assertPdfHead(readFileSync(await pdfDl.path()), "pptx export_pdf", 2);
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("已生成"), { timeout: 30000 });
+        // 逐页 PNG（2 页示例 → 2 个 download；page.on 数组收集——waitForEvent
+        // 双挂会把两个 promise 都解析到第一个事件上，首跑实证双双报 page-01）
+        const downloads = [];
+        page.on("download", (d) => downloads.push(d));
+        await page.click("#export-png-btn");
+        for (let i = 0; i < 60 && downloads.length < 2; i++) await page.waitForTimeout(500);
+        const names = downloads.map((d) => d.suggestedFilename());
+        if (!names.includes("pptx-page-01.png") || !names.includes("pptx-page-02.png")) {
+          throw new Error(`逐页文件名契约不符: ${names.join(",")}`);
+        }
+        assertPngHead(readFileSync(await downloads[0].path()), "pptx export_png#1");
+        if (downloads[1]) assertPngHead(readFileSync(await downloads[1].path()), "pptx export_png#2");
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("已生成"), { timeout: 30000 });
+        dl = page.waitForEvent("download", { timeout: 90000 });
+        await page.click("#export-long-png-btn");
+        const longDl = await dl;
+        if (longDl.suggestedFilename() !== "pptx-long.png") throw new Error(`长图文件名契约不符: ${longDl.suggestedFilename()}`);
+        const longBytes = readFileSync(await longDl.path());
+        assertPngHead(longBytes, "pptx export_long_png");
+        const lw = longBytes.readUInt32BE(16), lh = longBytes.readUInt32BE(20);
+        if (!(lh > lw)) throw new Error(`长图纵横比不符: ${lw}×${lh}（应高>宽）`);
+        console.log(`      反读证据：PDF ${pages} 页（=幻灯页数）· 逐页 ${names.join("/")}（PNG 头）· 长图 ${lw}×${lh}（高>宽 ✓）`);
+      });
+    });
+
     // ---------- img-tool ----------
     await check("directory：registry 渲染 + 纯前端搜索（编辑器三站转现役后 10 卡全现役、0 建设中占位）", async () => {
       await withPage("directory", "", async (page) => {

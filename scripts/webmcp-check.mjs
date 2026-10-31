@@ -38,9 +38,10 @@ const EXPECT = {
   "easy-docx": { tools: ["create_docx", "append_docx_markdown"] },
   "easy-pptx": { tools: ["create_pptx", "add_slide"] },
   // ---------- 专业编辑器三站（office-editorial-upgrade） ----------
-  xlsx: { tools: ["set_cells", "set_formula", "format_range", "add_sheet", "import_xlsx", "export_xlsx", "get_snapshot"] },
-  docx: { tools: ["set_content", "append_markdown", "insert_heading", "insert_table", "export_docx", "import_docx"] },
-  pptx: { tools: ["add_slide", "set_title", "add_bullets", "export_pptx", "import_pptx"] },
+  // export-pdf-png 扩容：+export_pdf / export_png（pptx 再 +export_long_png）
+  xlsx: { tools: ["set_cells", "set_formula", "format_range", "add_sheet", "import_xlsx", "export_xlsx", "get_snapshot", "export_pdf", "export_png"] },
+  docx: { tools: ["set_content", "append_markdown", "insert_heading", "insert_table", "export_docx", "import_docx", "export_pdf", "export_png"] },
+  pptx: { tools: ["add_slide", "set_title", "add_bullets", "export_pptx", "import_pptx", "export_pdf", "export_png", "export_long_png"] },
 };
 
 /**
@@ -79,6 +80,11 @@ const EDITOR_FULL_CHAIN = [
     steps: [{ tool: "set_cells", input: { values: [["webmcp-check", 1.5]] } }],
     exportTool: "export_xlsx",
     filename: "xlsx-export.xlsx",
+    // export-pdf-png 扩容：展示级导出真下载断言（%PDF / PNG 头）
+    extraExports: [
+      { tool: "export_pdf", filename: "xlsx-export.pdf", header: "%PDF" },
+      { tool: "export_png", filename: "xlsx-long.png", header: "png" },
+    ],
     readyMs: 90000,
   },
   {
@@ -86,6 +92,10 @@ const EDITOR_FULL_CHAIN = [
     steps: [{ tool: "set_content", input: { content: "# webmcp-check\n\n探针段落", format: "markdown" } }],
     exportTool: "export_docx",
     filename: "docx-export.docx",
+    extraExports: [
+      { tool: "export_pdf", filename: "docx-export.pdf", header: "%PDF" },
+      { tool: "export_png", filename: "docx-long.png", header: "png" },
+    ],
     readyMs: 30000,
   },
   {
@@ -93,9 +103,17 @@ const EDITOR_FULL_CHAIN = [
     steps: [{ tool: "add_slide", input: { layout: "title", title: "webmcp-check 探针页" } }],
     exportTool: "export_pptx",
     filename: "pptx-export.pptx",
+    extraExports: [
+      { tool: "export_pdf", filename: "pptx-export.pdf", header: "%PDF" },
+      { tool: "export_png", filename: "pptx-page-01.png", header: "png" },
+      { tool: "export_long_png", filename: "pptx-long.png", header: "png" },
+    ],
     readyMs: 120000,
   },
 ];
+
+/** PNG 魔数（\x89PNG\r\n\x1a\n） */
+const PNG_MAGIC = "\u0089PNG\r\n\x1a\n";
 
 /** 编辑器写工具的就绪重试语义：ok:false 且错误为「未就绪/渲染中」→ 等待重试 */
 const READY_RETRY = /就绪|渲染|加载|启动/;
@@ -407,6 +425,74 @@ async function assertNativePath(browser) {
       );
     } catch (e) {
       record(`[原生] ${chain.app} 编辑器全链`, false, e.message);
+    }
+
+    // export-pdf-png 扩容：展示级导出逐个真下载断言（%PDF / PNG 头＋文件名契约
+    // ＋ok 终态）。每站新开页面（编辑器就绪重试语义与主链同款）。
+    for (const extra of chain.extraExports ?? []) {
+      try {
+        const server = await serveDir(join(ROOT, "apps", chain.app, "dist"));
+        const page = await browser.newPage();
+        await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: "load" });
+        const dlPromise = page.waitForEvent("download", { timeout: chain.readyMs }).catch(() => null);
+        // 先等编辑器自报就绪再低频枚举（Chrome 原生注册队列对高频 getTools 轮询
+        // 敏感的怪癖与本文件头部注记同源——waitForFunction 高频轮询会令后注册
+        // 的导出工具永久丢失，实证 export_pdf 2/9 不收敛）
+        await page
+          .waitForFunction(
+            () => {
+              const el = document.getElementById("status");
+              return el && el.textContent && el.textContent.length > 0 && !/正在|加载/.test(el.textContent);
+            },
+            undefined,
+            { timeout: chain.readyMs, polling: 500 },
+          )
+          .catch(() => null);
+        await page.waitForTimeout(3000);
+        const out = await page
+          .evaluate(
+            async ([toolName, maxMs, retryable]) => {
+              if (!document.modelContext) return { ok: false, error: "modelContext 不存在（页面环境异常）" };
+              let tool = null;
+              for (let i = 0; i < 8 && !tool; i++) {
+                const ts = await document.modelContext.getTools();
+                tool = ts.find((t) => t.name === toolName) ?? null;
+                if (!tool) await new Promise((r) => setTimeout(r, 3000));
+              }
+              if (!tool) return { ok: false, error: `工具未注册: ${toolName}` };
+              const deadline = Date.now() + maxMs;
+              for (;;) {
+                const raw = await document.modelContext.executeTool(tool, {});
+                const parsed = JSON.parse(raw);
+                if (parsed.ok) return parsed;
+                if (Date.now() > deadline || !new RegExp(retryable).test(String(parsed.error ?? ""))) return parsed;
+                await new Promise((r) => setTimeout(r, 1000));
+              }
+            },
+            [extra.tool, chain.readyMs, READY_RETRY.source],
+          )
+          .catch((e) => ({ ok: false, error: "导出轮询失败: " + e.message.slice(0, 80) }));
+        const download = await dlPromise;
+        const suggested = download ? download.suggestedFilename() : null;
+        let headOk = false;
+        if (download) {
+          const dlPath = await download.path();
+          if (dlPath) {
+            const bytes = (await readFile(dlPath)).subarray(0, 8);
+            const head = bytes.toString("latin1");
+            headOk = extra.header === "png" ? head.startsWith(PNG_MAGIC) : head.startsWith(extra.header);
+          }
+        }
+        await page.close();
+        server.close();
+        if (!out.ok) throw new Error(`${extra.tool} 未成功: ${JSON.stringify(out)}`);
+        if (!download) throw new Error(`未捕获到 download 事件`);
+        if (suggested !== extra.filename) throw new Error(`下载文件名契约不符: got ${suggested}, want ${extra.filename}`);
+        if (!headOk) throw new Error(`产物头不符（期望 ${extra.header === "png" ? "PNG 魔数" : extra.header}）`);
+        record(`[原生] ${chain.app} ${extra.tool} 展示级导出：真下载 ${suggested} + 产物头 OK`, true);
+      } catch (e) {
+        record(`[原生] ${chain.app} ${extra.tool} 展示级导出`, false, e.message);
+      }
     }
   }
 }
