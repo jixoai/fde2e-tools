@@ -250,8 +250,9 @@ function buildTools(): WebMCPToolDef[] {
       name: "export_pdf",
       title: "导出 PDF",
       description:
-        "把当前演示导出为 PDF 下载（缺省 pptx-export.pdf；每页幻灯一页，页面随幻灯纵横比横向——" +
-        "ThumbnailSlide 离屏渲染逐页捕获）。编辑器未就绪时返回 ok:false。返回页数与文件名契约。",
+        "把当前演示导出为矢量 PDF 下载（缺省 pptx-export.pdf；16:9 横向，每页幻灯一页；" +
+        "真实文本层可搜索可复制；标题 32pt/要点 18pt/右下页码）。" +
+        "编辑器未就绪时返回 ok:false。返回页数与文件名契约。",
       inputSchema: {
         type: "object",
         properties: {
@@ -313,15 +314,52 @@ declare global {
   }
 }
 
-/** 确定性示例演示（?sample= 与绿门共用；标题页＋要点页） */
+/** 确定性示例演示（?sample= 与绿门共用；青旅门店周会 3 页，真实业务内容） */
 function sampleDeck(): PPTSlide[] {
+  // 示例＝真实业务内容（青旅门店周会），不用工程术语/内部开发提示（P0-4）。
+  // 每页 4-5 条要点，撑得起标题 32pt / 要点 18pt 的版式与版面利用率断言。
   const cover: PPTSlide = buildBlankSlide();
-  cover.elements.push(buildTitleElement("FDE2E 专业幻灯编辑器"));
-  cover.elements.push(buildBulletsElement(["PPTist 整库嵌入（AGPL 隔离目录）", "store 驱动 WebMCP 语义建页", "导出真 .pptx（pptxgenjs 桥）"], 220));
-  const body: PPTSlide = buildBlankSlide();
-  body.elements.push(buildTitleElement("季度要点"));
-  body.elements.push(buildBulletsElement(["营收同比增长 42%", "新客户 1,280 家", "NPS 提升 12 分"], 220));
-  return [cover, body];
+  cover.elements.push(buildTitleElement("青旅门店周会汇报"));
+  cover.elements.push(
+    buildBulletsElement(
+      [
+        "周期：2026 年第 43 周（10 月 19 日 — 10 月 25 日）",
+        "门店：厦门曾厝垵店 · 前厅运营组",
+        "汇报人：门店经理 林晓",
+        "参会：前厅、客房、工程、餐饮四组",
+      ],
+      220,
+    ),
+  );
+  const data: PPTSlide = buildBlankSlide();
+  data.elements.push(buildTitleElement("本周经营数据"));
+  data.elements.push(
+    buildBulletsElement(
+      [
+        "入住间夜 412，同比增长 18%",
+        "整体入住率 82%，环比提升 6 个百分点",
+        "平均房价 268 元，会员价订单占比 46%",
+        "餐饮收入 1.86 万元，早餐加购率 61%",
+        "服务质量评分 4.8/5，零投诉结案",
+      ],
+      220,
+    ),
+  );
+  const plan: PPTSlide = buildBlankSlide();
+  plan.elements.push(buildTitleElement("下周行动计划"));
+  plan.elements.push(
+    buildBulletsElement(
+      [
+        "上线四人间加床方案，周末加床费 30 元",
+        "推出淡季长住套餐：周租 520 元含双早",
+        "与两家本地旅行社签署协议价，锁定周中房量",
+        "完成前台夜班交接清单，减少漏单",
+        "会员复购专项：长住客占比目标 26%",
+      ],
+      220,
+    ),
+  );
+  return [cover, data, plan];
 }
 
 function attachTestHooks(): void {

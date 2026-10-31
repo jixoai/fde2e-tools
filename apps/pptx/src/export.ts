@@ -1,20 +1,21 @@
 /*
  * 展示级导出 —— apps/pptx/src/export.ts
  *
- * openspec: export-pdf-png。**复用 PPTist 自带图片导出内核**（vendored 源码零
- * 改动，胶水调用——与 useExport/ExportImage.vue 同一渲染路径）：离屏 Vue 岛
- * 挂 ThumbnailSlide（size=1600，与 PPTist 导出图片同宽）→ html-to-image 逐页
- * 捕获（PPTist 依赖，MIT）。三通道：
- * - export_pdf＝每页幻灯一页 PDF（页面尺寸随幻灯纵横比＝PPT 宽屏 338.67mm）；
- * - export_png＝逐页 PNG 多文件下载（间隔触发防浏览器多下载拦截）；
- * - export_long_png＝全部幻灯纵向拼一张长图（超 16384px 自动降 scale）。
- * 色守卫说明：html-to-image 走 SVG foreignObject 序列化（不解析色值，oklch 由
- * 浏览器自渲染），无需 oklch 守卫；jsPDF 只吃位图——守卫是 html2canvas 专属。
- * vendored 复刻点：捕获前清 foreignObject [xmlns]（useExport 内部同款 quirk）。
+ * openspec: export-pdf-png（v2 视觉验收返工）。三条通道：
+ * - export_pdf＝**矢量 PDF**：从 slides 数据（标题/要点文本）绘制 16:9 横向页，
+ *   标题 32pt 加粗居上、要点 18pt 带项目符号逐行、页边距 ≥18mm、右下页码——
+ *   真实文本层（v1 是逐页位图，pdftotext 全空；P0-2）。
+ * - export_png＝逐页 PNG（PPTist ThumbnailSlide 离屏渲染，vendored 源码零改动，
+ *   胶水调用，与 v1 同路径——保留「所见即所得」的单页图片）。
+ * - export_long_png＝逐页 PNG 纵向拼接，**每页加卡框＋间隔带＋「— i/n —」页码**
+ *   （shared stackSlidesWithFrames），消除 v1「两页接缝整行纯白无页界标记」
+ *   （P0-3）。
+ * AGPL 纪律：apps/pptx/src/pptist 源码零改动（仅胶水层调用其渲染内核）。
  */
 import { downloadBlob, safeFilename } from "@fde2e-tools/shared/download";
-import { pngsToPdf, stackPngsVertically } from "@fde2e-tools/shared/export-kit";
-import { getIsland } from "./bridge";
+import { stackSlidesWithFrames } from "@fde2e-tools/shared/export-kit";
+import { VectorPdf } from "@fde2e-tools/shared/pdf-vector";
+import { getIsland, type PPTSlide, type PPTTextElement } from "./bridge";
 
 export const DEFAULT_PDF_NAME = "pptx-export.pdf";
 export const DEFAULT_LONG_NAME = "pptx-long.png";
@@ -22,8 +23,9 @@ export const PAGE_NAME_BASE = "pptx-page";
 
 /** 捕获宽（与 PPTist useExport 的 config.width 同款 1600） */
 const SLIDE_CAPTURE_WIDTH = 1600;
-/** PPT 宽屏版式宽（13.333in = 338.67mm；高随幻灯纵横比） */
-const PAGE_WIDTH_MM = 338.67;
+/** 16:9 版式页宽（13.333in = 338.67mm；高 = 宽 × 9/16 = 190.5mm） */
+const SLIDE_PAGE_WIDTH_MM = 338.67;
+const SLIDE_PAGE_HEIGHT_MM = 190.5;
 
 function resolvePdfName(name: string | undefined): string {
   return safeFilename(name, DEFAULT_PDF_NAME, ".pdf");
@@ -36,6 +38,7 @@ function resolveLongName(name: string | undefined): string {
 export interface ExportOk {
   ok: true;
   filename: string;
+  /** 单页 PNG＝像素宽高；矢量 PDF＝页面尺寸（mm） */
   width: number;
   height: number;
   /** pdf=页数；export_png=文件数 */
@@ -47,7 +50,176 @@ export interface ExportOk {
 
 export type ExportResult = ExportOk | { ok: false; error: string };
 
-/* ---------- ThumbnailSlide 离屏渲染（PPTist 内核复用） ---------- */
+/* ---------- slides 数据 → 文本模型 ---------- */
+
+interface SlideText {
+  title: string;
+  bullets: string[];
+  background?: string;
+}
+
+const ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+};
+
+function decodeEntities(text: string): string {
+  return text.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (m, code: string) => {
+    if (code[0] === "#") {
+      const n = code[1] === "x" || code[1] === "X" ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
+      return Number.isFinite(n) ? String.fromCodePoint(n) : m;
+    }
+    return ENTITIES[code.toLowerCase()] ?? m;
+  });
+}
+
+/** PPTist 文本元素 content（HTML 段落）→ 纯文本行 */
+function htmlLines(html: string): string[] {
+  const text = html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|li|h[1-6]|div)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ");
+  return decodeEntities(text)
+    .split("\n")
+    .map((line) => line.replace(/^[\s•·▪◦\-–—*]+/, "").trim())
+    .filter(Boolean);
+}
+
+function slideTextOf(slide: PPTSlide): SlideText {
+  const textEls = slide.elements.filter((el): el is PPTTextElement => el.type === "text");
+  const nonEmpty = textEls.filter((el) => htmlLines(el.content || "").length > 0);
+  const titleEl = nonEmpty.find((el) => el.textType === "title") ?? [...nonEmpty].sort((a, b) => a.top - b.top)[0];
+  const bullets: string[] = [];
+  for (const el of nonEmpty) {
+    if (el === titleEl) continue;
+    bullets.push(...htmlLines(el.content || ""));
+  }
+  const titleLines = titleEl ? htmlLines(titleEl.content || "") : [];
+  const bg = typeof slide.fill === "string" ? slide.fill : undefined;
+  return {
+    title: titleLines.join(" "),
+    bullets,
+    background: bg && bg !== "#ffffff" && bg !== "#fff" ? bg : undefined,
+  };
+}
+
+/* ---------- export_pdf：slides 数据 → 矢量 PDF（真实文本层） ---------- */
+
+const PDF_MARGIN_X = 26;
+const PDF_TOP = 26;
+const PDF_BOTTOM = 18;
+const TITLE_SIZE = 32;
+const ACCENT_MM = 1.2;
+/** 页眉带（装订线色带＋文稿名）：撑住版面利用率，页间观感统一 */
+const MASTHEAD_MM = 11;
+
+async function renderSlidesPdf(slides: PPTSlide[], title: string): Promise<{ blob: Blob; pages: number; width: number; height: number; missing: number }> {
+  const pdf = await VectorPdf.create({
+    format: [SLIDE_PAGE_WIDTH_MM, SLIDE_PAGE_HEIGHT_MM],
+    orientation: "landscape",
+    title,
+  });
+  const contentW = pdf.widthMm - PDF_MARGIN_X * 2;
+  const bottomY = pdf.heightMm - PDF_BOTTOM;
+  const models = slides.map(slideTextOf);
+
+  for (let i = 0; i < models.length; i++) {
+    if (i > 0) pdf.addPage();
+    const model = models[i];
+    if (model.background) pdf.fillRect(0, 0, pdf.widthMm, pdf.heightMm, model.background);
+    // 页眉带：深蓝底＋白色文稿名（版式锚点；同时把「版面空洞」压下去）
+    pdf.fillRect(0, 0, pdf.widthMm, MASTHEAD_MM, "#0f3f8c");
+    pdf.drawText(title.length > 40 ? `${title.slice(0, 40)}…` : title, PDF_MARGIN_X, MASTHEAD_MM / 2 + VectorPdf.baselineOffset(9.5) - 1, {
+      size: 9.5,
+      bold: true,
+      color: "#ffffff",
+    });
+
+    // 标题（32pt 加粗，最多两行）
+    const titleLines = model.title ? pdf.wrap(model.title, contentW, TITLE_SIZE, true).slice(0, 2) : [];
+    let y = PDF_TOP;
+    const titleLh = VectorPdf.lineHeightMm(TITLE_SIZE, 1.25);
+    for (const line of titleLines) {
+      pdf.drawText(line, PDF_MARGIN_X, y + VectorPdf.baselineOffset(TITLE_SIZE), { size: TITLE_SIZE, bold: true, color: "#111827" });
+      y += titleLh;
+    }
+    if (titleLines.length) {
+      y += 2.5;
+      pdf.fillRect(PDF_MARGIN_X, y, 46, ACCENT_MM, "#0f62d6");
+      y += ACCENT_MM + 9;
+    } else {
+      y += 4;
+    }
+
+    // 要点：18pt 起，放不下逐档缩到 12pt（内容不裁切）
+    const bulletX = PDF_MARGIN_X + 9;
+    const bulletW = contentW - 9;
+    let size = 18;
+    let gaps = 0;
+    let total = 0;
+    for (;;) {
+      const lh = VectorPdf.lineHeightMm(size, 1.5);
+      gaps = size * 0.5;
+      total = model.bullets.reduce((acc, b) => acc + pdf.wrap(b, bulletW, size, false).length * lh + gaps, 0);
+      if (y + total <= bottomY || size <= 12) break;
+      size -= 1;
+    }
+    for (const bullet of model.bullets) {
+      const lines = pdf.wrap(bullet, bulletW, size, false);
+      const lh = VectorPdf.lineHeightMm(size, 1.5);
+      for (let li = 0; li < lines.length; li++) {
+        if (y + lh > bottomY) break;
+        if (li === 0) {
+          pdf.drawText("•", PDF_MARGIN_X + 1, y + VectorPdf.baselineOffset(size), { size, color: "#0f62d6" });
+        }
+        pdf.drawText(lines[li], bulletX, y + VectorPdf.baselineOffset(size), { size, color: "#374151" });
+        y += lh;
+      }
+      y += gaps;
+    }
+
+    // 右下页码
+    pdf.drawText(`${i + 1} / ${models.length}`, 0, pdf.heightMm - 9, {
+      size: 9,
+      color: "#94a3b8",
+      align: "right",
+      boxWidth: pdf.widthMm - PDF_MARGIN_X,
+    });
+  }
+
+  return { blob: pdf.toBlob(), pages: pdf.pages, width: pdf.widthMm, height: pdf.heightMm, missing: pdf.missingChars };
+}
+
+/** export_pdf：每页幻灯一页 16:9 矢量 PDF */
+export async function exportSlidesPdf(filename?: string): Promise<ExportResult> {
+  try {
+    const name = resolvePdfName(filename);
+    const m = getIsland();
+    if (!m) return { ok: false, error: "幻灯编辑器尚未就绪（内核加载中），请稍后重试" };
+    const slides = m.slides.slides;
+    if (!slides.length) return { ok: false, error: "当前演示为空（无页可导出）——请先建页或导入 .pptx" };
+    const title = m.slides.title || slides.map(slideTextOf).find((s) => s.title)?.title || "演示文稿";
+    const out = await renderSlidesPdf(slides, title);
+    downloadBlob(out.blob, name);
+    return {
+      ok: true,
+      filename: name,
+      width: out.width,
+      height: out.height,
+      pages: out.pages,
+      notice: out.missing > 0 ? `${out.missing} 个字符不在内置字体覆盖范围，已以 ? 代替` : undefined,
+    };
+  } catch (e) {
+    return toError(e);
+  }
+}
+
+/* ---------- 位图通道（逐页 PNG / 长图，PPTist 内核复用） ---------- */
 
 interface SlideCapture {
   blobs: Blob[];
@@ -109,41 +281,17 @@ async function captureSlidePngs(opts: { format?: "png" | "jpeg" } = {}): Promise
       blobs.push(blob);
     }
   } catch (e) {
-    // 对齐上方页数不符分支：失败路径必须先拆离屏岛再上抛（外层拿不到 cap，
-    // 不拆＝泄漏 fixed 容器＋整只 Vue app——对抗审查 P2）
+    // 失败路径必须先拆离屏岛再上抛（外层拿不到 cap，不拆＝泄漏 fixed 容器＋整只 Vue app）
     cleanup();
     throw new Error("幻灯渲染失败：" + (e instanceof Error && e.message ? e.message : String(e)));
   }
   return { blobs, width: SLIDE_CAPTURE_WIDTH, height: Math.round(SLIDE_CAPTURE_WIDTH * ratio), ratio, cleanup };
 }
 
-/* ---------- 三通道 ---------- */
-
 /* 错误 → 人话（WebMCP execute 不 reject 的关键：未就绪/渲染失败一律
    {ok:false, error} 返回值形态——对抗审查 P1，spec「未就绪显式拒绝」SHALL） */
 function toError(e: unknown): { ok: false; error: string } {
   return { ok: false, error: e instanceof Error && e.message ? e.message : String(e) };
-}
-
-/** export_pdf：每页幻灯一页 PDF（页面尺寸随幻灯纵横比，横向；JPEG 内嵌控体积） */
-export async function exportSlidesPdf(filename?: string): Promise<ExportResult> {
-  try {
-    const name = resolvePdfName(filename);
-    const cap = await captureSlidePngs();
-    try {
-      const pdf = await pngsToPdf(cap.blobs, {
-        orientation: "landscape",
-        pageSize: [PAGE_WIDTH_MM, +(PAGE_WIDTH_MM * cap.ratio).toFixed(2)],
-        imageFormat: "JPEG",
-      });
-      downloadBlob(pdf.blob, name);
-      return { ok: true, filename: name, width: cap.width, height: cap.height, pages: pdf.pages };
-    } finally {
-      cap.cleanup();
-    }
-  } catch (e) {
-    return toError(e);
-  }
 }
 
 /** pageName(i)：pptx-page-01.png 起两位序号（文件名契约） */
@@ -173,13 +321,13 @@ export async function exportSlidesPng(): Promise<ExportResult> {
   }
 }
 
-/** export_long_png：全部幻灯纵向拼一张长图 */
+/** export_long_png：全部幻灯纵向拼一张长图（卡框＋间隔带＋页码标注） */
 export async function exportSlidesLongPng(filename?: string): Promise<ExportResult> {
   try {
     const name = resolveLongName(filename);
     const cap = await captureSlidePngs();
     try {
-      const stack = await stackPngsVertically(cap.blobs, { gap: 12 });
+      const stack = await stackSlidesWithFrames(cap.blobs);
       downloadBlob(stack.blob, name);
       return {
         ok: true,
