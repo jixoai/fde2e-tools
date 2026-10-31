@@ -48,7 +48,7 @@ export interface ToolMeta {
   /**
    * 独立站子域（域名体系 Owner 2026-10-30：<tool>.tool.fde2e.com；
    * 2026-10-31 裁决：轻量生成线用 easy-* 前缀子域，xlsx/docx/pptx 主域
-   * 留给专业编辑器——见 comingSoon 占位目）。
+   * = 专业编辑器（office-editorial-upgrade 已现役，占位目已转正式条目）。
    */
   subdomain: string;
   /** 给 AI/自动化代理的用法摘要（黄页展示；全文以各工具页内 #ai-guide 为准） */
@@ -61,8 +61,8 @@ export interface ToolMeta {
   repoPath: string;
   /**
    * 建设中占位目（可选，缺省 false）：独立站尚未上线，本条仅作黄页占位——
-   * 黄页渲染「建设中」Badge 且禁用「打开工具」入口（Owner 裁决 2026-10-31：
-   * 轻量生成线更名 easy-*，xlsx/docx/pptx 主域名留给另线开发的专业编辑器）。
+   * 黄页渲染「建设中」Badge 且禁用「打开工具」入口（当前无占位条目：
+   * xlsx/docx/pptx 专业编辑器已于 2026-10-31 office-editorial-upgrade 转现役）。
    */
   comingSoon?: boolean;
 }
@@ -300,54 +300,87 @@ export const TOOLS: ToolMeta[] = [
     ],
     repoPath: "apps/easy-pptx",
   },
-  // ---------- 建设中占位目（Owner 裁决 2026-10-31）----------
-  // 轻量生成线更名 easy-*（开箱即用快速档）；xlsx/docx/pptx 主域名让位给
-  // 另线开发的专业编辑器（打开/编辑/格式转换的重型能力）——先占位登记，
-  // 黄页渲染「建设中」Badge 且禁用入口，并向轻量快速档引流。
+  // ---------- 专业编辑器三站（office-editorial-upgrade，2026-10-31 现役）----------
+  // Owner 2026-10-31 裁决的落地：xlsx/docx/pptx 主域名 = 真编辑器工作区
+  // （Univer / TipTap / PPTist），AI 经 WebMCP 直接驱动编辑器内核；轻量生成
+  // 线继续在 easy-* 子域（开箱即用快速档）。
   {
     id: "xlsx",
-    name: "专业表格编辑器（建设中）",
-    tagline: "打开/编辑/格式转换的重型能力，主域名预留位",
+    name: "专业表格编辑器",
+    tagline: "真表格网格工作区：单元格/公式/多表/导入导出 .xlsx",
     description:
-      "专业表格编辑器（打开既有工作簿、编辑、格式转换）另线开发中，本域名为其预留。轻量「数据→文件」快速需求现已可用：easy-xlsx.tool.fde2e.com。",
-    tags: ["excel", "编辑器", "规划中"],
+      "Univer 真表格网格编辑器（多 sheet 页签、公式引擎真算、样式与数字格式）＋SheetJS 双向桥（导入 .xlsx 即编辑、导出真 .xlsx，值/公式/基础样式保留）。AI 经 WebMCP 直接驱动编辑器内核（写入/公式/格式/建表/导入导出/读快照），写入全程生命周期门禁。纯前端零上传。",
+    tags: ["excel", "xlsx", "表格", "编辑器", "公式", "univer"],
     subdomain: "xlsx.tool.fde2e.com",
     aiGuideSummary:
-      "建设中占位：独立站尚未上线。轻量快速档见 easy-xlsx.tool.fde2e.com（JSON/TSV 输入一键产出 .xlsx）。",
-    urlParams: [],
-    tools: [],
-    repoPath: "（规划中，暂无实现目录）",
-    comingSoon: true,
+      "真表格网格：WebMCP set_cells/set_formula/format_range/add_sheet 直接写内核（未就绪返回 ok:false），import_xlsx({base64}) 导入、export_xlsx 导出 xlsx-export.xlsx、get_snapshot 读全簿；?sample=1 载入示例。",
+    urlParams: [
+      {
+        name: "sample",
+        description: "值=sample（或 1/示例）：载入内置示例工作簿（含公式与样式），可继续编辑或直接导出",
+      },
+    ],
+    tools: [
+      { name: "set_cells", description: "向工作表写入二维数据（values[][]，支持数字/字符串/布尔/null），返回写入摘要" },
+      { name: "set_formula", description: "对 A1 区间写公式（如 =SUM(A1:A9)），返回公式引擎计算值——AI 可自检" },
+      { name: "format_range", description: "对 A1 区间设置样式（bold/italic/color/bg/numfmt/align）" },
+      { name: "add_sheet", description: "新增工作表（可带初始 rows 二维数组），返回表名与全簿表清单" },
+      { name: "import_xlsx", description: "导入 .xlsx（base64）为可编辑工作簿，返回表清单与单元格统计" },
+      { name: "export_xlsx", description: "导出当前工作簿为真 .xlsx 下载（缺省 xlsx-export.xlsx，值/公式/基础样式保留）" },
+      { name: "get_snapshot", description: "只读：返回全簿快照 JSON（表名/cellData 值与公式），供 AI 读后写" },
+    ],
+    repoPath: "apps/xlsx",
   },
   {
     id: "docx",
-    name: "专业文档编辑器（建设中）",
-    tagline: "打开/编辑/格式转换的重型能力，主域名预留位",
+    name: "专业文档编辑器",
+    tagline: "真文档工作区：标题/段落/列表/表格/粗斜，导出真 .docx",
     description:
-      "专业文档编辑器（打开既有文档、编辑、格式转换）另线开发中，本域名为其预留。轻量 Markdown 快速需求现已可用：easy-docx.tool.fde2e.com。",
-    tags: ["word", "编辑器", "规划中"],
+      "TipTap 富文本编辑器（标题/段落/有序无序列表/表格/粗斜体 WYSIWYG）＋docx 双向桥（TipTap JSON → docx 库导出真 .docx；mammoth 导入 .docx 继续编辑）。AI 经 WebMCP 语义算子驱动（set_content/append_markdown/insert_table/insert_heading）。纯前端零上传。",
+    tags: ["word", "docx", "文档", "编辑器", "tiptap"],
     subdomain: "docx.tool.fde2e.com",
     aiGuideSummary:
-      "建设中占位：独立站尚未上线。轻量快速档见 easy-docx.tool.fde2e.com（Markdown 子集一键产出 .docx）。",
-    urlParams: [],
-    tools: [],
-    repoPath: "（规划中，暂无实现目录）",
-    comingSoon: true,
+      "真文档编辑器：WebMCP set_content({content,format=html|markdown|json})/append_markdown/insert_heading/insert_table 写内核，export_docx 下载 docx-export.docx，import_docx({base64}) 导入继续编辑；?sample=1 载入示例。",
+    urlParams: [
+      {
+        name: "sample",
+        description: "值=sample（或 1/示例）：载入内置示例文档（标题/列表/表格/粗斜体），可继续编辑或直接导出",
+      },
+    ],
+    tools: [
+      { name: "set_content", description: "整篇替换文档内容（format=html|markdown|json，缺省 html），返回段落数/字数统计" },
+      { name: "append_markdown", description: "向文末追加 Markdown 子集（#/##/###、- 列表、1. 列表、| 表格、**粗** *斜*）" },
+      { name: "insert_heading", description: "在文末插入标题（text + level 1-3）" },
+      { name: "insert_table", description: "在文末插入表格（rows/cols/data[][]/header?）" },
+      { name: "export_docx", description: "导出当前文档为真 .docx 下载（缺省 docx-export.docx，标题/列表/表格/粗斜保留）" },
+      { name: "import_docx", description: "导入 .docx（base64）为可编辑文档（mammoth 解析），返回文档统计" },
+    ],
+    repoPath: "apps/docx",
   },
   {
     id: "pptx",
-    name: "专业幻灯编辑器（建设中）",
-    tagline: "打开/编辑/格式转换的重型能力，主域名预留位",
+    name: "专业幻灯编辑器",
+    tagline: "真幻灯工作区：整库 PPTist 嵌入，导入导出真 .pptx",
     description:
-      "专业幻灯编辑器（打开既有演示、编辑、格式转换）另线开发中，本域名为其预留。轻量大纲快速需求现已可用：easy-pptx.tool.fde2e.com。",
-    tags: ["powerpoint", "编辑器", "规划中"],
+      "PPTist 幻灯编辑器整库嵌入（节编辑/文本形状图片表格图表/主题/放映模式），Pinia store 为编程面：AI 经 WebMCP add_slide/set_title/add_bullets 语义化建页，export_pptx 产真 .pptx、import_pptx 打开既有 .pptx。纯前端零上传（AGPL 目录隔离，见根 README 许可分区）。",
+    tags: ["powerpoint", "pptx", "幻灯", "编辑器", "pptist"],
     subdomain: "pptx.tool.fde2e.com",
     aiGuideSummary:
-      "建设中占位：独立站尚未上线。轻量快速档见 easy-pptx.tool.fde2e.com（slides JSON 一键产出 .pptx）。",
-    urlParams: [],
-    tools: [],
-    repoPath: "（规划中，暂无实现目录）",
-    comingSoon: true,
+      "真幻灯编辑器：WebMCP add_slide({layout=title|bullets|blank,title?,bullets?})/set_title/add_bullets 驱动 store，export_pptx 下载 pptx-export.pptx，import_pptx({base64}) 打开既有 .pptx；?sample=1 重置为内置示例。",
+    urlParams: [
+      {
+        name: "sample",
+        description: "值=sample（或 1/示例）：重置为内置示例演示（标题页+要点页），可继续编辑或直接导出",
+      },
+    ],
+    tools: [
+      { name: "add_slide", description: "新增一页（layout=title|bullets|blank，title/bullets[]/index?），返回页索引与元素清单" },
+      { name: "set_title", description: "设置指定页（缺省当前页）标题文本（无标题元素则创建）" },
+      { name: "add_bullets", description: "向指定页追加要点列表（items[]，自动排版在既有内容下方）" },
+      { name: "export_pptx", description: "导出当前演示为真 .pptx 下载（缺省 pptx-export.pptx）" },
+      { name: "import_pptx", description: "导入 .pptx（base64）为可编辑演示（pptxtojson 解析），返回页数" },
+    ],
+    repoPath: "apps/pptx",
   },
 ];
 

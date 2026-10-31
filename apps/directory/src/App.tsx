@@ -22,8 +22,8 @@ import { registerAppTools } from "./webmcp";
 const DIRECTORY_AI_GUIDE = `===== AI 使用说明（给自动化代理读的纯文本） =====
 本页是 FDE2E 工具黄页（tool.fde2e.com）：全部工具零后端、静态托管。
 - 每个工具有独立站：<tool-id>.tool.fde2e.com（卡片上的「打开工具」）。
-- 带「建设中」Badge 的卡片是主域名预留位（专业编辑器另线开发中，独立站尚未上线）：
-  轻量快速档在 easy-<id>.tool.fde2e.com（如 easy-xlsx.tool.fde2e.com），卡片有直达按钮。
+- 办公三件套双形态：xlsx/docx/pptx 主域名＝真编辑器工作区（Univer/TipTap/PPTist，
+  WebMCP 直接驱动编辑器内核）；easy-xlsx/docx/pptx＝轻量快速档（表单一键生成文件）。
 - 各工具页首都有 <pre id="ai-guide">，是给自动化代理读的完整用法说明（含 URL 参数契约）。
 - URL 参数契约是稳定接口：智能体按参数调用工具，契约变更会同步登记在各工具 ai-guide。
 - 加新工具＝仓库 packages/shared registry 加一条，黄页自动收录。`;
