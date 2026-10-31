@@ -3,15 +3,17 @@
 #
 # 用法：
 #   TOOLS_DEST=/opt/1panel/apps/openresty/openresty/www/tools bash deploy/tools-upload.sh <app>
-#   <app> ∈ directory|pdf-tool|img-tool|url-tool|file-viewer|xlsx|docx|pptx
+#   <app> ∈ directory|pdf-tool|img-tool|url-tool|file-viewer|easy-xlsx|easy-docx|easy-pptx
 # 目标映射：directory → $TOOLS_DEST/_home（黄页＝tool.fde2e.com 根）；其余 → $TOOLS_DEST/<app>
+#   （easy-* = 轻量快速档，Owner 裁决 2026-10-31：xlsx/docx/pptx 主域名留给专业编辑器，
+#    easy-xlsx.tool.fde2e.com 等由 *.tool.fde2e.com 泛 vhost 零配置生效）
 # 传输用 tar-over-ssh（alpha-upload.sh 的兜底通道，实证稳；rsync 在本机-服务器组合上报协议错）。
 # 注：editor（ranuts/document 编辑器站）不走本脚本——AGPL 未修改上游镜像独立部署，
 #     见 deploy/editor-fetch.sh 与 openspec editor-hosting 规格。
 set -euo pipefail
-app="${1:?用法: tools-upload.sh <app>（directory|pdf-tool|img-tool|url-tool|file-viewer|xlsx|docx|pptx）}"
+app="${1:?用法: tools-upload.sh <app>（directory|pdf-tool|img-tool|url-tool|file-viewer|easy-xlsx|easy-docx|easy-pptx）}"
 case "${app}" in
-  directory|pdf-tool|img-tool|url-tool|file-viewer|xlsx|docx|pptx) ;;
+  directory|pdf-tool|img-tool|url-tool|file-viewer|easy-xlsx|easy-docx|easy-pptx) ;;
   *) echo "✗ 未知 app: ${app}"; exit 1 ;;
 esac
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"

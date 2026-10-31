@@ -5,7 +5,7 @@
  * office-suite / real-file-assertion 能力）：
  * 对工具与黄页抽测 URL 参数契约——状态行文案逐字符断言、渲染产物
  * （画布尺寸/结果 URL/解码表）逐值断言。视觉允许升级，行为不允许漂移。
- * 办公三站（xlsx/docx/pptx）加**真文件反读断言**（硬要求）：headless 里真实
+ * 办公三站（easy-xlsx/easy-docx/easy-pptx，轻量快速档）加**真文件反读断言**（硬要求）：headless 里真实
  * 生成文件后——xlsx 用 SheetJS（Node 侧，非页面内）反读核对单元格；
  * docx/pptx 解 zip 核对 document.xml / slide1.xml / notesSlide 关键内容。
  *
@@ -83,7 +83,7 @@ async function main() {
   });
 
   const servers = {};
-  for (const app of ["pdf-tool", "img-tool", "url-tool", "directory", "xlsx", "docx", "pptx", "file-viewer"]) {
+  for (const app of ["pdf-tool", "img-tool", "url-tool", "directory", "easy-xlsx", "easy-docx", "easy-pptx", "file-viewer"]) {
     servers[app] = { server: await serveDir(join(ROOT, "apps", app, "dist")), get port() { return servers[app].server.address().port; } };
   }
   const base = (app) => `http://127.0.0.1:${servers[app].server.address().port}`;
@@ -248,7 +248,7 @@ async function main() {
 
     // ---------- xlsx（真文件反读断言） ----------
     await check("xlsx ?sample=1：示例工作簿载入 + 预览刷新", async () => {
-      await withPage("xlsx", "?sample=1", async (page) => {
+      await withPage("easy-xlsx", "?sample=1", async (page) => {
         await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例工作簿已载入"), { timeout: 10000 });
         const v = await page.inputValue("#input-json");
         if (!v.includes("报销明细")) throw new Error("示例工作簿未载入");
@@ -261,7 +261,7 @@ async function main() {
     });
 
     await check("xlsx 空输入点生成：错误文案保真", async () => {
-      await withPage("xlsx", "", async (page) => {
+      await withPage("easy-xlsx", "", async (page) => {
         await page.click("#generate-xlsx-btn");
         const s = await statusText(page);
         const want = "输入为空：请先粘贴 JSON、粘贴表格，或点「载入示例」。";
@@ -270,7 +270,7 @@ async function main() {
     });
 
     await check("xlsx JSON 生成真文件：SheetJS 反读核对单元格（含负数/小数/布尔/多表）", async () => {
-      await withPage("xlsx", "?sample=1", async (page) => {
+      await withPage("easy-xlsx", "?sample=1", async (page) => {
         await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例工作簿已载入"), { timeout: 10000 });
         const { suggested, bytes } = await generateAndCapture(page, "generate-xlsx-btn");
         if (suggested !== "xlsx-export.xlsx") throw new Error(`下载文件名不符: ${suggested}`);
@@ -307,7 +307,7 @@ async function main() {
     });
 
     await check("xlsx TSV 粘贴表格路径：## 分表 + 数字转换 + 真文件反读", async () => {
-      await withPage("xlsx", "", async (page) => {
+      await withPage("easy-xlsx", "", async (page) => {
         await page.fill("#input-tsv", "## 表A\n名字\t数值\n甲\t3.5\n## 表B\n乙\t-2");
         const { suggested, bytes } = await generateAndCapture(page, "generate-xlsx-btn");
         if (suggested !== "xlsx-export.xlsx") throw new Error(`下载文件名不符: ${suggested}`);
@@ -329,7 +329,7 @@ async function main() {
     // 语义——TSV-only 场景（JSON 空只粘表格）追加后 TSV 表不得静默丢失，且
     // TSV 表必须出现在生成产物里
     await check("xlsx WebMCP add_sheet_sample：TSV-only 场景表不丢（B1 回归门）", async () => {
-      await withPage("xlsx", "", async (page) => {
+      await withPage("easy-xlsx", "", async (page) => {
         await page.waitForFunction(
           () => document.modelContext && document.modelContext.getTools().then((ts) => ts.some((t) => t.name === "add_sheet_sample")),
           { timeout: 10000 },
@@ -366,7 +366,7 @@ async function main() {
 
     // ---------- docx（真文件反读断言） ----------
     await check("docx ?sample=1：示例文档载入 + 预览刷新", async () => {
-      await withPage("docx", "?sample=1", async (page) => {
+      await withPage("easy-docx", "?sample=1", async (page) => {
         await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例文档已载入"), { timeout: 10000 });
         const v = await page.inputValue("#input-md");
         if (!v.includes("FDE2E 季度运营报告")) throw new Error("示例文档未载入");
@@ -376,7 +376,7 @@ async function main() {
     });
 
     await check("docx 空输入点生成：错误文案保真", async () => {
-      await withPage("docx", "", async (page) => {
+      await withPage("easy-docx", "", async (page) => {
         await page.click("#generate-docx-btn");
         const s = await statusText(page);
         const want = "输入为空：请先输入 Markdown、或点「载入示例」。";
@@ -385,7 +385,7 @@ async function main() {
     });
 
     await check("docx 生成真文件：解 zip 核对 document.xml（标题/粗斜标记/表格/命名空间）", async () => {
-      await withPage("docx", "?sample=1", async (page) => {
+      await withPage("easy-docx", "?sample=1", async (page) => {
         await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例文档已载入"), { timeout: 10000 });
         const { suggested, bytes } = await generateAndCapture(page, "generate-docx-btn");
         if (suggested !== "docx-export.docx") throw new Error(`下载文件名不符: ${suggested}`);
@@ -409,7 +409,7 @@ async function main() {
     // 折叠线回归门（视觉验收追加修复项 2026-10-31）：小视口长预览下点生成，
     // #status 必须滚入视口（shared scrollStatusIntoView 统一模式）
     await check("docx 折叠线回归门：小视口长预览点生成后 #status 在视口内", async () => {
-      await withPage("docx", "?sample=1", async (page) => {
+      await withPage("easy-docx", "?sample=1", async (page) => {
         await page.setViewportSize({ width: 1280, height: 640 }); // 小视口复现折叠线场景
         await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例文档已载入"), { timeout: 10000 });
         const dlPromise = page.waitForEvent("download", { timeout: 30000 });
@@ -432,7 +432,7 @@ async function main() {
 
     // ---------- pptx（真文件反读断言） ----------
     await check("pptx ?sample=1：示例幻灯载入 + 预览刷新", async () => {
-      await withPage("pptx", "?sample=1", async (page) => {
+      await withPage("easy-pptx", "?sample=1", async (page) => {
         await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例幻灯已载入"), { timeout: 10000 });
         const v = await page.inputValue("#input-json");
         if (!v.includes("FDE2E 办公三件套")) throw new Error("示例幻灯未载入");
@@ -442,7 +442,7 @@ async function main() {
     });
 
     await check("pptx 空输入点生成：错误文案保真", async () => {
-      await withPage("pptx", "", async (page) => {
+      await withPage("easy-pptx", "", async (page) => {
         await page.click("#generate-pptx-btn");
         const s = await statusText(page);
         const want = "输入为空：请先粘贴 slides JSON、或点「载入示例」。";
@@ -451,7 +451,7 @@ async function main() {
     });
 
     await check("pptx 生成真文件：解 zip 核对 slide1.xml/notesSlide（标题/bullets/备注）", async () => {
-      await withPage("pptx", "?sample=1", async (page) => {
+      await withPage("easy-pptx", "?sample=1", async (page) => {
         await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例幻灯已载入"), { timeout: 10000 });
         const { suggested, bytes } = await generateAndCapture(page, "generate-pptx-btn");
         if (suggested !== "pptx-export.pptx") throw new Error(`下载文件名不符: ${suggested}`);
@@ -473,15 +473,17 @@ async function main() {
     });
 
     // ---------- img-tool ----------
-    await check("directory：registry 渲染 + 纯前端搜索（含办公三站+文件预览共 7 卡）", async () => {
+    await check("directory：registry 渲染 + 纯前端搜索（含 easy-* 三站+建设中占位 10 卡）", async () => {
       await withPage("directory", "", async (page) => {
-        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length >= 7, { timeout: 30000 });
+        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length >= 10, { timeout: 30000 });
         const total = await page.evaluate(() => document.querySelectorAll('[data-slot="card"]').length);
-        if (total !== 7) throw new Error(`卡片数不符: ${total}（期望 7）`);
+        if (total !== 10) throw new Error(`卡片数不符: ${total}（期望 10＝7 现役 + 3 建设中占位）`);
+        const comingSoon = await page.evaluate(() => document.querySelectorAll('[data-testid="coming-soon-badge"]').length);
+        if (comingSoon !== 3) throw new Error(`建设中 Badge 数不符: ${comingSoon}（期望 3）`);
         await page.fill('input[aria-label="搜索工具"]', "图片");
         await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
         const count = await page.textContent("main, body");
-        if (!count.includes("1 / 7")) throw new Error("搜索计数未显示 1 / 7");
+        if (!count.includes("1 / 10")) throw new Error("搜索计数未显示 1 / 10");
         await page.fill('input[aria-label="搜索工具"]', "表格生成");
         await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
       });

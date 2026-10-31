@@ -4,7 +4,7 @@
  * 验收（openspec change project-bootstrap / webmcp-tools + office-suite /
  * real-file-assertion 能力）：
  * 1. **原生路径**（headless Chromium + `--enable-blink-features=WebMCP`，
- *    Chrome 156 实测有原生 API）：黄页、三存量工具与办公三站 `getTools()` 能
+ *    Chrome 156 实测有原生 API）：黄页、三存量工具与办公三站（easy-*）`getTools()` 能
  *    枚举到全部注册工具；executeTool 返回 DOMString（spec 形态）；export_pdf
  *    走到「导出成功」终态（B3 断言面）；三构建站 create_* 走 executeTool
  *    全链——真下载捕获 + 文件名契约 + ok 终态（真文件断言 ①）。
@@ -32,9 +32,9 @@ const EXPECT = {
   "img-tool": { tools: ["overlay_text", "export_png"] },
   "url-tool": { tools: ["pack_url", "decode_url"] },
   "file-viewer": { tools: ["preview_file"] },
-  xlsx: { tools: ["create_xlsx", "add_sheet_sample"] },
-  docx: { tools: ["create_docx", "append_docx_markdown"] },
-  pptx: { tools: ["create_pptx", "add_slide"] },
+  "easy-xlsx": { tools: ["create_xlsx", "add_sheet_sample"] },
+  "easy-docx": { tools: ["create_docx", "append_docx_markdown"] },
+  "easy-pptx": { tools: ["create_pptx", "add_slide"] },
 };
 
 /**
@@ -43,19 +43,19 @@ const EXPECT = {
  */
 const FULL_CHAIN = [
   {
-    app: "xlsx",
+    app: "easy-xlsx",
     tool: "create_xlsx",
     input: { sheets: [{ name: "Gates", rows: [["K", "V"], ["engine", "SheetJS"], [42, 1.5]] }] },
     filename: "xlsx-export.xlsx",
   },
   {
-    app: "docx",
+    app: "easy-docx",
     tool: "create_docx",
     input: { markdown: "# Gate\n\n**bold** and *italic* probe" },
     filename: "docx-export.docx",
   },
   {
-    app: "pptx",
+    app: "easy-pptx",
     tool: "create_pptx",
     input: { slides: [{ title: "Gate", bullets: ["a", "b"] }] },
     filename: "pptx-export.pptx",
