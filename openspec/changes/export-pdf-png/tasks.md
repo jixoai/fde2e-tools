@@ -81,3 +81,30 @@
       函数全管线 try/catch 转 {ok:false}（站内风格统一）。新增绿门断言
       「未就绪门」（smoke 38/38）：xlsx forcePending 挂起→resolve {ok:false}；
       pptx CDP 限速岛加载窗口早调用→resolve {ok:false} 不 reject（P1 回归）
+
+## 8. v2 视觉验收返工（2026-10-31，判词逐条闭合）
+
+- [x] 8.1 **最小验证（先行门禁）**：vendored jsPDF 4.0.0 + Noto Sans SC 子集
+      → 浏览器实跑生成中文文本 PDF，`pdftotext` 实测提取「青旅运营周报 · 2026
+      第 43 周 / 门店营收 128,600 元，入住率 82%」等完整中文（方案成立）。
+- [x] 8.2 字体资产：Noto Sans SC Regular/Bold 子集（GB2312 全字符＋人名/地名
+      补充 7588 码位，pyftsubset；每字重 ≈2.2MB）落 `packages/shared/assets/
+      fonts/`，Vite 各站 dist 各出一份；OFL.txt 记来源/再生成命令/许可全文。
+- [x] 8.3 `@fde2e-tools/shared/pdf-vector`：VectorPdf（jsPDF 实例获取/注册字体/
+      中英混排断行/文块/矩形/线条/页脚页码/缺字显式替身），并有覆盖率探测
+      （cmap 反查，缺字画 ? 且计数）。
+- [x] 8.4 xlsx：`export_pdf` 改快照数据矢量绘制（列宽自适应＋表头加粗底色＋
+      数字右对齐＋多页重复表头＋页脚页码；不碰 Univer DOM）；长图补页边距/
+      列宽自适应；canary 哨兵导出侧视作空（PDF/xlsx 桥双防线）。
+- [x] 8.5 docx：`export_pdf` 改 TipTap JSON→块模型→矢量绘制；`export_png` 改
+      块模型→结构化 HTML（P1 四项闭合：圆点/内联代码基线对齐、表头统一加粗
+      ＋底色、行高 1.6、无容器边框白条）。
+- [x] 8.6 pptx：`export_pdf` 改 slides 数据矢量绘制（16:9/标题 32pt/要点 18pt/
+      页眉带/右下页码）；`export_long_png` 补卡框＋间隔带＋「— i/n —」页码。
+- [x] 8.7 示例去污染：xlsx＝青旅房源价格表（7×8）＋周营收（7×9，含公式）；
+      docx＝门店周报（三级标题/列表/表格/引用）；pptx＝周会 3 页（每页 4-5 要点）。
+- [x] 8.8 绿门强化：`scripts/pdf-assert.mjs`（pdftotext 文本层＋中文＋关键词＋
+      无 UI 特征词；pdftoppm 光栅化非白像素 ≥3%）接入 smoke-check 与
+      webmcp-check；既有断言零缩水。
+- [x] 8.9 `pnpm -r check && pnpm -r build` 全绿；smoke-check / webmcp-check
+      重跑全绿（证据见本轮报告）。

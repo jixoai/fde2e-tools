@@ -61,3 +61,29 @@ oklch 色守卫护体）可复用到三站——共享化为 `@fde2e-tools/share
   原样拷贝的实跑验证先行；失败即切换数据自绘表格方案并如实记录所选路径。
 - Chrome 多文件下载拦截（pptx 逐页 PNG）：下载间加间隔；绿门以逐个 download
   事件捕获裁决。
+
+## v2 视觉验收返工（2026-10-31，判词驱动）
+
+视觉验收五张全 FAIL，核心路径重做（本 change 不另立新案）：
+
+- **P0-1 xlsx export_pdf 语义错误**：v1 截的是 Univer 编辑器 UI（菜单/工具栏/
+  公式栏/列标行号/选中框/开发提示行）。v2 改为**读快照数据矢量绘制**，不碰
+  编辑器 DOM。
+- **P0-2 两个 PDF 无文本层**：v1 是 html2canvas 位图 + addImage（pdftotext 全
+  空、283ppi 有损 JPEG）。v2 三站 PDF 全部改为 jsPDF `text()`/`rect()` **矢量
+  绘制**，并嵌入 Noto Sans SC 子集（OFL-1.1）产生真实 ToUnicode 文本层。
+- **P0-3 pptx 版式空洞**：v2 矢量化重排（标题 32pt/要点 18pt/页眉带/页码），
+  长图补页框＋间隔带＋页码标注。
+- **P0-4 内容污染**：三站示例重写为青旅门店运营真实业务内容；canary 哨兵
+  （`__canary__`，曾把 xlsx 导出撑出 27 列并混入 PDF）在导出侧一律视作空。
+- **P1 docx 长图细节**：改由文档块模型渲染结构化 HTML（不克隆编辑器 DOM），
+  圆点/内联代码基线对齐、表头统一加粗＋底色、行高 1.6、无容器边框白条。
+- **绿门强化**：新增 `scripts/pdf-assert.mjs`——pdftotext 文本层非空＋中文＋
+  关键词＋xlsx 无 UI 特征词；pptx 每页 pdftoppm 光栅化非白像素占比 ≥3%。
+
+## v2 Non-Goals
+
+- 不追求 Word/PPT 级分页引擎（孤行控制/分栏/图文环绕不做）；表格只画边框与
+  表头底色，不做合并单元格跨页拆分。
+- 长图路径仍是位图（docx/xlsx 走结构化 HTML、pptx 走 PPTist 内核），不追求
+  长图矢量。
