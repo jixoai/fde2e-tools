@@ -12,6 +12,7 @@ import { downloadBlob } from "@fde2e-tools/shared/download";
 import { registerWebMCPTools, type WebMCPToolDef } from "@fde2e-tools/shared/webmcp";
 import { editorState, getEditor, withEditor, type FacadeEditor } from "./editor";
 import { docxBytesToHtml, docJsonToDocxBytes } from "./docx-bridge";
+import { exportDocLongPng, exportDocPdf } from "./export";
 import { resolveExportName } from "./export-name";
 import { docStats, markdownToNodes, type TiptapNode } from "./md-lite";
 
@@ -232,6 +233,41 @@ function buildTools(): WebMCPToolDef[] {
           return { via: "mammoth", ...statsOf(ed) };
         });
         return res.ok ? { ok: true, ...(res.value as Record<string, unknown>) } : res;
+      },
+    },
+    {
+      name: "export_pdf",
+      title: "导出 PDF",
+      description:
+        "把整篇文档导出为 PDF 下载（缺省 docx-export.pdf；A4 纵向，长文档按元素边界自动分页）。" +
+        "编辑器未就绪或文档为空时返回 ok:false。返回文件名契约。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          filename: { type: "string", description: "可选下载文件名（缺省 docx-export.pdf）" },
+        },
+        additionalProperties: false,
+      },
+      annotations: { untrustedContentHint: true },
+      async execute(input) {
+        return await exportDocPdf(typeof input.filename === "string" ? input.filename : undefined);
+      },
+    },
+    {
+      name: "export_png",
+      title: "导出长图 PNG",
+      description:
+        "把整篇文档导出为一张长图 PNG 下载（缺省 docx-long.png；超 16384px 会截断并在产物与返回值标注）。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          filename: { type: "string", description: "可选下载文件名（缺省 docx-long.png）" },
+        },
+        additionalProperties: false,
+      },
+      annotations: { untrustedContentHint: true },
+      async execute(input) {
+        return await exportDocLongPng(typeof input.filename === "string" ? input.filename : undefined);
       },
     },
   ];

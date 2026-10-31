@@ -3,6 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- 展示级导出内核（openspec: export-pdf-png）：/assets/html2pdf.bundle.min.js
+         （vendored UMD → window.html2pdf，内含 html2canvas + jsPDF；与 pdf-tool
+         同一副本 sha 一致，站点独立可部署）。必须在模块脚本之前以普通 <script> 载入。 -->
+    <script src="/assets/html2pdf.bundle.min.js"></script>
     <title>专业文档编辑器 · 真文档工作区</title>
   </head>
   <body>
