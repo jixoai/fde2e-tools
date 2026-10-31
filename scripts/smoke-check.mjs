@@ -17,6 +17,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
+import { rmSync, writeFileSync } from 'node:fs';
 // 真文件反读：xlsx 用 SheetJS 社区版（根 devDeps，与页面同库但走 Node 侧独立
 // 路径反读）；docx/pptx 用 adm-zip 解 zip（MIT）核对 OOXML 关键内容
 const XLSXMOD = await import("xlsx");
@@ -82,7 +83,7 @@ async function main() {
   });
 
   const servers = {};
-  for (const app of ["pdf-tool", "img-tool", "url-tool", "directory", "xlsx", "docx", "pptx"]) {
+  for (const app of ["pdf-tool", "img-tool", "url-tool", "directory", "xlsx", "docx", "pptx", "file-viewer"]) {
     servers[app] = { server: await serveDir(join(ROOT, "apps", app, "dist")), get port() { return servers[app].server.address().port; } };
   }
   const base = (app) => `http://127.0.0.1:${servers[app].server.address().port}`;
@@ -472,6 +473,34 @@ async function main() {
     });
 
     // ---------- img-tool ----------
+    await check("directory：registry 渲染 + 纯前端搜索（含办公三站+文件预览共 7 卡）", async () => {
+      await withPage("directory", "", async (page) => {
+        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length >= 7, { timeout: 30000 });
+        const total = await page.evaluate(() => document.querySelectorAll('[data-slot="card"]').length);
+        if (total !== 7) throw new Error(`卡片数不符: ${total}（期望 7）`);
+        await page.fill('input[aria-label="搜索工具"]', "图片");
+        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
+        const count = await page.textContent("main, body");
+        if (!count.includes("1 / 7")) throw new Error("搜索计数未显示 1 / 7");
+        await page.fill('input[aria-label="搜索工具"]', "表格生成");
+        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
+      });
+    });
+
+    await check("directory WebMCP search_tools：registry 单源投影", async () => {
+      await withPage("directory", "", async (page) => {
+        await page.waitForFunction(() => document.modelContext && document.modelContext.getTools().then((ts) => ts.some((t) => t.name === "search_tools")), { timeout: 10000 });
+        const out = await page.evaluate(async () => {
+          const ts = await document.modelContext.getTools();
+          const tool = ts.find((t) => t.name === "search_tools");
+          return JSON.parse(await document.modelContext.executeTool(tool, { query: "html2pdf" }));
+        });
+        if (out.count !== 1 || out.tools[0].id !== "pdf-tool") {
+          throw new Error(`search_tools 结果异常: ${JSON.stringify(out).slice(0, 200)}`);
+        }
+        if (out.tools[0].webmcpTools.length !== 2) throw new Error("registry webmcpTools 投影缺失");
+      });
+
     await check("img-tool URL 直调：sample + cover 裁切 + 文字 + 角标", async () => {
       await withPage(
         "img-tool",
@@ -570,33 +599,6 @@ async function main() {
     });
 
     // ---------- directory ----------
-    await check("directory：registry 渲染 + 纯前端搜索（含办公三站+文件预览共 7 卡）", async () => {
-      await withPage("directory", "", async (page) => {
-        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length >= 7, { timeout: 10000 });
-        const total = await page.evaluate(() => document.querySelectorAll('[data-slot="card"]').length);
-        if (total !== 6) throw new Error(`卡片数不符: ${total}（期望 7）`);
-        await page.fill('input[aria-label="搜索工具"]', "图片");
-        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 5000 });
-        const count = await page.textContent("main, body");
-        if (!count.includes("1 / 7")) throw new Error("搜索计数未显示 1 / 7");
-        await page.fill('input[aria-label="搜索工具"]', "xlsx");
-        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 5000 });
-      });
-    });
-
-    await check("directory WebMCP search_tools：registry 单源投影", async () => {
-      await withPage("directory", "", async (page) => {
-        await page.waitForFunction(() => document.modelContext && document.modelContext.getTools().then((ts) => ts.some((t) => t.name === "search_tools")), { timeout: 10000 });
-        const out = await page.evaluate(async () => {
-          const ts = await document.modelContext.getTools();
-          const tool = ts.find((t) => t.name === "search_tools");
-          return JSON.parse(await document.modelContext.executeTool(tool, { query: "pdf" }));
-        });
-        if (out.count !== 1 || out.tools[0].id !== "pdf-tool") {
-          throw new Error(`search_tools 结果异常: ${JSON.stringify(out).slice(0, 200)}`);
-        }
-        if (out.tools[0].webmcpTools.length !== 2) throw new Error("registry webmcpTools 投影缺失");
-      });
     });
   } finally {
     await browser.close();
