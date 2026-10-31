@@ -239,8 +239,9 @@ function buildTools(): WebMCPToolDef[] {
       name: "export_pdf",
       title: "导出 PDF",
       description:
-        "把整篇文档导出为 PDF 下载（缺省 docx-export.pdf；A4 纵向，长文档按元素边界自动分页）。" +
-        "编辑器未就绪或文档为空时返回 ok:false。返回文件名契约。",
+        "把整篇文档导出为矢量 PDF 下载（缺省 docx-export.pdf；真实文本层可搜索可复制；" +
+        "A4 纵向多页，标题分级/列表缩进/表格边框与表头底色/页脚页码）。" +
+        "编辑器未就绪或文档为空时返回 ok:false。返回文件名契约与页数。",
       inputSchema: {
         type: "object",
         properties: {

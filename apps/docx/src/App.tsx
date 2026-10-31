@@ -37,8 +37,9 @@ WebMCP 工具（直接驱动编辑器内核命令，不经 DOM 输入区；编�
 - insert_table({rows, cols, header?, data?})：文末插表格（data 行优先一维数组）。
 - export_docx({filename?})：导出真 .docx 下载（缺省 docx-export.docx）。
 - import_docx({base64})：导入 .docx 继续编辑（mammoth 语义转换）。
-- export_pdf({filename?})：整篇文档 → PDF 下载（缺省 docx-export.pdf；A4 纵向多页，长文档自动分页）。
-- export_png({filename?})：整篇文档 → 长图 PNG 下载（缺省 docx-long.png；超 16384px 会截断并标注）。
+- export_pdf({filename?})：矢量 PDF 下载（缺省 docx-export.pdf；真实文本层可搜索可复制；标题分级/
+  列表缩进/表格边框与表头底色/A4 纵向多页/页脚页码）。
+- export_png({filename?})：整篇文档 → 结构化长图 PNG 下载（缺省 docx-long.png；超 16384px 会截断并标注）。
 
 操作提示：
 - 页面按钮：载入示例（load-sample-btn）、导入 .docx（import-docx-btn）、导出 .docx
@@ -163,8 +164,11 @@ export default function App() {
     try {
       const r = kind === "pdf" ? await exportDocPdf() : await exportDocLongPng();
       if (!r.ok) throw new Error(r.error);
-      const tail = r.notice ? ` · ${r.notice}` : `（${r.width}×${r.height} px${r.pages ? ` · ${r.pages} 页` : ""}）`;
-      showStatus(`已生成 ${r.filename}${tail}`, "ok");
+      const tail = r.notice ? ` · ${r.notice}` : "";
+      showStatus(
+        `已生成 ${r.filename}（${kind === "pdf" ? `矢量 PDF · ${r.pages ?? 1} 页${tail}` : `${r.width}×${r.height} px${tail}`}）`,
+        "ok",
+      );
     } catch (e) {
       showStatus("导出失败：" + (e instanceof Error ? e.message : String(e)), "error");
     }
