@@ -439,9 +439,15 @@ export default function VideoDecoder({ name, mime, bytes, url, size }: DecoderFi
       gesture.moved = true;
       clearHoldTimer();
       gesture.mode = kind;
-      // 手势期间收起控制条，沉浸
-      setControlsVisible(false);
-      clearHideTimer();
+      // 手势期间收起控制条，沉浸；**scrub 例外**——按住实时 seek 时进度条必须随动可见
+      //（中央浮层只有 ±Ns 语义，进度条才是位置反馈的真值面）——常显并暂停自动隐藏
+      if (kind === 'seek') {
+        setControlsVisible(true);
+        clearHideTimer(); // scrub 持续期间不排自动隐藏——进度条随动是手势的真值反馈面
+      } else {
+        setControlsVisible(false);
+        clearHideTimer();
+      }
     }
 
     const rect = stageRef.current?.getBoundingClientRect();
