@@ -11,6 +11,7 @@ import { downloadBlob } from "@fde2e-tools/shared/download";
 import { registerWebMCPTools, type WebMCPToolDef } from "@fde2e-tools/shared/webmcp";
 import {
   canaryProbe,
+  disposeActiveUnit,
   getHost,
   injectGhostWorkbook,
   restoreMainWorkbook,
@@ -160,7 +161,7 @@ function buildTools(): WebMCPToolDef[] {
       name: "format_range",
       title: "设置样式",
       description:
-        "对 A1 区间设置样式：bold/italic（布尔）、color（字色 #rrggbb）、bg（底色）、align（left/center/right）、numfmt（数字格式如 $#,##0.00 或 0.0%）。返回实际应用的样式键。",
+        "对 A1 区间设置样式：bold/italic（布尔）、color（字色 #rrggbb）、bg（底色）、align（left/center/right）、numfmt（数字格式如 $#,##0.00 或 0.0%）、border（细边框范围 all/outer/top/bottom/left/right/horizontal/vertical/inside）。返回实际应用的样式键。",
       inputSchema: {
         type: "object",
         properties: {
@@ -176,6 +177,7 @@ function buildTools(): WebMCPToolDef[] {
               bg: { type: "string" },
               align: { type: "string", enum: ["left", "center", "right"] },
               numfmt: { type: "string" },
+              border: { type: "string", enum: ["all", "outer", "top", "bottom", "left", "right", "horizontal", "vertical", "inside"], description: "细边框（THIN）应用范围" },
             },
             additionalProperties: false,
           },
@@ -198,7 +200,7 @@ function buildTools(): WebMCPToolDef[] {
             applied.push("bold");
           }
           if (typeof styles.italic === "boolean") {
-            r.setFontItalic(styles.italic);
+            r.setFontStyle(styles.italic ? "italic" : "normal");
             applied.push("italic");
           }
           if (typeof styles.color === "string") {
@@ -214,8 +216,16 @@ function buildTools(): WebMCPToolDef[] {
             applied.push("align");
           }
           if (typeof styles.numfmt === "string") {
-            r.setNumberPattern(styles.numfmt);
+            r.setNumberFormat(styles.numfmt);
             applied.push("numfmt");
+          }
+          if (typeof styles.border === "string") {
+            const borderType = String(styles.border).toUpperCase();
+            const enumType = h.api.Enum?.BorderType?.[borderType];
+            const enumStyle = h.api.Enum?.BorderStyleTypes?.THIN;
+            if (!enumType || !enumStyle) throw new Error("border 当前内核枚举不可用（Enum.BorderType/BorderStyleTypes 缺失）");
+            r.setBorder(enumType, enumStyle);
+            applied.push("border");
           }
           if (!applied.length) throw new Error("styles 至少需要一项可识别的样式键");
           return { sheet: sheet.getSheetName(), range, applied };
@@ -241,6 +251,7 @@ function buildTools(): WebMCPToolDef[] {
         const res = await withEditorWrite(async (h) => {
           const wb = h.api.getActiveWorkbook();
           if (!wb) throw new Error("当前无活动工作簿");
+          if (name.length > 31) throw new Error(`表名超长（${name.length} 字符，上限 31）——请缩短表名`);
           const finalName = name || `Sheet${wb.getSheets().length + 1}`;
           if (wb.getSheetByName(finalName)) throw new Error(`表名「${finalName}」已存在（表名不得重复）`);
           const created = wb.insertSheet(finalName);
@@ -264,7 +275,7 @@ function buildTools(): WebMCPToolDef[] {
       name: "import_xlsx",
       title: "导入 .xlsx",
       description:
-        "导入 .xlsx 文件（base64 编码）为可编辑工作簿（SheetJS 桥：值/公式/基础样式保留），替换当前工作簿。返回表清单与单元格统计。导入后可继续 set_cells/export_xlsx。",
+        "导入 .xlsx 文件（base64 编码）为可编辑工作簿（SheetJS 桥：值/公式保留；样式与列宽不保留），替换当前工作簿。返回表清单与单元格统计。导入后可继续 set_cells/export_xlsx。",
       inputSchema: {
         type: "object",
         properties: {
@@ -287,6 +298,7 @@ function buildTools(): WebMCPToolDef[] {
         const res = await withEditorWrite(async (h) => {
           const summary = await xlsxBytesToSeed(bytes, typeof input.filename === "string" ? input.filename.replace(/\.xlsx$/i, "") || "导入工作簿" : "导入工作簿");
           assertCompleteSeed(summary.seed); // 幽灵防御：导入路径同样只走完整格式
+          disposeActiveUnit(h.api); // 对齐 loadSampleWorkbook：换簿前关旧 unit，防累积
           h.api.createWorkbook(summary.seed);
           const ready = await h.gate.ensureReady(h.api);
           if (!ready) throw new Error("导入后工作簿未在时限内渲染完成（Rendered）");
@@ -303,7 +315,7 @@ function buildTools(): WebMCPToolDef[] {
       name: "export_xlsx",
       title: "导出 .xlsx",
       description:
-        "导出当前工作簿为真 .xlsx 下载（缺省文件名 xlsx-export.xlsx；值/公式/基础样式/列宽保留）。返回文件名契约与逐表统计。",
+        "导出当前工作簿为真 .xlsx 下载（缺省文件名 xlsx-export.xlsx；值/公式保留，v1 样式与列宽不落导出文件）。返回文件名契约与逐表统计。",
       inputSchema: {
         type: "object",
         properties: {

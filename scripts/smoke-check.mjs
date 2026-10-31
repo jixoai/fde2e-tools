@@ -496,11 +496,28 @@ async function main() {
         const write = await editorCall(page, `async (call) => {
           const r1 = await call("set_cells", { startRow: 8, startCol: 0, values: [["绿门探针", 42.5]] });
           const r2 = await call("set_formula", { range: "B10", formula: "=B9*2" });
+          // format_range 六键断言（对抗审查 B1 追加 2026-10-31）：全部样式键各执行一次验
+          // ok:true——堵「断言面零覆盖」洞（setFontStyle/setNumberFormat/setBorder 经 Enum）
+          const fmt = {};
+          for (const [key, styles] of [
+            ["bold", { bold: true }],
+            ["italic", { italic: true }],
+            ["color", { color: "#1a73e8" }],
+            ["numfmt", { numfmt: "$#,##0.00" }],
+            ["bg", { bg: "#fef7e0" }],
+            ["border", { border: "all" }],
+            ["align", { align: "center" }],
+          ]) {
+            const r = await call("format_range", { range: "A9:D10", styles });
+            fmt[key] = r.ok === true && Array.isArray(r.applied) && r.applied.includes(key);
+          }
           const snap = await call("get_snapshot", {});
           const sheet = snap.sheets.find((s) => s.name === "业绩");
-          return { r1ok: r1.ok, r2ok: r2.ok, r2value: r2.value, a9: sheet.cellData[8]?.[0]?.v, b9: sheet.cellData[8]?.[1]?.v, b10: sheet.cellData[9]?.[1] };
+          return { r1ok: r1.ok, r2ok: r2.ok, r2value: r2.value, fmt, a9: sheet.cellData[8]?.[0]?.v, b9: sheet.cellData[8]?.[1]?.v, b10: sheet.cellData[9]?.[1] };
         }`);
         if (!write.r1ok || !write.r2ok) throw new Error(`写入工具未成功: ${JSON.stringify(write)}`);
+        const fmtMissing = Object.entries(write.fmt ?? {}).filter(([, v]) => v !== true).map(([k]) => k);
+        if (fmtMissing.length) throw new Error(`format_range 六键断言未全过（未命中键: ${fmtMissing.join(",")}）——B1 修复面失守`);
         if (write.a9 !== "绿门探针" || write.b9 !== 42.5) throw new Error(`get_snapshot 核验不符: a9=${write.a9} b9=${write.b9}`);
         if (write.b10?.f !== "=B9*2" || write.b10?.v !== 85) throw new Error(`公式核验不符: ${JSON.stringify(write.b10)}（引擎真算应 85）`);
         const dlPromise = page.waitForEvent("download", { timeout: 30000 });
@@ -516,7 +533,7 @@ async function main() {
         if (ws["B9"]?.v !== 42.5 || ws["B9"]?.t !== "n") throw new Error(`B9 反读不符（应数字 42.5）: ${ws["B9"]?.v}`);
         if (ws["B10"]?.f !== "B9*2") throw new Error(`B10 公式反读不符: ${ws["B10"]?.f}`);
         if (ws["B10"]?.v !== 85) throw new Error(`B10 计算值反读不符（应 85）: ${ws["B10"]?.v}`);
-        console.log(`      反读证据：A9=绿门探针 · B9=42.5(n) · B10 f=${ws["B10"].f} v=${ws["B10"].v}`);
+        console.log(`      反读证据：A9=绿门探针 · B9=42.5(n) · B10 f=${ws["B10"].f} v=${ws["B10"].v} · format_range 七键断言全过（bold/italic/color/numfmt/bg/border/align）`);
       });
     });
 

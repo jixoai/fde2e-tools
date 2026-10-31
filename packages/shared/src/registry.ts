@@ -309,7 +309,7 @@ export const TOOLS: ToolMeta[] = [
     name: "专业表格编辑器",
     tagline: "真表格网格工作区：单元格/公式/多表/导入导出 .xlsx",
     description:
-      "Univer 真表格网格编辑器（多 sheet 页签、公式引擎真算、样式与数字格式）＋SheetJS 双向桥（导入 .xlsx 即编辑、导出真 .xlsx，值/公式/基础样式保留）。AI 经 WebMCP 直接驱动编辑器内核（写入/公式/格式/建表/导入导出/读快照），写入全程生命周期门禁。纯前端零上传。",
+      "Univer 真表格网格编辑器（多 sheet 页签、公式引擎真算、样式与数字格式）＋SheetJS 双向桥（导入 .xlsx 即编辑、导出真 .xlsx，值/公式保留；v1 样式与列宽不落导出文件）。AI 经 WebMCP 直接驱动编辑器内核（写入/公式/格式/建表/导入导出/读快照），写入全程生命周期门禁。纯前端零上传。",
     tags: ["excel", "xlsx", "表格", "编辑器", "公式", "univer"],
     subdomain: "xlsx.tool.fde2e.com",
     aiGuideSummary:
@@ -326,7 +326,7 @@ export const TOOLS: ToolMeta[] = [
       { name: "format_range", description: "对 A1 区间设置样式（bold/italic/color/bg/numfmt/align）" },
       { name: "add_sheet", description: "新增工作表（可带初始 rows 二维数组），返回表名与全簿表清单" },
       { name: "import_xlsx", description: "导入 .xlsx（base64）为可编辑工作簿，返回表清单与单元格统计" },
-      { name: "export_xlsx", description: "导出当前工作簿为真 .xlsx 下载（缺省 xlsx-export.xlsx，值/公式/基础样式保留）" },
+      { name: "export_xlsx", description: "导出当前工作簿为真 .xlsx 下载（缺省 xlsx-export.xlsx；值/公式保留，v1 样式与列宽不落文件）" },
       { name: "get_snapshot", description: "只读：返回全簿快照 JSON（表名/cellData 值与公式），供 AI 读后写" },
     ],
     repoPath: "apps/xlsx",

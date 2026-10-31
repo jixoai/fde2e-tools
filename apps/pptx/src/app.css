@@ -18,12 +18,25 @@
 
 @source "../../../packages/shared/src";
 
-/* PPTist Vue 编辑器岛容器：编辑器需要确定的尺寸边界（内部自身有布局） */
+/*
+ * PPTist Vue 编辑器岛容器（视觉验收修复 2026-10-31）：
+ * - 横向滚动逃生口：岛保桌面布局（min-width 下限），窄视口（移动端）横向滚动
+ *   而非双侧裁剪（PPTist 自带 Mobile 视图仅触屏 UA 生效，headless/窄窗不切换）；
+ * - 岛根强制亮态（PPTist $textColor=#41464b 白底专业亮态）＋color-scheme:light
+ *   ——系统暗色只作用于外框壳，岛内不再继承暗 token 出现白底白字幽灵态；
+ * - overflow:hidden 锁滚动的 body reset 已在 bridge.ts 作用域化剥离，页面滚动
+ *   归 solid-glass 外框。
+ */
 .pptist-island-wrap {
   height: 720px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
-.pptist-island-wrap > * {
+.pptist-island {
   height: 100%;
+  min-width: 1080px;
+  color: #41464b;
+  background: #ffffff;
+  color-scheme: light;
 }

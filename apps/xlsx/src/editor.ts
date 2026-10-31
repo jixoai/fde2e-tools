@@ -23,11 +23,15 @@ export interface FacadeRange {
   setFormula(f: string): unknown;
   getFormula(): string | null;
   setFontWeight(w: "bold" | "normal"): unknown;
-  setFontItalic(b: boolean): unknown;
+  /** 真实 API 名（f-range.d.ts:1057）：setFontStyle("italic"|"normal") */
+  setFontStyle(style: "italic" | "normal"): unknown;
   setBackgroundColor(c: string): unknown;
   setFontColor(c: string): unknown;
   setHorizontalAlignment(a: string): unknown;
-  setNumberPattern(p: string): unknown;
+  /** 真实 API 名（sheets-numfmt f-range.d.ts:37）：setNumberFormat(pattern) */
+  setNumberFormat(pattern: string): unknown;
+  /** 真实 API（f-range.d.ts:744）：setBorder(type, style, color?)；type/style 经 univerAPI.Enum 取值 */
+  setBorder(type: string, style: string, color?: string): unknown;
 }
 
 export interface FacadeSheet {
@@ -53,6 +57,8 @@ export interface FacadeUniver {
   createWorkbook(seed: WorkbookSeed): FacadeWorkbook;
   getActiveWorkbook(): FacadeWorkbook | null;
   getCurrentLifecycleStage(): number;
+  /** 枚举面（Enum.BorderType.ALL / Enum.BorderStyleTypes.THIN 等，setBorder 用） */
+  Enum?: Record<string, Record<string, string>>;
   /** 生命周期常量（Started=0 Ready=1 Rendered=2） */
   LifecycleStage?: Record<string, number>;
   disposeUnit?(unitId: string): boolean;
@@ -231,7 +237,7 @@ export async function injectGhostWorkbook(): Promise<void> {
 }
 
 /** 关闭当前活动 unit（替换工作簿前调用，防 unit 累积；失败不阻塞——多簿并存也可工作） */
-function disposeActiveUnit(api: FacadeUniver): void {
+export function disposeActiveUnit(api: FacadeUniver): void {
   const wb = api.getActiveWorkbook();
   if (!wb) return;
   try {
@@ -300,7 +306,7 @@ function sampleSheets(): Array<{ name: string; rows: unknown[][] }> {
       rows: [
         ["键", "值"],
         ["引擎", "Univer preset-sheets-core（Apache-2.0）"],
-        ["文件桥", "SheetJS 双向桥（值/公式/基础样式/列宽）"],
+        ["文件桥", "SheetJS 双向桥（值/公式保留；样式与列宽 v1 不落文件）"],
         ["写入防御", "Rendered 门禁 + 幽灵工作簿 canary（禁静默失败）"],
       ],
     },

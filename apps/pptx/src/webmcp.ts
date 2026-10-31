@@ -92,9 +92,13 @@ function buildTools(): WebMCPToolDef[] {
           if (!slides.slides.length) {
             slides.setSlides([slide]);
           } else {
-            if (typeof input.index === "number" && input.index >= 0 && input.index < slides.slides.length) {
-              slides.updateSlideIndex(Math.floor(input.index));
+            // index 边界（顺手②）：0~length 有效，index=length＝队尾插入——
+            // addSlide 语义＝插当前页之后，尾插先把当前页切到末页即自然落队尾
+            const idx = typeof input.index === "number" ? Math.floor(input.index) : undefined;
+            if (idx !== undefined && (idx < 0 || idx > slides.slides.length)) {
+              throw new Error(`index 越界（当前共 ${slides.slides.length} 页，有效 0~${slides.slides.length}；index=length 表示队尾插入）`);
             }
+            if (idx !== undefined) slides.updateSlideIndex(Math.min(idx, slides.slides.length - 1));
             slides.addSlide(slide);
           }
           return { index: slides.slideIndex, total: slides.slides.length, slide: slideSummary(slides.slides[slides.slideIndex]) };

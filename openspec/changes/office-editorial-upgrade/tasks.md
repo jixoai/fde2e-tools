@@ -13,12 +13,13 @@
 ## 2. apps/xlsx · Univer 编辑器
 
 - [x] 2.1 脚手架（package.json / vite 5278 / tsconfig / solid-glass 外框）
-- [x] 2.2 编辑器内核：dynamic import preset-sheets-core（独立 chunk 1.70MB
-      gzip）；完整快照格式 seed 单源工厂（snapshot.ts，grep 无旁路）；
+- [x] 2.2 编辑器内核：dynamic import preset-sheets-core（独立 chunk 实测
+      1.61MB gzip）；完整快照格式 seed 单源工厂（snapshot.ts，grep 无旁路）；
       LifecycleGate（Rendered 门禁＋forcePending 测试缝）；canary 写入落盘校验
       ＋健康绑定 workbookId（切簿即重验）
-- [x] 2.3 SheetJS 双向桥：快照 → .xlsx 导出（值/公式回填/列宽）；.xlsx → seed
-      导入；导出文件名契约 xlsx-export.xlsx（safeFilename 单源）
+- [x] 2.3 SheetJS 双向桥：快照 → .xlsx 导出（值/公式回填）；.xlsx → seed
+      导入；导出文件名契约 xlsx-export.xlsx（safeFilename 单源）。**保真边界
+      （对抗审查 B2 改真话 2026-10-31）**：v1 样式与列宽不落导出文件
 - [x] 2.4 WebMCP 七工具：set_cells / set_formula（返回引擎计算值）/ format_range
       / add_sheet / import_xlsx / export_xlsx / get_snapshot（全量过门禁＋健康
       校验，未就绪 ok:false）
@@ -26,6 +27,11 @@
       文案 ＋ ai-guide ＋ ?sample=
 - [x] 2.6（追加）幽灵形态本地矩阵实证：sheet 缺 id/数组形态即拒绝一切写入
       （D-record-noorder/E-order-empty 不中招）——defense 按真实边界落位
+- [x] 2.7（追加）B1 修复：format_range 真实 API 名（setFontStyle/setNumberFormat/
+      setBorder 经 Enum）＋六键绿门断言（bold/italic/color/numfmt/bg/border 各验
+      ok:true，堵断言面零覆盖洞）
+- [ ] v2 遗留：样式/列宽往返映射（快照样式引用↔SheetJS cellStyles/s!
+      cols——列宽社区版可写优先落地；另立评估）
 
 ## 3. apps/docx · TipTap 编辑器
 

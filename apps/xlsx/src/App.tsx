@@ -31,8 +31,8 @@ WebMCP 工具（直接驱动编辑器内核，不经 DOM 输入区；编辑器�
 - set_formula({sheet?, range, formula})：写公式并返回引擎计算值（=SUM(C2:C3)、跨表 Sheet2!A1）。
 - format_range({sheet?, range, styles})：bold/italic/color/bg/align/numfmt。
 - add_sheet({name?, rows?})：建表（重名报错）。
-- import_xlsx({base64[, filename]})：导入 .xlsx（值/公式/基础样式保留）为可编辑工作簿。
-- export_xlsx({filename?})：导出真 .xlsx 下载（缺省 xlsx-export.xlsx）。
+- import_xlsx({base64[, filename]})：导入 .xlsx（值/公式保留；样式与列宽不保留）为可编辑工作簿。
+- export_xlsx({filename?})：导出真 .xlsx 下载（缺省 xlsx-export.xlsx；值/公式保留，样式与列宽 v1 不落文件）。
 - get_snapshot()：只读全簿快照（v 值 + f 公式）——先读后写。
 
 操作提示：
@@ -70,6 +70,7 @@ export default function App() {
           if (!cancelled) showStatus(msg, kind);
         });
         if (!cancelled) setBooted(true);
+          window.scrollTo(0, 0); // boot 完成回首屏（移动端 scroll anchoring 小项）
       } catch (e) {
         if (!cancelled) showStatus("编辑器启动失败：" + (e instanceof Error ? e.message : String(e)), "error");
       }

@@ -1,3 +1,5 @@
+import globalResetCss from "./pptist/assets/styles/global.scss?inline";
+
 /*
  * PPTist Vue 岛桥 —— apps/pptx/src/bridge.ts
  *
@@ -86,6 +88,49 @@ interface PPTistModules {
 let islandPromise: Promise<PPTistModules> | null = null;
 let island: PPTistModules | null = null;
 
+/* ---------- global reset 作用域化注入（视觉验收修复 2026-10-31） ---------- */
+
+/*
+ * 【根因】PPTist global.scss 是 Meyer 式 reset，含 html,body{height:100%;
+ * overflow:hidden;background:#fff;color:$textColor} 等页面级规则。经动态
+ * import 全局注入时为「无层 CSS」，而外框（solid-glass 主题＋TW4 utilities）
+ * 的 utilities 在 @layer 内——同位重叠时无层 reset 必胜：body 变白底/锁滚动、
+ * h1 28px→16px、按钮素块、外框玻璃 chrome 全失（vision FAIL 四症状根源）。
+ *
+ * 【修法】reset 不再全局注入，改为作用域化：
+ * 1. 整条删除 html,body 规则——页面 chrome 归 solid-glass 外框接管；
+ * 2. 其余选择器一律加 `:where(.pptist-island)` 前缀——限定到岛内且零特异性
+ *   （:where 计 0），岛内级联与上游逐字等价、外框零影响；
+ * 3. 裸 body/html 选择器重定向到岛根——继承源切到岛根（岛根由外框 app.css
+ *    固定亮态色板），系统暗色下不再出现白底白字幽灵态。
+ */
+export const PPTIST_ISLAND_CLASS = "pptist-island";
+
+function scopePptistGlobalCss(css: string): string {
+  if (/@(media|keyframes|supports|font-face|import|charset|layer)\b/.test(css)) {
+    // global.scss 当前为纯平面规则；出现嵌套 at-rule 即中止（防错改上游新增）
+    throw new Error("PPTist global.scss 出现未支持的 at-rule，作用域化中止——请人工复核后扩展转换器");
+  }
+  const noBodyRoot = css.replace(/html,\s*body\s*\{[^{}]*\}/, "");
+  return noBodyRoot.replace(/([^{}]+)\{([^{}]*)\}/g, (_m, sel: string, body: string) => {
+    const scoped = sel
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => (s === "body" || s === "html" ? `:where(${PPTIST_ISLAND_CLASS})` : `:where(${PPTIST_ISLAND_CLASS}) ${s}`))
+      .join(",\n");
+    return `${scoped} {${body}}`;
+  });
+}
+
+function injectScopedGlobalCss(): void {
+  if (document.querySelector("style[data-pptist-scoped-global]")) return;
+  const style = document.createElement("style");
+  style.dataset.pptistScopedGlobal = "true";
+  style.textContent = scopePptistGlobalCss(globalResetCss);
+  document.head.appendChild(style);
+}
+
 /**
  * 挂载 PPTist 岛（单例；StrictMode 双跑安全）。boot 配方＝上游 src/main.ts
  * 逐字（除了入口挂载点由 React 外框给定）。
@@ -100,7 +145,7 @@ export function mountPPTist(container: HTMLElement, onStatus: StatusSink): Promi
     await import("prosemirror-view/style/prosemirror.css");
     await import("animate.css");
     await import("./pptist/assets/styles/prosemirror.scss");
-    await import("./pptist/assets/styles/global.scss");
+    injectScopedGlobalCss();
     await import("./pptist/assets/styles/font.scss");
     const directiveMod = await import("./pptist/directive");
     const { default: PPTistApp } = await import("./pptist/App.vue");

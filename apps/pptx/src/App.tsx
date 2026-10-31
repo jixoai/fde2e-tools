@@ -13,7 +13,7 @@ import { AiGuide } from "@fde2e-tools/shared/ai-guide";
 import { scrollStatusIntoView, statusTextClass, type StatusKind } from "@fde2e-tools/shared/status";
 import { Button } from "@fde2e-tools/shared/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@fde2e-tools/shared/ui/card";
-import { getIsland, mountPPTist, type StatusSink } from "./bridge";
+import { getIsland, mountPPTist, PPTIST_ISLAND_CLASS, type StatusSink } from "./bridge";
 import { resolveExportName } from "./export-name";
 import { importFromBytes, loadSampleDeck, registerAppTools } from "./webmcp";
 
@@ -36,7 +36,9 @@ WebMCP 工具（store 驱动；编辑器未就绪时返回 ok:false——请重�
 - 状态行 id=status 实时反馈（成功 ok 色 / 失败 error 色）。
 - URL 参数 ?sample=1（或 sample/示例）：重置为内置示例演示。
 - PPTist 自带的「AI 生成/图片搜索」等云特性依赖其上游服务端（server.pptist.cn），本站纯静态
-  不代理——点击会得到上游错误提示；核心编辑/导入/导出全部离线可用。`;
+  不代理——点击会得到上游错误提示；核心编辑/导入/导出全部离线可用。
+- 本站内嵌 PPTist（AGPL-3.0），源码依 §13 随站点提供：https://github.com/jixoai/fde2e-tools
+  （apps/pptx 目录，含 vendored 副本与许可边界说明）。`;
 
 interface Status {
   msg: string;
@@ -64,7 +66,10 @@ export default function App() {
         await mountPPTist(el, (msg, kind) => {
           if (!cancelled) showStatus(msg, kind);
         });
-        if (!cancelled) setBooted(true);
+        if (!cancelled) {
+          setBooted(true);
+          window.scrollTo(0, 0); // boot 完成回首屏（移动端 scroll anchoring 小项）
+        }
       } catch (e) {
         if (!cancelled) showStatus("编辑器启动失败：" + (e instanceof Error ? e.message : String(e)), "error");
       }
@@ -190,12 +195,15 @@ export default function App() {
           <CardTitle>幻灯画布（PPTist 内核 · 可直接编辑）</CardTitle>
         </CardHeader>
         <CardContent>
-          <div ref={islandRef} className="pptist-island-wrap overflow-hidden rounded-lg border border-input bg-white" />
+          <div className="pptist-island-wrap rounded-lg border border-input">
+            <div id="app" ref={islandRef} className={PPTIST_ISLAND_CLASS} />
+          </div>
         </CardContent>
       </Card>
 
       <footer className="mt-6 text-[13px] text-muted-foreground">
-        专业幻灯编辑器 · 纯静态零后端 · PPTist v2（AGPL-3.0，apps/pptx 目录独立许可）· 大库懒加载独立分包 ·
+        专业幻灯编辑器 · 纯静态零后端 · PPTist v2（AGPL-3.0，apps/pptx 目录独立许可，源码：
+        <a href="https://github.com/jixoai/fde2e-tools" target="_blank" rel="noreferrer" className="underline hover:text-foreground">github.com/jixoai/fde2e-tools</a>）· 大库懒加载独立分包 ·
         轻量快速档 easy-pptx.tool.fde2e.com
       </footer>
     </div>

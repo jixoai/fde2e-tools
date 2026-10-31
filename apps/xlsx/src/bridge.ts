@@ -4,7 +4,9 @@
  * Univer ↔ .xlsx 文件编解码（SheetJS 社区版 0.20.3 CDN tarball，Apache-2.0；
  * npm 0.18.5 带 CVE 禁引入——与 easy-xlsx 同一安装形态）。digest 实调路线：
  * - 导出：wb.save() 快照 → 逐 sheet cellData → SheetJS aoa（值）+ 公式回填
- *   （f 去 = 前缀）→ XLSX.write 产真 .xlsx；值/公式/基础样式/列宽覆盖。
+ *   （f 去 = 前缀）→ XLSX.write 产真 .xlsx。**保真边界（说真话）**：值/公式
+ *   双向保留；v1 样式与列宽**不落导出文件**（快照样式引用与 !cols 均不映射；
+ *   v2 规划往返映射，列宽社区版可写优先——见 openspec change 遗留）。
  * - 导入：XLSX.read → 逐 sheet 构建 cellData（公式补 = 前缀）→ 完整快照格式
  *   seed 工厂建簿（幽灵防御路径不变）。
  * 边界（对外承诺「基础 Office 往返保真」）：合并单元格边框/图片/冻结窗格

@@ -89,6 +89,7 @@ export default function App() {
           if (!cancelled) showStatus(msg, kind);
         });
         if (!cancelled) setBooted(true);
+          window.scrollTo(0, 0); // boot 完成回首屏（移动端 scroll anchoring 小项）
       } catch (e) {
         if (!cancelled) showStatus("编辑器启动失败：" + (e instanceof Error ? e.message : String(e)), "error");
       }

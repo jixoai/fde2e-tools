@@ -10,8 +10,9 @@
 - `xlsx` 站 = Univer preset-sheets-core（Apache-2.0）真表格网格：多 sheet 页签、
   单元格编辑、公式引擎（`set_formula` 后引擎真算）、基础样式与数字格式。
   xlsx 文件编解码＝SheetJS 双向桥（导入 .xlsx → Univer 快照；导出快照 → 真
-  .xlsx，值/公式/基础样式/列宽保留；复杂样式合并边框/图片/冻结窗格为渐进
-  覆盖边界）。编辑真相源＝Univer snapshot（`wb.save()`）。
+  .xlsx）。**保真边界（真话）**：值/公式双向保留；v1 样式与列宽**不落导出
+  文件**（快照样式引用与列宽均不映射——v2 规划往返映射，列宽 SheetJS 社区
+  版可写、优先落地）。编辑真相源＝Univer snapshot（`wb.save()`）。
 - `docx` 站 = TipTap v3（MIT）真文档编辑器：标题/段落/有序无序列表/表格/
   粗斜体 WYSIWYG。docx 文件编解码＝自建桥（TipTap JSON → docx@9 导出真
   .docx；mammoth 导入 .docx → HTML → setContent）。真相源＝TipTap JSON。

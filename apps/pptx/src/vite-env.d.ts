@@ -9,6 +9,12 @@ declare module '*.vue' {
   export default component;
 }
 
+/* scss 以字符串形态 ?inline 导入（global reset 作用域化注入用） */
+declare module '*.scss?inline' {
+  const css: string;
+  export default css;
+}
+
 /* vendored 树内的 .vue 通用 shim（含 ?query 形态） */
 declare module '*.vue?inline' {
   const component: DefineComponent<Record<string, never>, Record<string, never>, unknown>;
