@@ -1,9 +1,13 @@
 /*
  * 参数契约冒烟 —— scripts/smoke-check.mjs
  *
- * 验收（openspec change project-bootstrap / legacy-tools-parity 能力）：
- * 对三工具与黄页抽测存量 URL 参数契约——状态行文案逐字符断言、渲染产物
+ * 验收（openspec change project-bootstrap / legacy-tools-parity +
+ * office-suite / real-file-assertion 能力）：
+ * 对工具与黄页抽测 URL 参数契约——状态行文案逐字符断言、渲染产物
  * （画布尺寸/结果 URL/解码表）逐值断言。视觉允许升级，行为不允许漂移。
+ * 办公三站（xlsx/docx/pptx）加**真文件反读断言**（硬要求）：headless 里真实
+ * 生成文件后——xlsx 用 SheetJS（Node 侧，非页面内）反读核对单元格；
+ * docx/pptx 解 zip 核对 document.xml / slide1.xml / notesSlide 关键内容。
  *
  * 用法：pnpm -r build 后 node scripts/smoke-check.mjs
  */
@@ -13,6 +17,11 @@ import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
+// 真文件反读：xlsx 用 SheetJS 社区版（根 devDeps，与页面同库但走 Node 侧独立
+// 路径反读）；docx/pptx 用 adm-zip 解 zip（MIT）核对 OOXML 关键内容
+const XLSXMOD = await import("xlsx");
+const XLSX = XLSXMOD.default ?? XLSXMOD;
+const AdmZip = (await import("adm-zip")).default;
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const MIME = {
@@ -74,6 +83,7 @@ async function main() {
 
   const servers = {};
   for (const app of ["pdf-tool", "img-tool", "url-tool", "directory", "file-viewer"]) {
+  for (const app of ["pdf-tool", "img-tool", "url-tool", "directory", "xlsx", "docx", "pptx"]) {
     servers[app] = { server: await serveDir(join(ROOT, "apps", app, "dist")), get port() { return servers[app].server.address().port; } };
   }
   const base = (app) => `http://127.0.0.1:${servers[app].server.address().port}`;
@@ -89,6 +99,17 @@ async function main() {
   }
 
   const statusText = (page) => page.textContent("#status");
+
+  /** 真文件生成助手（真文件断言共用）：点生成按钮 → 捕获下载 → 返回字节 */
+  async function generateAndCapture(page, buttonId, timeoutMs = 30000) {
+    const dlPromise = page.waitForEvent("download", { timeout: timeoutMs });
+    await page.click(`#${buttonId}`);
+    const download = await dlPromise;
+    const suggested = download.suggestedFilename();
+    const dlPath = await download.path();
+    if (!dlPath) throw new Error("下载产物不可读");
+    return { suggested, bytes: readFileSync(dlPath) };
+  }
 
   try {
     // ---------- pdf-tool ----------
@@ -155,6 +176,169 @@ async function main() {
           () => (document.getElementById("status")?.textContent ?? "").includes("导出成功"),
           { timeout: 90000 },
         );
+      });
+    });
+
+    // ---------- xlsx（真文件反读断言） ----------
+    await check("xlsx ?sample=1：示例工作簿载入 + 预览刷新", async () => {
+      await withPage("xlsx", "?sample=1", async (page) => {
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例工作簿已载入"), { timeout: 10000 });
+        const v = await page.inputValue("#input-json");
+        if (!v.includes("报销明细")) throw new Error("示例工作簿未载入");
+        const s = await statusText(page);
+        const want = "示例工作簿已载入并刷新预览，点「生成 .xlsx 下载」即可。";
+        if (s !== want) throw new Error(`状态行不符:\n  got:  ${s}\n  want: ${want}`);
+        const previewText = await page.textContent("#preview");
+        if (!previewText.includes("餐补")) throw new Error("预览未渲染工作表结构");
+      });
+    });
+
+    await check("xlsx 空输入点生成：错误文案保真", async () => {
+      await withPage("xlsx", "", async (page) => {
+        await page.click("#generate-xlsx-btn");
+        const s = await statusText(page);
+        const want = "输入为空：请先粘贴 JSON、粘贴表格，或点「载入示例」。";
+        if (s !== want) throw new Error(`状态行不符: got ${s}`);
+      });
+    });
+
+    await check("xlsx JSON 生成真文件：SheetJS 反读核对单元格（含负数/小数/布尔/多表）", async () => {
+      await withPage("xlsx", "?sample=1", async (page) => {
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例工作簿已载入"), { timeout: 10000 });
+        const { suggested, bytes } = await generateAndCapture(page, "generate-xlsx-btn");
+        if (suggested !== "xlsx-export.xlsx") throw new Error(`下载文件名不符: ${suggested}`);
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("已生成 xlsx-export.xlsx"), { timeout: 15000 });
+        const wb = XLSX.read(bytes, { type: "buffer" });
+        const wantSheets = JSON.stringify(["报销明细", "汇总"]);
+        if (JSON.stringify(wb.SheetNames) !== wantSheets) {
+          throw new Error(`工作表名不符: ${wb.SheetNames.join(",")}`);
+        }
+        const ws1 = wb.Sheets["报销明细"];
+        const cell = (ref) => {
+          const c = ws1[ref];
+          if (!c) throw new Error(`报销明细!${ref} 缺失`);
+          return c;
+        };
+        if (cell("A1").v !== "项目" || cell("B1").v !== "金额" || cell("C1").v !== "备注") {
+          throw new Error("表头行不符");
+        }
+        if (cell("A2").v !== "差旅" || cell("B2").v !== 1280.5 || cell("B2").t !== "n") {
+          throw new Error("小数单元格反读不符（B2 应为数字 1280.5）");
+        }
+        if (cell("B4").v !== -80 || cell("B4").t !== "n") {
+          throw new Error("负数单元格反读不符（B4 应为 -80）");
+        }
+        if (cell("A5").v !== "是否通过" || cell("B5").t !== "b" || cell("B5").v !== true) {
+          throw new Error("布尔单元格反读不符（B5 应为布尔 true）");
+        }
+        const ws2 = wb.Sheets["汇总"];
+        if (ws2["B2"].v !== "张三" || ws2["A2"].v !== "报销人") {
+          throw new Error("汇总表单元格反读不符");
+        }
+        console.log(`      反读证据：2 表 · 报销明细 B2=${cell("B2").v}(n) B4=${cell("B4").v}(n) B5=${cell("B5").v}(b) · 汇总 B2=${ws2["B2"].v}`);
+      });
+    });
+
+    await check("xlsx TSV 粘贴表格路径：## 分表 + 数字转换 + 真文件反读", async () => {
+      await withPage("xlsx", "", async (page) => {
+        await page.fill("#input-tsv", "## 表A\n名字\t数值\n甲\t3.5\n## 表B\n乙\t-2");
+        const { suggested, bytes } = await generateAndCapture(page, "generate-xlsx-btn");
+        if (suggested !== "xlsx-export.xlsx") throw new Error(`下载文件名不符: ${suggested}`);
+        const wb = XLSX.read(bytes, { type: "buffer" });
+        if (JSON.stringify(wb.SheetNames) !== JSON.stringify(["表A", "表B"])) {
+          throw new Error(`TSV 分表不符: ${wb.SheetNames.join(",")}`);
+        }
+        if (wb.Sheets["表A"]["B2"].v !== 3.5 || wb.Sheets["表A"]["B2"].t !== "n") {
+          throw new Error("TSV 数字转换反读不符（表A!B2 应为 3.5）");
+        }
+        if (wb.Sheets["表B"]["B1"].v !== -2) {
+          throw new Error("TSV 负数反读不符（表B!B1 应为 -2）");
+        }
+        console.log(`      反读证据：TSV 2 表 · 表A!B2=${wb.Sheets["表A"]["B2"].v}(n) · 表B!B1=${wb.Sheets["表B"]["B1"].v}(n)`);
+      });
+    });
+
+    // ---------- docx（真文件反读断言） ----------
+    await check("docx ?sample=1：示例文档载入 + 预览刷新", async () => {
+      await withPage("docx", "?sample=1", async (page) => {
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例文档已载入"), { timeout: 10000 });
+        const v = await page.inputValue("#input-md");
+        if (!v.includes("FDE2E 季度运营报告")) throw new Error("示例文档未载入");
+        const previewText = await page.textContent("#preview");
+        if (!previewText.includes("续约率")) throw new Error("预览未渲染文档结构");
+      });
+    });
+
+    await check("docx 空输入点生成：错误文案保真", async () => {
+      await withPage("docx", "", async (page) => {
+        await page.click("#generate-docx-btn");
+        const s = await statusText(page);
+        const want = "输入为空：请先输入 Markdown、或点「载入示例」。";
+        if (s !== want) throw new Error(`状态行不符: got ${s}`);
+      });
+    });
+
+    await check("docx 生成真文件：解 zip 核对 document.xml（标题/粗斜标记/表格/命名空间）", async () => {
+      await withPage("docx", "?sample=1", async (page) => {
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例文档已载入"), { timeout: 10000 });
+        const { suggested, bytes } = await generateAndCapture(page, "generate-docx-btn");
+        if (suggested !== "docx-export.docx") throw new Error(`下载文件名不符: ${suggested}`);
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("已生成 docx-export.docx"), { timeout: 15000 });
+        const zip = new AdmZip(bytes);
+        const names = zip.getEntries().map((e) => e.entryName);
+        for (const must of ["[Content_Types].xml", "word/document.xml"]) {
+          if (!names.includes(must)) throw new Error(`OOXML 结构缺 ${must}（实际 ${names.length} 项）`);
+        }
+        const doc = zip.readAsText("word/document.xml");
+        if (!doc.includes('xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/')) {
+          throw new Error("wordprocessingml 命名空间缺失");
+        }
+        const probes = ["FDE2E 季度运营报告", "客户续约率提升至", "完成法务合规评审", "续约率", "<w:b/>", "<w:i/>"];
+        const missing = probes.filter((p) => !doc.includes(p));
+        if (missing.length) throw new Error(`document.xml 缺关键内容: ${missing.join(", ")}`);
+        console.log(`      反读证据：zip ${names.length} 项 · document.xml 含标题/列表/表格文本 + <w:b/>/<w:i/> 标记`);
+      });
+    });
+
+    // ---------- pptx（真文件反读断言） ----------
+    await check("pptx ?sample=1：示例幻灯载入 + 预览刷新", async () => {
+      await withPage("pptx", "?sample=1", async (page) => {
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例幻灯已载入"), { timeout: 10000 });
+        const v = await page.inputValue("#input-json");
+        if (!v.includes("FDE2E 办公三件套")) throw new Error("示例幻灯未载入");
+        const previewText = await page.textContent("#preview");
+        if (!previewText.includes("开场页")) throw new Error("预览未渲染页面大纲");
+      });
+    });
+
+    await check("pptx 空输入点生成：错误文案保真", async () => {
+      await withPage("pptx", "", async (page) => {
+        await page.click("#generate-pptx-btn");
+        const s = await statusText(page);
+        const want = "输入为空：请先粘贴 slides JSON、或点「载入示例」。";
+        if (s !== want) throw new Error(`状态行不符: got ${s}`);
+      });
+    });
+
+    await check("pptx 生成真文件：解 zip 核对 slide1.xml/notesSlide（标题/bullets/备注）", async () => {
+      await withPage("pptx", "?sample=1", async (page) => {
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例幻灯已载入"), { timeout: 10000 });
+        const { suggested, bytes } = await generateAndCapture(page, "generate-pptx-btn");
+        if (suggested !== "pptx-export.pptx") throw new Error(`下载文件名不符: ${suggested}`);
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("已生成 pptx-export.pptx"), { timeout: 15000 });
+        const zip = new AdmZip(bytes);
+        const names = zip.getEntries().map((e) => e.entryName);
+        for (const must of ["ppt/presentation.xml", "ppt/slides/slide1.xml", "ppt/slides/slide3.xml", "ppt/notesSlides/notesSlide1.xml"]) {
+          if (!names.includes(must)) throw new Error(`OOXML 结构缺 ${must}（实际 ${names.length} 项）`);
+        }
+        const slide1 = zip.readAsText("ppt/slides/slide1.xml");
+        if (!slide1.includes("FDE2E 办公三件套")) throw new Error("slide1.xml 缺首页标题");
+        if (!slide1.includes("表格生成 · xlsx 站")) throw new Error("slide1.xml 缺 bullet 文本");
+        const notes1 = zip.readAsText("ppt/notesSlides/notesSlide1.xml");
+        if (!notes1.includes("开场页")) throw new Error("notesSlide1.xml 缺备注文本");
+        const slide3 = zip.readAsText("ppt/slides/slide3.xml");
+        if (!slide3.includes("谢谢观看")) throw new Error("slide3.xml 缺第三页标题");
+        console.log(`      反读证据：zip ${names.length} 项 · slide1 标题+bullet · notesSlide1 备注 · slide3 标题`);
       });
     });
 
@@ -327,15 +511,17 @@ async function main() {
     });
 
     // ---------- directory ----------
-    await check("directory：registry 渲染 + 纯前端搜索", async () => {
+    await check("directory：registry 渲染 + 纯前端搜索（含办公三站共 6 卡）", async () => {
       await withPage("directory", "", async (page) => {
-        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length >= 4, { timeout: 10000 });
+        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length >= 6, { timeout: 10000 });
         const total = await page.evaluate(() => document.querySelectorAll('[data-slot="card"]').length);
-        if (total !== 4) throw new Error(`卡片数不符: ${total}（期望 4）`);
+        if (total !== 6) throw new Error(`卡片数不符: ${total}（期望 6）`);
         await page.fill('input[aria-label="搜索工具"]', "图片");
         await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 5000 });
         const count = await page.textContent("main, body");
-        if (!count.includes("1 / 4")) throw new Error("搜索计数未显示 1 / 4");
+        if (!count.includes("1 / 6")) throw new Error("搜索计数未显示 1 / 6");
+        await page.fill('input[aria-label="搜索工具"]', "xlsx");
+        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 5000 });
       });
     });
 

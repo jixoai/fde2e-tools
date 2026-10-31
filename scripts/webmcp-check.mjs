@@ -1,11 +1,13 @@
 /*
  * WebMCP 绿门断言 —— scripts/webmcp-check.mjs
  *
- * 验收（openspec change project-bootstrap / webmcp-tools 能力）：
+ * 验收（openspec change project-bootstrap / webmcp-tools + office-suite /
+ * real-file-assertion 能力）：
  * 1. **原生路径**（headless Chromium + `--enable-blink-features=WebMCP`，
- *    Chrome 156 实测有原生 API）：黄页与三个工具页 `getTools()` 能枚举到全部
- *    注册工具；executeTool 返回 DOMString（spec 形态）；export_pdf 走到
- *    「导出成功」终态（B3 断言面）。
+ *    Chrome 156 实测有原生 API）：黄页、三存量工具与办公三站 `getTools()` 能
+ *    枚举到全部注册工具；executeTool 返回 DOMString（spec 形态）；export_pdf
+ *    走到「导出成功」终态（B3 断言面）；三构建站 create_* 走 executeTool
+ *    全链——真下载捕获 + 文件名契约 + ok 终态（真文件断言 ①）。
  * 2. **polyfill 路径**（同浏览器、无 flag）：官方 polyfill 自动兜底，同形
  *    getTools/executeTool 可枚举可调用；**偏差实证**——polyfill 的 executeTool
  *    裸返回对象（不 JSON.stringify，vendor 不能改），消费侧必须过
@@ -30,7 +32,35 @@ const EXPECT = {
   "img-tool": { tools: ["overlay_text", "export_png"] },
   "url-tool": { tools: ["pack_url", "decode_url"] },
   "file-viewer": { tools: ["preview_file"] },
+  xlsx: { tools: ["create_xlsx", "add_sheet_sample"] },
+  docx: { tools: ["create_docx", "append_docx_markdown"] },
+  pptx: { tools: ["create_pptx", "add_slide"] },
 };
+
+/**
+ * 三构建站 executeTool 全链断言面（原生路径）：executeTool 必须触发真实下载
+ * （捕获 download 事件）且返回 ok=true + 文件名契约。
+ */
+const FULL_CHAIN = [
+  {
+    app: "xlsx",
+    tool: "create_xlsx",
+    input: { sheets: [{ name: "Gates", rows: [["K", "V"], ["engine", "SheetJS"], [42, 1.5]] }] },
+    filename: "xlsx-export.xlsx",
+  },
+  {
+    app: "docx",
+    tool: "create_docx",
+    input: { markdown: "# Gate\n\n**bold** and *italic* probe" },
+    filename: "docx-export.docx",
+  },
+  {
+    app: "pptx",
+    tool: "create_pptx",
+    input: { slides: [{ title: "Gate", bullets: ["a", "b"] }] },
+    filename: "pptx-export.pptx",
+  },
+];
 
 /** 与 @fde2e-tools/shared/webmcp 的 normalizeExecuteResult 同义（脚本侧独立实现） */
 const normalizeExecuteResult = (r) => (typeof r === "string" ? r : JSON.stringify(r));
@@ -117,7 +147,7 @@ async function assertToolsEnumerated(browser, app, expect) {
 }
 
 async function assertNativePath(browser) {
-  // 四页面枚举（原生）
+  // 全部页面枚举（原生：黄页+三存量工具+办公三站）
   for (const [app, expect] of Object.entries(EXPECT)) {
     try {
       const names = await assertToolsEnumerated(browser, app, expect);
@@ -200,10 +230,50 @@ async function assertNativePath(browser) {
   } catch (e) {
     record("[原生] pdf-tool executeTool(export_pdf) 终态", false, e.message);
   }
+
+  // 三构建站 executeTool 全链（真文件断言 ①）：executeTool 必须触发真实下载
+  // （捕获 download 事件 + 文件名契约），返回 ok=true —— 不是只看状态行
+  for (const chain of FULL_CHAIN) {
+    try {
+      const server = await serveDir(join(ROOT, "apps", chain.app, "dist"));
+      const page = await browser.newPage();
+      await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: "load" });
+      const dlPromise = page.waitForEvent("download", { timeout: 30000 });
+      const out = await page
+        .waitForFunction(
+          ([toolName, input]) =>
+            document.modelContext
+              ? document.modelContext.getTools().then(async (ts) => {
+                  const tool = ts.find((t) => t.name === toolName);
+                  if (!tool) return null;
+                  const raw = await document.modelContext.executeTool(tool, input);
+                  return JSON.parse(raw);
+                })
+              : null,
+          [chain.tool, chain.input],
+          { timeout: 60000, polling: 500 },
+        )
+        .then((h) => h.jsonValue());
+      const download = await dlPromise;
+      const suggested = download.suggestedFilename();
+      await page.close();
+      server.close();
+      if (!out.ok) throw new Error(`executeTool 未成功: ${JSON.stringify(out)}`);
+      if (suggested !== chain.filename) {
+        throw new Error(`下载文件名契约不符: got ${suggested}, want ${chain.filename}`);
+      }
+      record(
+        `[原生] ${chain.app} executeTool(${chain.tool}) 全链：真下载 ${suggested} + ok 终态`,
+        true,
+      );
+    } catch (e) {
+      record(`[原生] ${chain.app} executeTool(${chain.tool}) 全链`, false, e.message);
+    }
+  }
 }
 
 async function assertPolyfillPath(browser) {
-  // 四页面枚举（polyfill 兜底，无 flag）
+  // 全部页面枚举（polyfill 兜底，无 flag）
   for (const [app, expect] of Object.entries(EXPECT)) {
     try {
       const names = await assertToolsEnumerated(browser, app, expect);
@@ -292,7 +362,7 @@ async function main() {
     console.log(`${r.ok ? "✓" : "✗"} ${r.name}${r.ok ? "" : " → " + r.extra}`);
   }
   if (failed) process.exit(1);
-  console.log("全绿：原生/ polyfill 双路径枚举齐 + 契约往返 + export_pdf 终态");
+  console.log("全绿：原生/polyfill 双路径枚举齐 + 契约往返 + export_pdf 终态 + 三站 executeTool 真下载全链");
 }
 
 main();
