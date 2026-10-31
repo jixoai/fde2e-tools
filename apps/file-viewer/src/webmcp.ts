@@ -76,7 +76,7 @@ function buildTools(): WebMCPToolDef[] {
       annotations: { untrustedContentHint: true },
       async execute(input) {
         const rawUrl = String(input.url ?? "").trim();
-        if (!rawUrl) throw new Error("url 参数必填：文件的绝对 URL（http/https）");
+        if (!rawUrl) return { ok: false, error: "url 参数必填：文件的绝对 URL（http/https）——契约 /?url=<encodeURIComponent(绝对URL)>" };
         // 契约链接拼装与页面 parseViewerSearch 同语义（url/name/decoder 三参）
         const qs = new URLSearchParams();
         qs.set("url", rawUrl);
@@ -93,9 +93,11 @@ function buildTools(): WebMCPToolDef[] {
         const s = await waitForRenderSettle();
         const link = window.location.href;
         if (!s.ready) {
+          const msg = s.errorText || "预览未在时限内落定（文件可能过大或网络缓慢），可稍后重试。";
           return {
             ok: false,
-            message: s.errorText || "预览未在时限内落定（文件可能过大或网络缓慢），可稍后重试。",
+            error: msg,
+            message: msg,
             url: link,
           };
         }

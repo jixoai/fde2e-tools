@@ -1,5 +1,5 @@
 /*
- * xlsx WebMCP 注册 —— apps/xlsx/src/webmcp.ts
+ * easy-xlsx WebMCP 注册 —— apps/easy-xlsx/src/webmcp.ts
  *
  * 把「数据 → .xlsx」能力注册为 document.modelContext 工具（原生/polyfill 同形）：
  * - create_xlsx：sheets[, filename] → 复用页面输入区 + 生成按钮全链路（状态行
@@ -121,13 +121,9 @@ function buildTools(): WebMCPToolDef[] {
         if (!clickById("generate-xlsx-btn")) throw new Error("页面未就绪（generate-xlsx-btn 缺失）");
         const snapshot = await waitForStatusChange(20000);
         const st = workbookStats(spec);
-        return {
-          ok: snapshot.ok,
-          message: snapshot.message,
-          filename: snapshot.ok ? filename : null,
-          sheetCount: st.sheetCount,
-          rowCount: st.rowCount,
-        };
+        const base = { message: snapshot.message, sheetCount: st.sheetCount, rowCount: st.rowCount };
+        if (!snapshot.ok) return { ok: false, error: snapshot.message, ...base, filename: null };
+        return { ok: true, ...base, filename };
       },
     },
     {
@@ -161,13 +157,13 @@ function buildTools(): WebMCPToolDef[] {
         setInputValue("input-tsv", "");
         if (!clickById("preview-btn")) throw new Error("页面未就绪（preview-btn 缺失）");
         const snapshot = await waitForStatusChange();
-        return {
-          ok: snapshot.ok,
+        const base = {
           message: snapshot.message,
           sheetCount: spec.sheets.length,
           sheets: spec.sheets.map((s) => s.name),
           workbookJson: JSON.stringify(spec, null, 2),
         };
+        return snapshot.ok ? { ok: true, ...base } : { ok: false, error: snapshot.message, ...base };
       },
     },
   ];

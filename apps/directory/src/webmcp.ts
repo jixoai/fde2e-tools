@@ -35,7 +35,7 @@ function buildTools(): WebMCPToolDef[] {
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       async execute() {
-        return { count: TOOLS.length, tools: TOOLS.map(project) };
+        return { ok: true, count: TOOLS.length, tools: TOOLS.map(project) };
       },
     },
     {
@@ -55,7 +55,7 @@ function buildTools(): WebMCPToolDef[] {
       async execute(input) {
         const query = String(input.query ?? "");
         const tools = searchTools(query);
-        return { query, count: tools.length, tools: tools.map(project) };
+        return { ok: true, query, count: tools.length, tools: tools.map(project) };
       },
     },
   ];

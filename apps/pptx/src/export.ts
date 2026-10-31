@@ -21,7 +21,7 @@
  * AGPL 纪律：apps/pptx/src/pptist 源码零改动（仅胶水层调用其渲染内核）。
  */
 import { canvasToBlob, stackSlidesWithFrames } from "@fde2e-tools/shared/export-kit";
-import { downloadBlob, safeFilename, withSelectionTag } from "@fde2e-tools/shared/download";
+import { downloadBlob, resolveDownloadName, safeFilename } from "@fde2e-tools/shared/download";
 import { VectorPdf, wrapByMeasure, CJK_FONT_URLS } from "@fde2e-tools/shared/pdf-vector";
 import { getIsland, type PPTSlide, type PPTTextElement } from "./bridge";
 
@@ -210,6 +210,47 @@ function isPagesExplicit(pages: unknown): boolean {
   return pages !== undefined && pages !== null && pages !== "";
 }
 
+/**
+ * 页选择解析（F4 items 统一选择器）：items 主形态＝每项 {page: 页码（1-based）}；
+ * pages（数组/区间/单数）为 v1 兼容别名。两者同传＝冲突显式报错（禁静默取舍）。
+ * selected 两种形态统一为页码数组（与 v1 契约一致）。
+ */
+export function resolvePageUnits(
+  items: unknown,
+  pages: unknown,
+  total: number,
+): PageSelection & { pagesExplicit: boolean } {
+  const err = (error: string): PageSelection & { pagesExplicit: boolean } => ({ indices: [], selected: [], error, pagesExplicit: false });
+  const itemsGiven = items !== undefined && items !== null;
+  const pagesGiven = isPagesExplicit(pages);
+  if (itemsGiven && pagesGiven) {
+    return err('items 与 pages 只能用一个——items 单元形态如 [{page:2},{page:3}]，pages 形态如 [2,3] 或 "2-3"');
+  }
+  if (itemsGiven) {
+    const all = Array.from({ length: total }, (_, i) => i);
+    if (!Array.isArray(items)) {
+      return err('items 须为数组（每项 {page: 页码}，如 [{page:2}]）');
+    }
+    if (items.length === 0) return { indices: all, selected: all.map((i) => i + 1), pagesExplicit: false };
+    const nums: number[] = [];
+    for (const raw of items) {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+        return err(`items 单元须为对象 {page: 页码（1-based）}——收到 ${JSON.stringify(raw)}`);
+      }
+      const unit = raw as { page?: unknown };
+      if (typeof unit.page !== "number" || !Number.isInteger(unit.page)) {
+        return err('items 单元缺 page 或非整数页码（1-based），如 {page:2}');
+      }
+      nums.push(unit.page);
+    }
+    const oob = nums.filter((n) => n < 1 || n > total);
+    if (oob.length) return err(`页码越界：${oob.join("、")}——当前演示共 ${total} 页（1-${total}）`);
+    const indices = nums.map((n) => n - 1);
+    return { indices, selected: indices.map((i) => i + 1), pagesExplicit: true };
+  }
+  return { ...resolvePageSelection(pages, total), pagesExplicit: pagesGiven };
+}
+
 interface SlideLayout {
   /** 页眉带文本（deck 名，40 字截断） */
   mastheadText: string;
@@ -352,20 +393,20 @@ async function renderSlidesPdf(
   return { blob: pdf.toBlob(), pages: pdf.pages, width: pdf.widthMm, height: pdf.heightMm, missing: pdf.missingChars };
 }
 
-/** export_pdf：每页幻灯一页 16:9 矢量 PDF（可选 pages 选择页码） */
-export async function exportSlidesPdf(filename?: string, pages?: unknown): Promise<ExportResult> {
+/** export_pdf：每页幻灯一页 16:9 矢量 PDF（items 页单元 / pages 兼容别名选择页码） */
+export async function exportSlidesPdf(filename?: string, pages?: unknown, items?: unknown): Promise<ExportResult> {
   try {
     const m = getIsland();
     if (!m) return { ok: false, error: "幻灯编辑器尚未就绪（内核加载中），请稍后重试" };
     const slides = m.slides.slides;
     if (!slides.length) return { ok: false, error: "当前演示为空（无页可导出）——请先建页或导入 .pptx" };
-    const sel = resolvePageSelection(pages, slides.length);
+    const sel = resolvePageUnits(items, pages, slides.length);
     if (sel.error) return { ok: false, error: sel.error };
     const deckTitle = m.slides.title || slides.map(slideTextOf).find((s) => s.title)?.title || "演示文稿";
     const out = await renderSlidesPdf(sel.indices.map((i) => slides[i]), deckTitle);
-    const tag = selectionTag(sel, isPagesExplicit(pages));
-    const name = resolvePdfName(filename);
-    const finalName = tag ? safeFilename(withSelectionTag(resolvePdfName(undefined), tag), DEFAULT_PDF_NAME, ".pdf") : name;
+    const tag = selectionTag(sel, sel.pagesExplicit);
+    // 文件名优先级（F8 契约）：自定义 filename 为主、选择 tag 追加其上
+    const finalName = resolveDownloadName({ defaultName: DEFAULT_PDF_NAME, filename, tag, ext: ".pdf" });
     downloadBlob(out.blob, finalName);
     return {
       ok: true,
@@ -608,25 +649,35 @@ function toError(e: unknown): { ok: false; error: string } {
   return { ok: false, error: e instanceof Error && e.message ? e.message : String(e) };
 }
 
-/** pageName(i)：pptx-page-01.png 起两位序号（文件名契约） */
-export function pageName(index: number): string {
-  return `${PAGE_NAME_BASE}-${String(index + 1).padStart(2, "0")}.png`;
+/** pageName(i, base?)：<base>-01.png 起两位序号（文件名契约＝原 deck 页码） */
+export function pageName(index: number, base: string = PAGE_NAME_BASE): string {
+  return `${base}-${String(index + 1).padStart(2, "0")}.png`;
 }
 
-/** export_png：逐页位图多文件下载（模板渲染与 PDF 同版式；可选 pages，文件名用原 deck 页码） */
-export async function exportSlidesPng(pages?: unknown): Promise<ExportResult> {
+/**
+ * export_png：逐页位图**多文件**下载（每页一个 PNG；模板渲染与 PDF 同版式）。
+ * filename 为 prefix 语义（F5①/F1）：传 foo 产出 foo-01.png/foo-02.png
+ * （缺省 pptx-page-NN.png 不变——向后兼容）；文件序号＝原 deck 页码。
+ */
+export async function exportSlidesPng(filename?: string, pages?: unknown, items?: unknown): Promise<ExportResult> {
   try {
     const m = getIsland();
     if (!m) throw new Error("幻灯编辑器尚未就绪（内核加载中），请稍后重试");
     const slides = m.slides.slides;
     if (!slides.length) throw new Error("当前演示为空（无页可导出）——请先建页或导入 .pptx");
-    const sel = resolvePageSelection(pages, slides.length);
+    const sel = resolvePageUnits(items, pages, slides.length);
     if (sel.error) return { ok: false, error: sel.error };
+    // prefix 语义：剥掉调用方可能误带的图片扩展名后作文件名基座
+    const base = safeFilename(
+      filename?.trim().replace(/\.(png|jpe?g|webp|gif)$/i, "") || undefined,
+      PAGE_NAME_BASE,
+      "",
+    );
     const cap = await captureBitmaps();
     try {
       const files: string[] = [];
       for (let k = 0; k < sel.indices.length; k++) {
-        const name = pageName(sel.indices[k]); // 文件名契约＝原 deck 页码
+        const name = pageName(sel.indices[k], base); // 文件名契约＝原 deck 页码
         downloadBlob(cap.blobs[sel.indices[k]], name);
         files.push(name);
         // 间隔触发：防浏览器「多文件下载」拦截吞掉后续文件
@@ -641,22 +692,22 @@ export async function exportSlidesPng(pages?: unknown): Promise<ExportResult> {
   }
 }
 
-/** export_long_png：全部幻灯纵向拼一张长图（卡框＋间隔带＋页码标注；可选 pages） */
-export async function exportSlidesLongPng(filename?: string, pages?: unknown): Promise<ExportResult> {
+/** export_long_png：全部幻灯纵向拼一张长图（卡框＋间隔带＋页码标注；items/pages 选页） */
+export async function exportSlidesLongPng(filename?: string, pages?: unknown, items?: unknown): Promise<ExportResult> {
   try {
     const m = getIsland();
     if (!m) throw new Error("幻灯编辑器尚未就绪（内核加载中），请稍后重试");
     const slides = m.slides.slides;
     if (!slides.length) throw new Error("当前演示为空（无页可导出）——请先建页或导入 .pptx");
-    const sel = resolvePageSelection(pages, slides.length);
+    const sel = resolvePageUnits(items, pages, slides.length);
     if (sel.error) return { ok: false, error: sel.error };
     const cap = await captureBitmaps();
     try {
       const picked = sel.indices.map((i) => cap.blobs[i]);
       const stack = await stackSlidesWithFrames(picked); // 分隔带标注用过滤后集合内序号 i/n
-      const tag = selectionTag(sel, isPagesExplicit(pages));
-      const name = resolveLongName(filename);
-      const finalName = tag ? safeFilename(withSelectionTag(resolveLongName(undefined), tag), DEFAULT_LONG_NAME, ".png") : name;
+      const tag = selectionTag(sel, sel.pagesExplicit);
+      // 文件名优先级（F8 契约）：自定义 filename 为主、选择 tag 追加其上
+      const finalName = resolveDownloadName({ defaultName: DEFAULT_LONG_NAME, filename, tag, ext: ".png" });
       downloadBlob(stack.blob, finalName);
       return {
         ok: true,

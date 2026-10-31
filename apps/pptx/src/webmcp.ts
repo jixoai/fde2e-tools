@@ -57,6 +57,11 @@ async function waitSettled(flag: { value: boolean }, timeoutMs: number): Promise
 
 /* ---------- 工具面 ---------- */
 
+/** 参数「已给出」判定（undefined/null 视为未给） */
+function isGiven(v: unknown): boolean {
+  return v !== undefined && v !== null;
+}
+
 function buildTools(): WebMCPToolDef[] {
   return [
     {
@@ -252,18 +257,30 @@ function buildTools(): WebMCPToolDef[] {
       description:
         "把当前演示导出为矢量 PDF 下载（缺省 pptx-export.pdf；16:9 横向，每页幻灯一页；" +
         "真实文本层可搜索可复制；标题 32pt/要点 18pt/页眉带/右下页码）。" +
-        "可选 pages 选择页码（数组 [2, 3] 或区间 \"2-3\"，1-based；越界人话报错；选择导出文件名 pptx-export-p2-3.pdf）。" +
+        '「导出哪些页」二选一（同传报错）：可选 items 页单元（每项 {page: 页码 1-based}，如 [{page:2},{page:3}]）；' +
+        '或 pages 兼容别名（单数 2、数组 [2, 3] 或区间 "2-3"，1-based；越界人话报错）。' +
+        "选择导出文件名 pptx-export-p2-3.pdf（自定义 filename 为主、tag 追加其上）。" +
         "编辑器未就绪时返回 ok:false。返回页数、文件名契约与 selected（实际导出的页码清单）。",
       inputSchema: {
         type: "object",
         properties: {
-          filename: { type: "string", description: "可选下载文件名（缺省 pptx-export.pdf）" },
+          filename: { type: "string", description: "可选下载文件名（缺省 pptx-export.pdf；有选择 tag 时追加其上）" },
           pages: {
             anyOf: [
               { type: "array", items: { type: "integer", minimum: 1 } },
               { type: "string", pattern: "^\\s*\\d+\\s*-\\s*\\d+\\s*$" },
             ],
-            description: '可选页码选择（1-based）：数组 [2, 3] 或区间 "2-3"；缺省全部页。选择导出时文件名带 -p2-3 标记',
+            description: '可选页码选择（1-based，与 items 二选一）：单数 2、数组 [2, 3] 或区间 "2-3"；缺省全部页。选择导出时文件名带 -p2-3 标记',
+          },
+          items: {
+            type: "array",
+            description: '可选页导出单元（与 pages 二选一）：每项 {page: 页码（1-based）}，如 [{page:2},{page:3}]；顺序按 items',
+            items: {
+              type: "object",
+              properties: { page: { type: "integer", minimum: 1, description: "页码（1-based，第 1 页=1）" } },
+              required: ["page"],
+              additionalProperties: false,
+            },
           },
         },
         additionalProperties: false,
@@ -272,7 +289,8 @@ function buildTools(): WebMCPToolDef[] {
       async execute(input) {
         return await exportSlidesPdf(
           typeof input.filename === "string" ? input.filename : undefined,
-          input.pages !== undefined && input.pages !== null ? (input.pages as unknown) : undefined,
+          isGiven(input.pages) ? (input.pages as unknown) : undefined,
+          Array.isArray(input.items) ? input.items : undefined,
         );
       },
     },
@@ -280,24 +298,80 @@ function buildTools(): WebMCPToolDef[] {
       name: "export_png",
       title: "导出逐页 PNG",
       description:
-        "把每页幻灯导出为独立 PNG 文件批量下载（pptx-page-01.png 起两位序号＝原 deck 页码；多文件间隔触发防浏览器拦截）。" +
-        "可选 pages 选择页码（数组 [2, 3] 或区间 \"2-3\"，1-based；越界人话报错）。返回文件清单、页数与 selected（实际导出的页码清单）。",
+        "逐页多文件导出（每页一个 PNG）：把每页幻灯导出为独立 PNG 文件批量下载（缺省前缀 pptx-page，pptx-page-01.png 起两位序号＝原 deck 页码；" +
+        "多文件间隔触发防浏览器拦截）。可选 filename 为文件名前缀语义（传 foo 产出 foo-01.png/foo-02.png）。" +
+        '「导出哪些页」二选一（同传报错）：可选 items 页单元（每项 {page: 页码 1-based}）；或 pages 兼容别名（单数 2、数组 [2, 3] 或区间 "2-3"，1-based；越界人话报错）。' +
+        "返回文件清单、页数与 selected（实际导出的页码清单）。",
       inputSchema: {
         type: "object",
         properties: {
+          filename: { type: "string", description: '可选逐页文件名前缀（缺省 pptx-page；产出 <前缀>-01.png 起，序号＝原 deck 页码）' },
           pages: {
             anyOf: [
               { type: "array", items: { type: "integer", minimum: 1 } },
               { type: "string", pattern: "^\\s*\\d+\\s*-\\s*\\d+\\s*$" },
             ],
-            description: '可选页码选择（1-based）：数组 [2, 3] 或区间 "2-3"；缺省全部页。选择导出时文件名带 -p2-3 标记',
+            description: '可选页码选择（1-based，与 items 二选一）：单数 2、数组 [2, 3] 或区间 "2-3"；缺省全部页。选择导出时文件名带 -p2-3 标记',
+          },
+          items: {
+            type: "array",
+            description: '可选页导出单元（与 pages 二选一）：每项 {page: 页码（1-based）}，如 [{page:2},{page:3}]；顺序按 items',
+            items: {
+              type: "object",
+              properties: { page: { type: "integer", minimum: 1, description: "页码（1-based，第 1 页=1）" } },
+              required: ["page"],
+              additionalProperties: false,
+            },
           },
         },
         additionalProperties: false,
       },
       annotations: { untrustedContentHint: true },
       async execute(input) {
-        return await exportSlidesPng(input.pages !== undefined && input.pages !== null ? (input.pages as unknown) : undefined);
+        return await exportSlidesPng(
+          typeof input.filename === "string" ? input.filename : undefined,
+          isGiven(input.pages) ? (input.pages as unknown) : undefined,
+          Array.isArray(input.items) ? input.items : undefined,
+        );
+      },
+    },
+    {
+      name: "export_pages_png",
+      title: "导出逐页 PNG（别名）",
+      description:
+        "export_png 的别名工具（F5 归一路径起点）：逐页多文件导出（每页一个 PNG），参数与行为同 export_png" +
+        "（filename 前缀语义、items 页单元 / pages 兼容别名、文件序号＝原 deck 页码）。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          filename: { type: "string", description: '可选逐页文件名前缀（缺省 pptx-page；产出 <前缀>-01.png 起，序号＝原 deck 页码）' },
+          pages: {
+            anyOf: [
+              { type: "array", items: { type: "integer", minimum: 1 } },
+              { type: "string", pattern: "^\\s*\\d+\\s*-\\s*\\d+\\s*$" },
+            ],
+            description: '可选页码选择（1-based，与 items 二选一）：单数 2、数组 [2, 3] 或区间 "2-3"；缺省全部页。选择导出时文件名带 -p2-3 标记',
+          },
+          items: {
+            type: "array",
+            description: '可选页导出单元（与 pages 二选一）：每项 {page: 页码（1-based）}，如 [{page:2},{page:3}]；顺序按 items',
+            items: {
+              type: "object",
+              properties: { page: { type: "integer", minimum: 1, description: "页码（1-based，第 1 页=1）" } },
+              required: ["page"],
+              additionalProperties: false,
+            },
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: { untrustedContentHint: true },
+      async execute(input) {
+        return await exportSlidesPng(
+          typeof input.filename === "string" ? input.filename : undefined,
+          isGiven(input.pages) ? (input.pages as unknown) : undefined,
+          Array.isArray(input.items) ? input.items : undefined,
+        );
       },
     },
     {
@@ -306,18 +380,29 @@ function buildTools(): WebMCPToolDef[] {
       description:
         "把幻灯纵向拼接为一张长图 PNG 下载（缺省 pptx-long.png；每页卡框＋间隔带＋「— i/n —」页码标注；" +
         "总高超 16384px 自动等比缩放，过小则截断并在产物与返回值标注）。" +
-        "可选 pages 选择页码（数组 [2, 3] 或区间 \"2-3\"，1-based；选择导出文件名 pptx-long-p2-3.png）。" +
+        '「导出哪些页」二选一（同传报错）：可选 items 页单元（每项 {page: 页码 1-based}）；或 pages 兼容别名（单数 2、数组 [2, 3] 或区间 "2-3"，1-based）。' +
+        "选择导出文件名 pptx-long-p2-3.png（自定义 filename 为主、tag 追加其上）。" +
         "返回尺寸、文件名契约与 selected（实际导出的页码清单）。",
       inputSchema: {
         type: "object",
         properties: {
-          filename: { type: "string", description: "可选下载文件名（缺省 pptx-long.png）" },
+          filename: { type: "string", description: "可选下载文件名（缺省 pptx-long.png；有选择 tag 时追加其上）" },
           pages: {
             anyOf: [
               { type: "array", items: { type: "integer", minimum: 1 } },
               { type: "string", pattern: "^\\s*\\d+\\s*-\\s*\\d+\\s*$" },
             ],
-            description: '可选页码选择（1-based）：数组 [2, 3] 或区间 "2-3"；缺省全部页。选择导出时文件名带 -p2-3 标记',
+            description: '可选页码选择（1-based，与 items 二选一）：单数 2、数组 [2, 3] 或区间 "2-3"；缺省全部页。选择导出时文件名带 -p2-3 标记',
+          },
+          items: {
+            type: "array",
+            description: '可选页导出单元（与 pages 二选一）：每项 {page: 页码（1-based）}，如 [{page:2},{page:3}]；顺序按 items',
+            items: {
+              type: "object",
+              properties: { page: { type: "integer", minimum: 1, description: "页码（1-based，第 1 页=1）" } },
+              required: ["page"],
+              additionalProperties: false,
+            },
           },
         },
         additionalProperties: false,
@@ -326,7 +411,8 @@ function buildTools(): WebMCPToolDef[] {
       async execute(input) {
         return await exportSlidesLongPng(
           typeof input.filename === "string" ? input.filename : undefined,
-          input.pages !== undefined && input.pages !== null ? (input.pages as unknown) : undefined,
+          isGiven(input.pages) ? (input.pages as unknown) : undefined,
+          Array.isArray(input.items) ? input.items : undefined,
         );
       },
     },

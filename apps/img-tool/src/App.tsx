@@ -182,17 +182,17 @@ export default function App() {
             setKind("导出失败：画布生成 PNG 为空。", "error");
             return;
           }
+          // WebMCP export_png filename 参数（F1）：一次性覆盖后复位（页面按钮缺省名不变）
+          const name = imgBridge.downloadName ?? "img-tool-" + canvas.width + "x" + canvas.height + ".png";
+          imgBridge.downloadName = null;
           const a = document.createElement("a");
           a.href = URL.createObjectURL(blob);
-          a.download = "img-tool-" + canvas.width + "x" + canvas.height + ".png";
+          a.download = name;
           document.body.appendChild(a);
           a.click();
           a.remove();
           setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-          setKind(
-            "导出成功：浏览器已下载 img-tool-" + canvas.width + "x" + canvas.height + ".png",
-            "ok",
-          );
+          setKind("导出成功：浏览器已下载 " + name, "ok");
         },
         "image/png",
       );

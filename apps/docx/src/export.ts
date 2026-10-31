@@ -14,7 +14,7 @@
  * 两条通道共用「缺字显式替身」：字体子集外的字符画 ? 并在返回值 notice 里
  * 如实计数（不静默丢字）。
  */
-import { downloadBlob, safeFilename } from "@fde2e-tools/shared/download";
+import { downloadBlob, resolveDownloadName } from "@fde2e-tools/shared/download";
 import { mountOffscreen, renderNodeToPng, withColorGuard } from "@fde2e-tools/shared/export-kit";
 import { VectorPdf, tokenizeText } from "@fde2e-tools/shared/pdf-vector";
 import { docBlocksFromJson, runsToText, type DocBlock, type InlineRun } from "./doc-model";
@@ -23,14 +23,6 @@ import { getEditor } from "./editor";
 export const DEFAULT_PDF_NAME = "docx-export.pdf";
 export const DEFAULT_PNG_NAME = "docx-long.png";
 
-function resolvePdfName(name: string | undefined): string {
-  return safeFilename(name, DEFAULT_PDF_NAME, ".pdf");
-}
-
-function resolvePngName(name: string | undefined): string {
-  return safeFilename(name, DEFAULT_PNG_NAME, ".png");
-}
-
 export interface ExportOk {
   ok: true;
   filename: string;
@@ -38,8 +30,11 @@ export interface ExportOk {
   width: number;
   height: number;
   pages?: number;
-  /** 实际导出的节标题清单（selective-export；缺省＝整篇） */
-  selected?: string[];
+  /**
+   * 实际导出的节清单（selective-export）。section 兼容别名形态＝节标题数组
+   * （v1 契约，整篇＝["整篇"]）；items 形态＝逐单元 {section: 标题}。
+   */
+  selected?: Array<string | { section: string }>;
   truncated?: boolean;
   notice?: string;
 }
@@ -501,6 +496,55 @@ export function blocksToHtml(blocks: DocBlock[], title: string): string {
  * ============================================================ */
 
 /**
+ * 节选择解析（F4 items 统一选择器）：items 主形态＝每项 {section: 标题文本}
+ * （**可多节**，顺序按 items；F10：section 单值无法多节的断层在此修掉）；
+ * section 单值字符串为 v1 兼容别名。两者同传＝冲突显式报错（禁静默取舍）。
+ * 返回节标题序列（空数组＝整篇）。
+ */
+export function resolveDocSections(items: unknown, section: unknown): { ok: false; error: string } | { ok: true; sections: string[] } {
+  const itemsGiven = items !== undefined && items !== null;
+  const sectionGiven = section !== undefined && section !== null && section !== "";
+  if (itemsGiven && sectionGiven) {
+    return {
+      ok: false,
+      error:
+        'items 与 section 只能用一个——items 多节形态如 [{section:"一、经营概况"},{section:"三、下周重点"}]，section 单节形态如 "二、本周问题与处理"',
+    };
+  }
+  if (!itemsGiven && !sectionGiven) return { ok: true, sections: [] };
+  if (sectionGiven) return { ok: true, sections: [String(section).trim()] };
+  if (!Array.isArray(items)) {
+    return { ok: false, error: 'items 须为数组（每项 {section: 标题文本}，如 [{section:"一、经营概况"}]）' };
+  }
+  if (items.length === 0) return { ok: true, sections: [] };
+  const sections: string[] = [];
+  for (const raw of items) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return { ok: false, error: `items 单元须为对象 {section: 标题文本}——收到 ${JSON.stringify(raw)}` };
+    }
+    const unit = raw as { section?: unknown };
+    if (typeof unit.section !== "string" || !unit.section.trim()) {
+      return { ok: false, error: 'items 单元缺 section（节标题文本），如 {section:"一、经营概况"}' };
+    }
+    sections.push(unit.section.trim());
+  }
+  return { ok: true, sections };
+}
+
+/** 多节选块：逐节解析并拼接（每节独立在全文中定位，顺序按 items）；任一节缺失＝人话报错 */
+function pickSections(blocks: DocBlock[], sections: string[]): { blocks: DocBlock[]; chosen: string[]; error?: string } {
+  const parts: DocBlock[] = [];
+  const chosen: string[] = [];
+  for (const s of sections) {
+    const picked = selectDocSection(blocks, s);
+    if (picked.error) return { blocks: [], chosen: [], error: picked.error };
+    parts.push(...picked.blocks);
+    chosen.push(s);
+  }
+  return { blocks: parts, chosen };
+}
+
+/**
  * 按标题选节：取该标题（任意层级）至下一个同级或更高级标题之间的内容
  * （含标题本身；文档末尾无更高标题则取到结尾）。标题不存在＝人话报错并列出
  * 全部可用标题。
@@ -546,25 +590,30 @@ function currentBlocks(): { blocks: DocBlock[]; title: string } | { error: strin
   return { blocks, title: title || "文档导出" };
 }
 
-/** export_pdf：块模型 → 矢量 PDF（真实文本层；可选 section 按标题选节） */
-export async function exportDocPdf(filename?: string, section?: string): Promise<ExportResult> {
-  const name = resolvePdfName(filename);
+/** export_pdf：块模型 → 矢量 PDF（真实文本层；items 多节 / section 兼容别名选节） */
+export async function exportDocPdf(filename?: string, section?: unknown, items?: unknown): Promise<ExportResult> {
   try {
     const model = currentBlocks();
     if ("error" in model) return { ok: false, error: model.error };
+    const sel = resolveDocSections(items, section);
+    if (!sel.ok) return { ok: false, error: sel.error };
     let blocks = model.blocks;
-    let selected: string[] = ["整篇"];
-    if (section !== undefined && section !== null && section !== "") {
-      const picked = selectDocSection(blocks, section);
+    let selected: Array<string | { section: string }> = ["整篇"];
+    let tag: string | null = null;
+    if (sel.sections.length) {
+      const picked = pickSections(blocks, sel.sections);
       if (picked.error) return { ok: false, error: picked.error };
       blocks = picked.blocks;
-      selected = picked.selected;
+      const itemsGiven = items !== undefined && items !== null;
+      selected = itemsGiven ? picked.chosen.map((s) => ({ section: s })) : picked.chosen;
+      tag = picked.chosen.join("-"); // F9：选择 tag（docx-export-节1-节2.pdf）
     }
     const out = await renderDocPdf(blocks, model.title);
-    downloadBlob(out.blob, name);
+    const finalName = resolveDownloadName({ defaultName: DEFAULT_PDF_NAME, filename, tag, ext: ".pdf" });
+    downloadBlob(out.blob, finalName);
     return {
       ok: true,
-      filename: name,
+      filename: finalName,
       width: out.width,
       height: out.height,
       pages: out.pages,
@@ -576,27 +625,32 @@ export async function exportDocPdf(filename?: string, section?: string): Promise
   }
 }
 
-/** export_png：块模型 → 结构化 HTML → 长图（可选 section 按标题选节） */
-export async function exportDocLongPng(filename?: string, section?: string): Promise<ExportResult> {
-  const name = resolvePngName(filename);
+/** export_png：块模型 → 结构化 HTML → 长图（items 多节 / section 兼容别名选节） */
+export async function exportDocLongPng(filename?: string, section?: unknown, items?: unknown): Promise<ExportResult> {
   try {
     const model = currentBlocks();
     if ("error" in model) return { ok: false, error: model.error };
+    const sel = resolveDocSections(items, section);
+    if (!sel.ok) return { ok: false, error: sel.error };
     let blocks = model.blocks;
-    let selected: string[] = ["整篇"];
-    if (section !== undefined && section !== null && section !== "") {
-      const picked = selectDocSection(blocks, section);
+    let selected: Array<string | { section: string }> = ["整篇"];
+    let tag: string | null = null;
+    if (sel.sections.length) {
+      const picked = pickSections(blocks, sel.sections);
       if (picked.error) return { ok: false, error: picked.error };
       blocks = picked.blocks;
-      selected = picked.selected;
+      const itemsGiven = items !== undefined && items !== null;
+      selected = itemsGiven ? picked.chosen.map((s) => ({ section: s })) : picked.chosen;
+      tag = picked.chosen.join("-"); // F9：选择 tag（docx-long-节1-节2.png）
     }
     const node = document.createElement("div");
     node.innerHTML = blocksToHtml(blocks, model.title);
     const unmount = mountOffscreen(node, 900);
     try {
       const png = await withColorGuard(() => renderNodeToPng(node, { width: 900, scale: 2 }), node);
-      downloadBlob(png.blob, name);
-      return { ok: true, filename: name, width: png.width, height: png.height, selected, truncated: png.truncated, notice: png.notice };
+      const finalName = resolveDownloadName({ defaultName: DEFAULT_PNG_NAME, filename, tag, ext: ".png" });
+      downloadBlob(png.blob, finalName);
+      return { ok: true, filename: finalName, width: png.width, height: png.height, selected, truncated: png.truncated, notice: png.notice };
     } finally {
       unmount();
     }

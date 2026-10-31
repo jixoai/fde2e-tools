@@ -1,5 +1,5 @@
 /*
- * pptx WebMCP 注册 —— apps/pptx/src/webmcp.ts
+ * easy-pptx WebMCP 注册 —— apps/easy-pptx/src/webmcp.ts
  *
  * 把「大纲 JSON → .pptx」能力注册为 document.modelContext 工具（原生/polyfill
  * 同形）：
@@ -88,13 +88,9 @@ function buildTools(): WebMCPToolDef[] {
         if (!clickById("generate-pptx-btn")) throw new Error("页面未就绪（generate-pptx-btn 缺失）");
         const snapshot = await waitForStatusChange(30000);
         const st = deckStats(spec);
-        return {
-          ok: snapshot.ok,
-          message: snapshot.message,
-          filename: snapshot.ok ? filename : null,
-          slideCount: st.slideCount,
-          bulletCount: st.bulletCount,
-        };
+        const base = { message: snapshot.message, slideCount: st.slideCount, bulletCount: st.bulletCount };
+        if (!snapshot.ok) return { ok: false, error: snapshot.message, ...base, filename: null };
+        return { ok: true, ...base, filename };
       },
     },
     {
@@ -134,12 +130,8 @@ function buildTools(): WebMCPToolDef[] {
         if (!clickById("preview-btn")) throw new Error("页面未就绪（preview-btn 缺失）");
         const snapshot = await waitForStatusChange();
         const st = deckStats(spec);
-        return {
-          ok: snapshot.ok,
-          message: snapshot.message,
-          slideCount: st.slideCount,
-          outline: JSON.stringify(spec, null, 2),
-        };
+        const base = { message: snapshot.message, slideCount: st.slideCount, outline: JSON.stringify(spec, null, 2) };
+        return snapshot.ok ? { ok: true, ...base } : { ok: false, error: snapshot.message, ...base };
       },
     },
   ];

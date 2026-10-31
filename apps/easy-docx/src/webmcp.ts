@@ -1,5 +1,5 @@
 /*
- * docx WebMCP 注册 —— apps/docx/src/webmcp.ts
+ * easy-docx WebMCP 注册 —— apps/easy-docx/src/webmcp.ts
  *
  * 把「Markdown 子集 → .docx」能力注册为 document.modelContext 工具（原生/
  * polyfill 同形）：
@@ -65,11 +65,8 @@ function buildTools(): WebMCPToolDef[] {
         setInputValue("input-md", md);
         if (!clickById("generate-docx-btn")) throw new Error("页面未就绪（generate-docx-btn 缺失）");
         const snapshot = await waitForStatusChange(30000);
-        return {
-          ok: snapshot.ok,
-          message: snapshot.message,
-          filename: snapshot.ok ? filename : null,
-        };
+        if (!snapshot.ok) return { ok: false, error: snapshot.message, message: snapshot.message, filename: null };
+        return { ok: true, message: snapshot.message, filename };
       },
     },
     {
@@ -101,7 +98,9 @@ function buildTools(): WebMCPToolDef[] {
           return { ok: false, error: e instanceof Error && e.message ? e.message : String(e) };
         }
         const snapshot = await waitForStatusChange();
-        return { ok: snapshot.ok, message: snapshot.message, documentStats: summary };
+        return snapshot.ok
+          ? { ok: true, message: snapshot.message, documentStats: summary }
+          : { ok: false, error: snapshot.message, message: snapshot.message, documentStats: summary };
       },
     },
   ];

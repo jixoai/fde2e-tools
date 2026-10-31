@@ -241,20 +241,35 @@ function buildTools(): WebMCPToolDef[] {
       description:
         "把文档导出为矢量 PDF 下载（缺省 docx-export.pdf；真实文本层可搜索可复制；" +
         "A4 纵向多页，标题分级/列表缩进/表格边框与表头底色/页脚页码）。" +
-        "可选 section 按标题选节（如 \"二、本周问题与处理\"：取该标题至下一个同级/更高级标题前；" +
-        "标题不存在人话报错并列出可用标题）。" +
-        "编辑器未就绪或文档为空时返回 ok:false。返回文件名契约、页数与 selected（实际导出的节清单）。",
+        '「导出什么」二选一（同传报错）：可选 items 多节选择（每项 {section: 标题文本}，如 [{section:"一、本周概况"},{section:"三、下周重点"}]）；' +
+        '或 section 兼容别名（单节，如 "二、本周问题与处理"：取该标题至下一个同级/更高级标题前）。' +
+        "标题不存在人话报错并列出可用标题。选择导出文件名 docx-export-节1-节2.pdf（自定义 filename 为主、tag 追加其上）。" +
+        "编辑器未就绪或文档为空时返回 ok:false。返回文件名契约、页数与 selected（section 形态＝节标题数组；items 形态＝逐单元 {section}）。",
       inputSchema: {
         type: "object",
         properties: {
-          filename: { type: "string", description: "可选下载文件名（缺省 docx-export.pdf）" },
-          section: { type: "string", description: '可选节选择：标题文本（如 "二、本周问题与处理"）；缺省导出整篇' },
+          filename: { type: "string", description: "可选下载文件名（缺省 docx-export.pdf；有选择 tag 时追加其上）" },
+          items: {
+            type: "array",
+            description: '可选多节选择（与 section 二选一）：如 [{section:"一、本周概况"},{section:"三、下周重点"}]；顺序按 items',
+            items: {
+              type: "object",
+              properties: { section: { type: "string", description: "节标题文本" } },
+              required: ["section"],
+              additionalProperties: false,
+            },
+          },
+          section: { type: "string", description: '可选单节选择（与 items 二选一，v1 兼容别名）：标题文本（如 "二、本周问题与处理"）；缺省导出整篇' },
         },
         additionalProperties: false,
       },
       annotations: { untrustedContentHint: true },
       async execute(input) {
-        return await exportDocPdf(typeof input.filename === "string" ? input.filename : undefined, typeof input.section === "string" ? input.section : undefined);
+        return await exportDocPdf(
+          typeof input.filename === "string" ? input.filename : undefined,
+          typeof input.section === "string" ? input.section : undefined,
+          Array.isArray(input.items) ? input.items : undefined,
+        );
       },
     },
     {
@@ -262,18 +277,33 @@ function buildTools(): WebMCPToolDef[] {
       title: "导出长图 PNG",
       description:
         "把文档导出为一张长图 PNG 下载（缺省 docx-long.png；超 16384px 会截断并在产物与返回值标注）。" +
-        "可选 section 按标题选节（同 export_pdf）。返回文件名契约与 selected（实际导出的节清单）。",
+        '「导出什么」二选一（同传报错）：可选 items 多节选择（每项 {section: 标题文本}）；或 section 兼容别名（单节，同 export_pdf）。' +
+        "选择导出文件名 docx-long-节1-节2.png（自定义 filename 为主、tag 追加其上）。返回文件名契约与 selected（section 形态＝节标题数组；items 形态＝逐单元 {section}）。",
       inputSchema: {
         type: "object",
         properties: {
-          filename: { type: "string", description: "可选下载文件名（缺省 docx-long.png）" },
-          section: { type: "string", description: '可选节选择：标题文本（如 "二、本周问题与处理"）；缺省导出整篇' },
+          filename: { type: "string", description: "可选下载文件名（缺省 docx-long.png；有选择 tag 时追加其上）" },
+          items: {
+            type: "array",
+            description: '可选多节选择（与 section 二选一）：如 [{section:"一、本周概况"},{section:"三、下周重点"}]；顺序按 items',
+            items: {
+              type: "object",
+              properties: { section: { type: "string", description: "节标题文本" } },
+              required: ["section"],
+              additionalProperties: false,
+            },
+          },
+          section: { type: "string", description: '可选单节选择（与 items 二选一，v1 兼容别名）：标题文本（如 "二、本周问题与处理"）；缺省导出整篇' },
         },
         additionalProperties: false,
       },
       annotations: { untrustedContentHint: true },
       async execute(input) {
-        return await exportDocLongPng(typeof input.filename === "string" ? input.filename : undefined, typeof input.section === "string" ? input.section : undefined);
+        return await exportDocLongPng(
+          typeof input.filename === "string" ? input.filename : undefined,
+          typeof input.section === "string" ? input.section : undefined,
+          Array.isArray(input.items) ? input.items : undefined,
+        );
       },
     },
   ];

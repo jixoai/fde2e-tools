@@ -19,6 +19,7 @@ import { Button } from "@fde2e-tools/shared/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@fde2e-tools/shared/ui/card";
 import { Label } from "@fde2e-tools/shared/ui/label";
 import { CONTENT_CSS } from "./content-css";
+import { exportBridge } from "./bridge";
 import { SAMPLE_MD } from "./sample";
 import { registerAppTools } from "./webmcp";
 
@@ -154,9 +155,12 @@ export default function App() {
     if (!exportArea) return;
     setStatus({ msg: "正在导出 PDF…", kind: "ok" });
     exportArea.innerHTML = extractBody(exportSourceRef.current);
+    // WebMCP export_pdf filename 参数（F1）：一次性覆盖后复位（页面按钮缺省名不变）
+    const downloadName = exportBridge.filename ?? "pdf-tool-export.pdf";
+    exportBridge.filename = null;
     const opt = {
       margin: [12, 12, 14, 12],
-      filename: "pdf-tool-export.pdf",
+      filename: downloadName,
       image: { type: "jpeg", quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true, windowWidth: 820, backgroundColor: "#ffffff" },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
