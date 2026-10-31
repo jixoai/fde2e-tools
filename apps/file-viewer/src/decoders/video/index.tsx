@@ -538,8 +538,9 @@ export default function VideoDecoder({ name, mime, bytes, url, size }: DecoderFi
               className="pointer-events-none absolute top-1/2 left-3 z-20 flex -translate-y-1/2 flex-col items-center gap-2"
               data-fv-brightness={Math.round(overlay.value * 100)}
             >
+              <div className="glass-control flex flex-col items-center gap-2 rounded-xl bg-background/85 px-2 py-2.5">
               <SunIcon className="size-4 text-foreground/80" aria-hidden />
-              <div className="glass-control flex h-28 w-1.5 flex-col justify-end overflow-hidden rounded-full bg-background/40">
+              <div className="flex h-24 w-1.5 flex-col justify-end overflow-hidden rounded-full bg-foreground/15">
                 <div
                   className="w-full rounded-full bg-primary transition-[height]"
                   style={{
@@ -550,11 +551,12 @@ export default function VideoDecoder({ name, mime, bytes, url, size }: DecoderFi
               <span className="text-[11px] font-medium tabular-nums text-foreground/80">
                 {Math.round(overlay.value * 100)}%
               </span>
+              </div>
             </div>
           ) : null}
 
           {/* 中央手势浮层（玻璃小卡） */}
-          {overlay ? (
+          {overlay && overlay.kind !== 'brightness' ? (
             <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
               <div
                 className="glass-control flex items-center gap-2 rounded-xl bg-background/70 px-4 py-2 text-sm font-medium text-foreground"
@@ -573,14 +575,9 @@ export default function VideoDecoder({ name, mime, bytes, url, size }: DecoderFi
                   <>
                     <FastForwardIcon className="size-5" aria-hidden />
                     <span className="tabular-nums">{formatDuration(overlay.time)}</span>
-                    <span className="text-xs tabular-nums text-muted-foreground">
+                    <span className="text-xs tabular-nums text-foreground/70">
                       {formatSeekDelta(overlay.delta)}
                     </span>
-                  </>
-                ) : overlay.kind === 'brightness' ? (
-                  <>
-                    <SunIcon className="size-5" aria-hidden />
-                    <span className="tabular-nums">{Math.round(overlay.value * 100)}%</span>
                   </>
                 ) : (
                   <>
@@ -595,7 +592,7 @@ export default function VideoDecoder({ name, mime, bytes, url, size }: DecoderFi
           {/* 中央大播放/暂停钮 */}
           <div
             className={`pointer-events-none absolute inset-0 z-10 flex items-center justify-center transition-opacity duration-200 ${
-              controlsVisible ? 'opacity-100' : 'opacity-0'
+              controlsVisible && overlay === null ? 'opacity-100' : 'opacity-0'
             }`}
           >
             <Button
@@ -604,7 +601,7 @@ export default function VideoDecoder({ name, mime, bytes, url, size }: DecoderFi
               data-fv-play-toggle="true"
               aria-label={playing ? '暂停' : '播放'}
               className={`size-16 rounded-full border-0 bg-background/70 text-foreground glass-control hover:bg-background/80 ${
-                controlsVisible ? 'pointer-events-auto' : 'pointer-events-none'
+                controlsVisible && overlay === null ? 'pointer-events-auto' : 'pointer-events-none'
               }`}
               onClick={togglePlay}
             >
@@ -629,10 +626,10 @@ export default function VideoDecoder({ name, mime, bytes, url, size }: DecoderFi
               clearHideTimer();
             }}
           >
-            <div className="glass-control rounded-xl bg-background/70 px-3 py-2">
+            <div className="glass-control rounded-xl bg-background/85 px-3 py-2">
               {/* 进度：缓冲带在下层，官方 Slider 在上层 */}
               <div className="flex items-center gap-3">
-                <span className="w-11 text-right text-xs tabular-nums text-muted-foreground">
+                <span className="w-11 text-right text-xs tabular-nums text-foreground/70">
                   {formatDuration(currentTime)}
                 </span>
                 <div className="relative flex-1" data-fv-progress="true">
@@ -656,7 +653,7 @@ export default function VideoDecoder({ name, mime, bytes, url, size }: DecoderFi
                     }}
                   />
                 </div>
-                <span className="w-11 text-xs tabular-nums text-muted-foreground">
+                <span className="w-11 text-xs tabular-nums text-foreground/70">
                   {duration === null ? '--:--' : formatDuration(duration)}
                 </span>
               </div>

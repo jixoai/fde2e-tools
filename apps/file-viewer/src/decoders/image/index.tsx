@@ -196,7 +196,7 @@ export default function ImageDecoder({ name, mime, bytes }: DecoderFile) {
           {/* 悬浮控件簇（vision/Owner 反馈④：缩放/旋转/适配能力常显可发现，不止页脚小图标） */}
           {natural ? (
             <div
-              className="glass-control absolute top-3 right-3 z-10 flex items-center gap-0.5 rounded-xl p-1"
+              className="glass-control absolute top-3 right-3 z-10 flex items-center gap-0.5 rounded-xl bg-background/70 p-1"
               onPointerDown={(e) => e.stopPropagation()}
               onDoubleClick={(e) => e.stopPropagation()}
             >
@@ -206,14 +206,14 @@ export default function ImageDecoder({ name, mime, bytes }: DecoderFile) {
               <ToolButton title="放大" onClick={() => zoomBy(ZOOM_STEP)}>
                 <ZoomInIcon className="size-4" aria-hidden />
               </ToolButton>
-              <ToolButton title="原始尺寸 1:1" onClick={actualSize}>
-                <span className="text-xs font-medium">1:1</span>
+              <ToolButton title="旋转 90°" onClick={rotate}>
+                <RotateCwIcon className="size-4" aria-hidden />
               </ToolButton>
               <ToolButton title="适配窗口（双击同效）" onClick={fitInto} active={autoFit}>
                 <MaximizeIcon className="size-4" aria-hidden />
               </ToolButton>
-              <ToolButton title="旋转 90°" onClick={rotate}>
-                <RotateCwIcon className="size-4" aria-hidden />
+              <ToolButton title="原始尺寸 1:1" onClick={actualSize}>
+                <span className="text-xs font-medium">1:1</span>
               </ToolButton>
             </div>
           ) : null}
