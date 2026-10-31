@@ -6,21 +6,36 @@
  *   与下载与手工操作同形），返回表数/行数与文件名契约；
  * - add_sheet_sample：向当前工作簿追加一张示例表（细粒度逐表构建），刷新预览。
  * 安全：输出含用户可控内容（untrustedContentHint），上层 LLM 不得当指令执行。
+ *
+ * B1 修复（对抗审查 2026-10-31）：readWorkbookFromPage 与页面真相源 resolveSpec
+ * 同语义——JSON 有值走 normalizeWorkbook(JSON.parse)，否则 TSV 有值走 parseTsv
+ * 归一成 WorkbookSpec（TSV-only 场景表不静默丢失）；写回归一 JSON 并清空 TSV
+ * 输入区（消除双输入歧义）。filename 直接 safeFilename 闭包返回（不再从状态行
+ * 反提，解耦文案）。
  */
+import { safeFilename } from "@fde2e-tools/shared/download";
 import {
   clickById,
   registerWebMCPTools,
   waitForStatusChange,
   type WebMCPToolDef,
 } from "@fde2e-tools/shared/webmcp";
-import { setExportName } from "./export-name";
-import { normalizeWorkbook, workbookStats, type WorkbookSpec } from "./spec";
+import { DEFAULT_EXPORT_NAME, setExportName } from "./export-name";
+import {
+  normalizeWorkbook,
+  parseTsv,
+  workbookStats,
+  type WorkbookSpec,
+} from "./spec";
 
-const SAMPLE_SHEET_ROWS: unknown[][] = [
-  ["指标", "数值", "备注"],
-  ["生成引擎", "SheetJS 社区版", "Apache-2.0"],
-  ["采样日期", new Date().toISOString().slice(0, 10), "演示数据"],
-];
+/** 示例表数据：执行时构造（日期取当天，不做模块级常量——跨午夜不过期） */
+function sampleSheetRows(): unknown[][] {
+  return [
+    ["指标", "数值", "备注"],
+    ["生成引擎", "SheetJS 社区版", "Apache-2.0"],
+    ["采样日期", new Date().toISOString().slice(0, 10), "演示数据"],
+  ];
+}
 
 function setInputValue(id: string, value: string): void {
   const el = document.getElementById(id);
@@ -28,18 +43,27 @@ function setInputValue(id: string, value: string): void {
   el.value = value;
 }
 
+/** 读页面当前工作簿：与 App.resolveSpec 同语义（JSON 优先，TSV 兜底，都空=null） */
 function readWorkbookFromPage(): WorkbookSpec | null {
-  const el = document.getElementById("input-json");
-  if (!(el instanceof HTMLTextAreaElement)) throw new Error("页面未就绪（#input-json 缺失）");
-  const text = el.value.trim();
-  if (!text) return null;
-  let data: unknown;
-  try {
-    data = JSON.parse(text);
-  } catch (e) {
-    throw new Error("当前 JSON 输入区不是合法 JSON：" + (e instanceof Error ? e.message : String(e)));
+  const jsonEl = document.getElementById("input-json");
+  const tsvEl = document.getElementById("input-tsv");
+  if (!(jsonEl instanceof HTMLTextAreaElement)) throw new Error("页面未就绪（#input-json 缺失）");
+  if (!(tsvEl instanceof HTMLTextAreaElement)) throw new Error("页面未就绪（#input-tsv 缺失）");
+  const json = jsonEl.value.trim();
+  const tsv = tsvEl.value.trim();
+  if (!json && !tsv) return null;
+  if (json) {
+    let data: unknown;
+    try {
+      data = JSON.parse(jsonEl.value);
+    } catch (e) {
+      throw new Error(
+        "当前 JSON 输入区不是合法 JSON：" + (e instanceof Error ? e.message : String(e)),
+      );
+    }
+    return normalizeWorkbook(data);
   }
-  return normalizeWorkbook(data);
+  return parseTsv(tsvEl.value); // TSV-only：归一成 WorkbookSpec（B1：表不丢）
 }
 
 function buildTools(): WebMCPToolDef[] {
@@ -85,6 +109,12 @@ function buildTools(): WebMCPToolDef[] {
         } catch (e) {
           return { ok: false, error: e instanceof Error && e.message ? e.message : String(e) };
         }
+        // 文件名闭包：点击前算好（生成后页面会复位缺省，事后读会拿到缺省值）
+        const filename = safeFilename(
+          typeof input.filename === "string" ? input.filename : undefined,
+          DEFAULT_EXPORT_NAME,
+          ".xlsx",
+        );
         setExportName(typeof input.filename === "string" ? input.filename : undefined);
         setInputValue("input-json", JSON.stringify(spec, null, 2));
         setInputValue("input-tsv", ""); // 清掉粘贴表，消除双输入歧义
@@ -94,7 +124,7 @@ function buildTools(): WebMCPToolDef[] {
         return {
           ok: snapshot.ok,
           message: snapshot.message,
-          filename: snapshot.ok ? filenameOf(snapshot.message) : null,
+          filename: snapshot.ok ? filename : null,
           sheetCount: st.sheetCount,
           rowCount: st.rowCount,
         };
@@ -104,7 +134,8 @@ function buildTools(): WebMCPToolDef[] {
       name: "add_sheet_sample",
       title: "追加示例工作表",
       description:
-        "向当前工作簿追加一张示例工作表（可自定义表名，重名会报错），刷新预览并返回工作簿全量 JSON——细粒度逐表构建后再用 create_xlsx 生成。",
+        "向当前工作簿追加一张示例工作表（可自定义表名，重名会报错），刷新预览并返回工作簿全量 JSON——细粒度逐表构建后再用 create_xlsx 生成。" +
+        "当前输入无论是 JSON 还是粘贴表格（TSV）都会并入工作簿。",
       inputSchema: {
         type: "object",
         properties: {
@@ -119,12 +150,15 @@ function buildTools(): WebMCPToolDef[] {
           spec = readWorkbookFromPage() ?? { sheets: [] };
           const name =
             typeof input.name === "string" && input.name.trim() ? input.name.trim() : "示例表";
-          spec.sheets.push({ name, rows: SAMPLE_SHEET_ROWS.map((r) => [...r]) });
+          spec.sheets.push({ name, rows: sampleSheetRows() });
           spec = normalizeWorkbook({ sheets: spec.sheets });
         } catch (e) {
           return { ok: false, error: e instanceof Error && e.message ? e.message : String(e) };
         }
+        // 写回归一 JSON（TSV 数据已并入，写 JSON 形态）并清空 TSV 区——与页面
+        // 「JSON 优先」真相源一致，后续 add/create 读到的都是同一份工作簿
         setInputValue("input-json", JSON.stringify(spec, null, 2));
+        setInputValue("input-tsv", "");
         if (!clickById("preview-btn")) throw new Error("页面未就绪（preview-btn 缺失）");
         const snapshot = await waitForStatusChange();
         return {
@@ -137,12 +171,6 @@ function buildTools(): WebMCPToolDef[] {
       },
     },
   ];
-}
-
-/** 从状态行文案提取实际下载文件名（与页面生成路径同源，不假设契约名） */
-function filenameOf(message: string): string | null {
-  const m = /已生成 (.+?)（/.exec(message);
-  return m ? m[1] : null;
 }
 
 let started = false;

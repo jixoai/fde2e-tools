@@ -13,7 +13,8 @@ import {
   waitForStatusChange,
   type WebMCPToolDef,
 } from "@fde2e-tools/shared/webmcp";
-import { setExportName } from "./export-name";
+import { safeFilename } from "@fde2e-tools/shared/download";
+import { DEFAULT_EXPORT_NAME, setExportName } from "./export-name";
 import { parseMarkdownSub, statsSummary } from "./md-parse";
 
 function setInputValue(id: string, value: string): void {
@@ -26,12 +27,6 @@ function readDocFromPage(): string {
   const el = document.getElementById("input-md");
   if (!(el instanceof HTMLTextAreaElement)) throw new Error("页面未就绪（#input-md 缺失）");
   return el.value;
-}
-
-/** 从状态行文案提取实际下载文件名（与页面生成路径同源，不假设契约名） */
-function filenameOf(message: string): string | null {
-  const m = /已生成 (.+?)（/.exec(message);
-  return m ? m[1] : null;
 }
 
 function buildTools(): WebMCPToolDef[] {
@@ -59,6 +54,13 @@ function buildTools(): WebMCPToolDef[] {
         } catch (e) {
           return { ok: false, error: e instanceof Error && e.message ? e.message : String(e) };
         }
+        // 文件名闭包：点击前算好（生成后页面会复位缺省，事后读会拿到缺省值）；
+        // 与页面 setExportName 同函数同参，返回值与真实下载名一致
+        const filename = safeFilename(
+          typeof input.filename === "string" ? input.filename : undefined,
+          DEFAULT_EXPORT_NAME,
+          ".docx",
+        );
         setExportName(typeof input.filename === "string" ? input.filename : undefined);
         setInputValue("input-md", md);
         if (!clickById("generate-docx-btn")) throw new Error("页面未就绪（generate-docx-btn 缺失）");
@@ -66,7 +68,7 @@ function buildTools(): WebMCPToolDef[] {
         return {
           ok: snapshot.ok,
           message: snapshot.message,
-          filename: snapshot.ok ? filenameOf(snapshot.message) : null,
+          filename: snapshot.ok ? filename : null,
         };
       },
     },

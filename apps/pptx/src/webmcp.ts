@@ -13,7 +13,8 @@ import {
   waitForStatusChange,
   type WebMCPToolDef,
 } from "@fde2e-tools/shared/webmcp";
-import { setExportName } from "./export-name";
+import { safeFilename } from "@fde2e-tools/shared/download";
+import { DEFAULT_EXPORT_NAME, setExportName } from "./export-name";
 import { deckStats, normalizeDeck, type DeckSpec } from "./spec";
 
 function setInputValue(id: string, value: string): void {
@@ -34,12 +35,6 @@ function readDeckFromPage(): DeckSpec | null {
     throw new Error("当前 JSON 输入区不是合法 JSON：" + (e instanceof Error ? e.message : String(e)));
   }
   return normalizeDeck(data);
-}
-
-/** 从状态行文案提取实际下载文件名（与页面生成路径同源，不假设契约名） */
-function filenameOf(message: string): string | null {
-  const m = /已生成 (.+?)（/.exec(message);
-  return m ? m[1] : null;
 }
 
 function buildTools(): WebMCPToolDef[] {
@@ -81,6 +76,13 @@ function buildTools(): WebMCPToolDef[] {
         } catch (e) {
           return { ok: false, error: e instanceof Error && e.message ? e.message : String(e) };
         }
+        // 文件名闭包：点击前算好（生成后页面会复位缺省，事后读会拿到缺省值）；
+        // 与页面 setExportName 同函数同参，返回值与真实下载名一致
+        const filename = safeFilename(
+          typeof input.filename === "string" ? input.filename : undefined,
+          DEFAULT_EXPORT_NAME,
+          ".pptx",
+        );
         setExportName(typeof input.filename === "string" ? input.filename : undefined);
         setInputValue("input-json", JSON.stringify(spec, null, 2));
         if (!clickById("generate-pptx-btn")) throw new Error("页面未就绪（generate-pptx-btn 缺失）");
@@ -89,7 +91,7 @@ function buildTools(): WebMCPToolDef[] {
         return {
           ok: snapshot.ok,
           message: snapshot.message,
-          filename: snapshot.ok ? filenameOf(snapshot.message) : null,
+          filename: snapshot.ok ? filename : null,
           slideCount: st.slideCount,
           bulletCount: st.bulletCount,
         };
