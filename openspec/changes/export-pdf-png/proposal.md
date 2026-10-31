@@ -87,3 +87,24 @@ oklch 色守卫护体）可复用到三站——共享化为 `@fde2e-tools/share
   表头底色，不做合并单元格跨页拆分。
 - 长图路径仍是位图（docx/xlsx 走结构化 HTML、pptx 走 PPTist 内核），不追求
   长图矢量。
+
+## 终验回单（2026-10-31 下午，PDF 族 5 张 pass 后的 long/逐页返工＋选择性导出）
+
+- **F1 xlsx-long 网格 chrome**：长图去掉 A–G 列字母头行/1–9 行号列/灰角格，
+  改纯数据表（数据首行作表头，对齐矢量 PDF 表格形态）；副标题删「数据面导出
+  （值与公式，样式 v1 不落展示图）」内部 release-note 语汇。
+- **F2 pptx 裸渲染**：long/逐页 PNG 与矢量 PDF 共用**同一套模板样式源**
+  （TEMPLATE 常量）＋同一布局计算（computeSlideLayout）＋同一断行
+  （wrapByMeasure）＋同一字体资产（canvas FontFace 加载 CJK_FONT_URLS）——
+  位图页与 PDF 页逐像素同构（正文占宽 84.6%/84.6%，字号分级 53/30px vs
+  44/25px）。复杂 deck（含图片/图表/形状）保留 PPTist ThumbnailSlide 裸捕获
+  （所见即所得优先）；页框＋「— i/n —」分隔保留。
+- **选择性导出（Owner 点名，pages/sheets/section）**：
+  - pptx 三工具 `pages`（数组 [2,3] / 区间 "2-3"，1-based；越界人话报错；
+    选择导出文件名 pptx-export-p2-3.pdf / pptx-long-p2-3.png；逐页 PNG 用
+    原 deck 页码命名）；
+  - xlsx 三路径 `sheets`（表名数组；不存在人话报错并列出可用表；选择导出
+    文件名 xlsx-export-表1-表2.pdf，超长截断）；
+  - docx 两工具 `section`（标题文本；取该标题至下一个同级/更高级标题前；
+    不存在人话报错并列出可用标题）；
+  - 返回值一律带 `selected`（实际导出的页/表/节清单）。

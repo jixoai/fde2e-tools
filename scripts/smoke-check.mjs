@@ -813,6 +813,56 @@ async function main() {
       });
     });
 
+    // ---------- 选择性导出（openspec: selective-export）----------
+    /** 工具级导出助手：executeTool（带 input）＋真下载捕获（产物落定后才返回） */
+    async function selectiveExport(page, tool, input) {
+      const dlPromise = page.waitForEvent("download", { timeout: 90000 });
+      const out = await editorCall(page, `async (call) => call(${JSON.stringify(tool)}, ${JSON.stringify(input)})`);
+      const download = await dlPromise;
+      if (!out.ok) throw new Error(`${tool} 未成功: ${JSON.stringify(out)}`);
+      const dlPath = await download.path();
+      if (!dlPath) throw new Error("下载产物不可读");
+      return { out, suggested: download.suggestedFilename(), bytes: readFileSync(dlPath) };
+    }
+
+    await check("编辑器选择性导出：pptx pages=[2]（单页＋内容）＋xlsx sheets 单表＋docx section 单节＋越界/缺节人话报错", async () => {
+      // pptx：pages=[2] → pptx-export-p2.pdf，1 页，含第 2 页特征文本、不含第 3 页；越界报错
+      await withPage("pptx", "?sample=1", async (page) => {
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例演示已载入"), { timeout: 120000 });
+        const r = await selectiveExport(page, "export_pdf", { pages: [2] });
+        if (r.suggested !== "pptx-export-p2.pdf") throw new Error(`文件名契约不符: ${r.suggested}`);
+        const pages = assertPdfHead(r.bytes, "pptx pages=[2]");
+        if (pages !== 1) throw new Error(`选择 [2] 页数应为 1，实为 ${pages}`);
+        assertPdfText(r.bytes, "pptx pages=[2]", { requireChinese: true, keywords: ["本周经营数据"], forbidden: ["下周行动计划"] });
+        if (r.out.selected?.[0] !== 2) throw new Error(`selected 不符: ${JSON.stringify(r.out.selected)}`);
+        const bad = await editorCall(page, `async (call) => call("export_pdf", { pages: [9] })`);
+        if (bad.ok !== false || !String(bad.error ?? "").includes("越界")) throw new Error(`越界页码未人话报错: ${JSON.stringify(bad)}`);
+        console.log("      反读证据：pptx-export-p2.pdf 1 页（含「本周经营数据」不含「下周行动计划」）· selected=[2] · 越界 [9] 报「越界」");
+      });
+      // xlsx：sheets=["周营收"] → 只含该表；文件名带表名 tag
+      await withPage("xlsx", "?sample=1", async (page) => {
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例工作簿已载入"), { timeout: 90000 });
+        const r = await selectiveExport(page, "export_pdf", { sheets: ["周营收"] });
+        if (r.suggested !== "xlsx-export-周营收.pdf") throw new Error(`文件名契约不符: ${r.suggested}`);
+        assertPdfText(r.bytes, "xlsx sheets=[周营收]", { requireChinese: true, keywords: ["入住间夜"], forbidden: ["房源价格表", "加床费"] });
+        if (r.out.selected?.[0] !== "周营收") throw new Error(`selected 不符: ${JSON.stringify(r.out.selected)}`);
+        const bad = await editorCall(page, `async (call) => call("export_pdf", { sheets: ["不存在的表"] })`);
+        if (bad.ok !== false || !String(bad.error ?? "").includes("可用表")) throw new Error(`缺表未人话报错: ${JSON.stringify(bad)}`);
+        console.log("      反读证据：xlsx-export-周营收.pdf（含「入住间夜」不含「房源价格表」）· selected=[周营收] · 缺表报「可用表」");
+      });
+      // docx：section 单节 → 含该节不含后续节；缺节列出可用标题
+      await withPage("docx", "?sample=1", async (page) => {
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例文档已载入"), { timeout: 30000 });
+        const r = await selectiveExport(page, "export_pdf", { section: "二、本周问题与处理" });
+        if (r.suggested !== "docx-export.pdf") throw new Error(`文件名契约不符: ${r.suggested}`);
+        assertPdfText(r.bytes, "docx section", { requireChinese: true, keywords: ["本周问题与处理", "热水压力不足"], forbidden: ["下周重点", "淡季长住套餐"] });
+        if (r.out.selected?.[0] !== "二、本周问题与处理") throw new Error(`selected 不符: ${JSON.stringify(r.out.selected)}`);
+        const bad = await editorCall(page, `async (call) => call("export_pdf", { section: "不存在的节" })`);
+        if (bad.ok !== false || !String(bad.error ?? "").includes("可用标题")) throw new Error(`缺节未人话报错: ${JSON.stringify(bad)}`);
+        console.log("      反读证据：docx-export.pdf 单节（含「热水压力不足」不含「下周重点」）· selected=[二、本周问题与处理] · 缺节报「可用标题」");
+      });
+    });
+
     // 未就绪显式拒绝门（对抗审查回单：spec「未就绪 ok:false」SHALL 钉死）——
     // xlsx：Rendered 门禁 forcePending 挂起→export_pdf 必须 resolve {ok:false,人话可重试}
     // （forcePending 测试缝确定性复现，与 univer-write-gate 回归同款）；

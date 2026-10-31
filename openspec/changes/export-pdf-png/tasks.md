@@ -108,3 +108,19 @@
       webmcp-check；既有断言零缩水。
 - [x] 8.9 `pnpm -r check && pnpm -r build` 全绿；smoke-check / webmcp-check
       重跑全绿（证据见本轮报告）。
+
+## 9. 终验回单（2026-10-31 下午）：F1/F2 ＋ 选择性导出
+
+- [x] 9.1 **F1**：xlsx-long 去 A–G 列头/行号列/角格（DOM 实测：thead=数据首行、
+      tbodyTh=0、无列字母、meta 无开发说明语汇）。
+- [x] 9.2 **F2**：pdf-vector 抽 wrapByMeasure（measure 注入）＋CJK_FONT_URLS；
+      pptx 新增 TEMPLATE 样式源/computeSlideLayout 共享布局/canvas 模板位图
+      渲染器（FontFace 同字体源）；export_png/export_long_png 纯文本 deck 走
+      模板通道（复杂 deck 保留 ThumbnailSlide 裸捕获）。位图页与 PDF 页同构
+      实测：正文占宽 84.6%/84.6%，标题/要点字号 53/30px（位图）vs 44/25px（PDF）。
+- [x] 9.3 **选择性导出**：pptx pages / xlsx sheets / docx section 三站三形态
+      （解析/越界与缺名人话报错/文件名 tag/返回值 selected），shared
+      withSelectionTag 单源（超长截断）；schema 与描述同步（含示例）。
+- [x] 9.4 绿门：smoke-check 新增「编辑器选择性导出」check（pptx pages=[2]
+      单页＋内容正反断言、xlsx sheets 单表、docx section 单节、越界/缺节/缺表
+      人话报错）；smoke 39/39 全绿、webmcp-check 原生/polyfill 双路径全绿。

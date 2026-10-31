@@ -14,7 +14,9 @@ xlsx 还把编辑器 UI 截进产物）：
   适应（有上下限）、表头行加粗带浅底色、文字左对齐/数字右对齐、细灰网格、
   页边距 ≥15mm、多页重复表头、页脚「第 N 页 / 共 M 页」。`export_png`＝快照
   数据自绘 HTML 表格（全部工作表按 sheetOrder 顺序）→ 整簿长图 PNG（页边距
-  ≥56px、列宽随内容、无空壳行）。
+  ≥56px、列宽随内容、无空壳行）。长图为**纯数据表渲染**（终验 F1）：无列
+  字母头行/行号列/角格 chrome，数据首行作表头，产物与返回值不得含内部
+  release-note 语汇。
 - **docx 站**：`export_pdf`＝TipTap JSON → 块模型 → jsPDF 矢量绘制 A4 纵向多页
   （h1 22pt / h2 17pt / h3 14pt 加粗、正文 11pt/行高 1.6、列表按层级缩进＋
   基线对齐圆点、表格边框＋统一表头底色、页脚页码）。`export_png`＝同一块模型
@@ -80,6 +82,51 @@ xlsx 还把编辑器 UI 截进产物）：
 - **WHEN** `export_png` / `export_long_png` 被调用
 - **THEN** 分别下载 pptx-page-01.png…（逐页多文件）与 pptx-long.png
   （全部幻灯纵向拼接，页间有卡框、间隔带与「— i/n —」页码标注）
+
+### Requirement: 选择性导出（pages / sheets / section）
+
+三站展示级导出工具 SHALL 支持**参数级选择**（缺省＝全量，文件名契约不变），
+返回值一律带 `selected`（实际导出的页/表/节清单）：
+
+- **pptx**：`export_pdf/export_png/export_long_png` 加 `pages`（页码数组
+  `[2,3]` 或区间字符串 `"2-3"`，1-based；越界人话报错）。选择导出文件名
+  `pptx-export-p2-3.pdf` / `pptx-long-p2-3.png`；逐页 PNG 以原 deck 页码命名。
+- **xlsx**：`export_pdf/export_png/export_xlsx` 加 `sheets`（表名数组；不存在
+  的表名人话报错并列出可用表名）。选择导出文件名 `xlsx-export-表1-表2.pdf`
+  （超长截断）。
+- **docx**：`export_pdf/export_png` 加 `section`（标题文本；取该标题至下一个
+  同级或更高级标题前；不存在人话报错并列出可用标题）。
+
+#### Scenario: pptx 按页导出
+
+- **WHEN** `export_pdf({pages:[2]})` 且演示为 3 页
+- **THEN** 下载 pptx-export-p2.pdf（恰 1 页，含第 2 页特征文本、不含其他页
+  文本），返回 `selected=[2]`；pages=[9] 返回人话越界错误
+
+#### Scenario: xlsx 按表导出
+
+- **WHEN** `export_pdf({sheets:["周营收"]})`
+- **THEN** 下载 xlsx-export-周营收.pdf（只含该表内容），返回
+  `selected=["周营收"]`；表名不存在返回人话错误并列出可用表
+
+#### Scenario: docx 按节导出
+
+- **WHEN** `export_pdf({section:"二、本周问题与处理"})`
+- **THEN** 下载 docx-export.pdf（只含该节：标题至下一个同级/更高级标题前），
+  返回 `selected=[...]`；标题不存在返回人话错误并列出可用标题
+
+### Requirement: 位图与矢量 PDF 同源模板（pptx）
+
+纯文本语义 deck 的位图导出（export_png / export_long_png）SHALL 与矢量 PDF
+共用同一套模板样式源、布局计算、断行算法与字体资产（同一模板函数出两种介质）；
+含图片/图表/形状等复杂元素的 deck SHALL 回退 PPTist ThumbnailSlide 裸捕获
+（所见即所得优先，vendored 源码零改动）。
+
+#### Scenario: 位图页与 PDF 页同构
+
+- **WHEN** 同一纯文本 deck 分别 export_pdf 与 export_png
+- **THEN** 两种介质的标题/要点字号分级一致（32pt/18pt）、版心占位一致
+  （实测正文占宽相同），页框与「— i/n —」分隔保留
 
 ### Requirement: 内置示例内容真实性
 
