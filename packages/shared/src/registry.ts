@@ -206,6 +206,51 @@ export const TOOLS: ToolMeta[] = [
     ],
     repoPath: "apps/file-viewer",
   },
+  {
+    id: "xlsx",
+    name: "表格生成站",
+    tagline: "从数据生成真正的 .xlsx 文件",
+    description:
+      "输入 JSON（sheets:[{name, rows[][]}]）或多工作表粘贴表格（TSV，## 表名分表）→ 预览 → 一键生成 .xlsx 下载。SheetJS 社区版（Apache-2.0）浏览器本地生成，零后端零上传。",
+    tags: ["excel", "xlsx", "表格", "生成", "sheetjs"],
+    subdomain: "xlsx.tool.fde2e.com",
+    aiGuideSummary:
+      "JSON 填入 <textarea id=input-json>（{sheets:[{name,rows}]}）或表格粘贴进 <textarea id=input-tsv>（Tab 分列、## 表名分表），点 generate-xlsx-btn 生成 xlsx-export.xlsx；?sample=1 载入示例。",
+    urlParams: [
+      {
+        name: "sample",
+        description: "值=sample（或 1/示例）：自动载入内置示例工作簿并刷新预览（不触发生成）",
+      },,
+  {
+    id: "docx",
+    name: "文档生成站",
+    tagline: "从 Markdown 生成真正的 .docx 文件",
+    description:
+      "输入 Markdown 子集（标题/段落/有序无序列表/管道表格/**粗** *斜*）→ 结构预览 → 一键生成 .docx 下载。docx 库（MIT）浏览器本地生成，解析单源（同一 AST 驱动预览与产物），零后端零上传。",
+    tags: ["word", "docx", "文档", "markdown", "生成"],
+    subdomain: "docx.tool.fde2e.com",
+    aiGuideSummary:
+      "md 子集填入 <textarea id=input-md>（#/##/### 标题、- 列表、1. 列表、| 表格、**粗** *斜*），点 generate-docx-btn 生成 docx-export.docx；?sample=1 载入示例。",
+    urlParams: [
+      {
+        name: "sample",
+        description: "值=sample（或 1/示例）：自动载入内置示例文档并刷新预览（不触发生成）",
+      },,
+  {
+    id: "pptx",
+    name: "幻灯生成站",
+    tagline: "从大纲 JSON 生成真正的 .pptx 文件",
+    description:
+      "输入 JSON（slides:[{title, bullets[], notes?}]）→ 页面大纲预览 → 一键生成 .pptx 下载（16:9）。pptxgenjs（MIT）浏览器本地生成，零后端零上传。",
+    tags: ["powerpoint", "pptx", "幻灯", "演示", "生成"],
+    subdomain: "pptx.tool.fde2e.com",
+    aiGuideSummary:
+      "slides JSON 填入 <textarea id=input-json>（{\"slides\":[{title,bullets[],notes?}]}），点 generate-pptx-btn 生成 pptx-export.pptx；?sample=1 载入示例。",
+    urlParams: [
+      {
+        name: "sample",
+        description: "值=sample（或 1/示例）：自动载入内置示例幻灯并刷新预览（不触发生成）",
+      },,
 ];
 
 export function getTool(id: string): ToolMeta | undefined {

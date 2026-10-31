@@ -11,7 +11,8 @@
     "./theme/*": "./src/theme/*",
     "./ai-guide": "./src/ai-guide.tsx",
     "./status": "./src/status.ts",
-    "./webmcp": "./src/webmcp.ts"
+    "./webmcp": "./src/webmcp.ts",
+    "./download": "./src/download.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
