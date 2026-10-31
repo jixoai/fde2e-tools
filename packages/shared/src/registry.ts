@@ -313,7 +313,7 @@ export const TOOLS: ToolMeta[] = [
     tags: ["excel", "xlsx", "表格", "编辑器", "公式", "univer"],
     subdomain: "xlsx.tool.fde2e.com",
     aiGuideSummary:
-      "真表格网格：WebMCP set_cells/set_formula/format_range/add_sheet 直接写内核（未就绪返回 ok:false），import_xlsx({base64}) 导入、export_xlsx 导出 xlsx-export.xlsx、get_snapshot 读全簿；?sample=1 载入示例。",
+      "真表格网格：WebMCP set_cells/set_formula/format_range/add_sheet 直接写内核（未就绪返回 ok:false），import_xlsx({base64}) 导入、export_xlsx 导出 xlsx-export.xlsx、get_snapshot 读全簿、export_pdf/export_png 展示级导出（网格 PDF／全簿长图）；?sample=1 载入示例。",
     urlParams: [
       {
         name: "sample",
@@ -328,6 +328,8 @@ export const TOOLS: ToolMeta[] = [
       { name: "import_xlsx", description: "导入 .xlsx（base64）为可编辑工作簿，返回表清单与单元格统计" },
       { name: "export_xlsx", description: "导出当前工作簿为真 .xlsx 下载（缺省 xlsx-export.xlsx；值/公式保留，v1 样式与列宽不落文件）" },
       { name: "get_snapshot", description: "只读：返回全簿快照 JSON（表名/cellData 值与公式），供 AI 读后写" },
+      { name: "export_pdf", description: "网格画布所见即所得导出 PDF 下载（缺省 xlsx-export.pdf；A4 纵向单页，含公式计算值）" },
+      { name: "export_png", description: "全部工作表数据面自绘表格导出长图 PNG 下载（缺省 xlsx-long.png；列头 A/B/C＋值与公式）" },
     ],
     repoPath: "apps/xlsx",
   },
@@ -340,7 +342,7 @@ export const TOOLS: ToolMeta[] = [
     tags: ["word", "docx", "文档", "编辑器", "tiptap"],
     subdomain: "docx.tool.fde2e.com",
     aiGuideSummary:
-      "真文档编辑器：WebMCP set_content({content,format=html|markdown|json})/append_markdown/insert_heading/insert_table 写内核，export_docx 下载 docx-export.docx，import_docx({base64}) 导入继续编辑；?sample=1 载入示例。",
+      "真文档编辑器：WebMCP set_content({content,format=html|markdown|json})/append_markdown/insert_heading/insert_table 写内核，export_docx 下载 docx-export.docx，import_docx({base64}) 导入继续编辑，export_pdf/export_png 整篇导出 PDF／长图；?sample=1 载入示例。",
     urlParams: [
       {
         name: "sample",
@@ -354,6 +356,8 @@ export const TOOLS: ToolMeta[] = [
       { name: "insert_table", description: "在文末插入表格（rows/cols/data[][]/header?）" },
       { name: "export_docx", description: "导出当前文档为真 .docx 下载（缺省 docx-export.docx，标题/列表/表格/粗斜保留）" },
       { name: "import_docx", description: "导入 .docx（base64）为可编辑文档（mammoth 解析），返回文档统计" },
+      { name: "export_pdf", description: "整篇文档导出 PDF 下载（缺省 docx-export.pdf；A4 纵向，长文档按元素边界自动分页）" },
+      { name: "export_png", description: "整篇文档导出长图 PNG 下载（缺省 docx-long.png；超 16384px 截断并在产物标注）" },
     ],
     repoPath: "apps/docx",
   },
@@ -366,7 +370,7 @@ export const TOOLS: ToolMeta[] = [
     tags: ["powerpoint", "pptx", "幻灯", "编辑器", "pptist"],
     subdomain: "pptx.tool.fde2e.com",
     aiGuideSummary:
-      "真幻灯编辑器：WebMCP add_slide({layout=title|bullets|blank,title?,bullets?})/set_title/add_bullets 驱动 store，export_pptx 下载 pptx-export.pptx，import_pptx({base64}) 打开既有 .pptx；?sample=1 重置为内置示例。",
+      "真幻灯编辑器：WebMCP add_slide({layout=title|bullets|blank,title?,bullets?})/set_title/add_bullets 驱动 store，export_pptx 下载 pptx-export.pptx，import_pptx({base64}) 打开既有 .pptx，export_pdf/export_png/export_long_png 逐页/长图导出；?sample=1 重置为内置示例。",
     urlParams: [
       {
         name: "sample",
@@ -379,6 +383,9 @@ export const TOOLS: ToolMeta[] = [
       { name: "add_bullets", description: "向指定页追加要点列表（items[]，自动排版在既有内容下方）" },
       { name: "export_pptx", description: "导出当前演示为真 .pptx 下载（缺省 pptx-export.pptx）" },
       { name: "import_pptx", description: "导入 .pptx（base64）为可编辑演示（pptxtojson 解析），返回页数" },
+      { name: "export_pdf", description: "每页幻灯一页导出 PDF 下载（缺省 pptx-export.pdf；页面随幻灯纵横比横向）" },
+      { name: "export_png", description: "逐页幻灯导出独立 PNG 批量下载（pptx-page-01.png 起两位序号）" },
+      { name: "export_long_png", description: "全部幻灯纵向拼接导出长图 PNG 下载（缺省 pptx-long.png；超上限等比缩放）" },
     ],
     repoPath: "apps/pptx",
   },

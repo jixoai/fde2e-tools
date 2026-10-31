@@ -86,6 +86,10 @@ dev server 仅绑 IPv4 回环，不对外暴露。黄页的 iframe 实况预览�
   **easy-* 生成链「禁 AGPL」红线不放宽**（pptxgenjs MIT 与 AGPL 无涉）。
 - 三编辑站内核许可：Univer preset-sheets-core（Apache-2.0）、TipTap（MIT）、
   docx@9（MIT）/ mammoth（BSD-2）、PPTist（AGPL-3.0，仅 apps/pptx 目录）。
+- 展示级导出管线（export-pdf-png）：html2canvas 1.4.x（**MIT**）＋ jsPDF（**MIT**）——
+  以 pdf-tool vendored 的 html2pdf.bundle.min.js 单一副本（sha 一致）供 pdf-tool
+  与三编辑站 public/assets/ 各持一份（站点独立可部署）；pptx 逐页捕获用
+  html-to-image（**MIT**，PPTist 既有依赖）。许可同记于 export-kit.ts 头注。
 
 ## 部署
 
