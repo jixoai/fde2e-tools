@@ -9,7 +9,7 @@
  * 不做 iframe。
  */
 import { useEffect, useMemo, useState } from "react";
-import { livePreviewAvailable, searchTools, toolHomeUrl, type ToolMeta } from "@fde2e-tools/shared";
+import { getTool, livePreviewAvailable, searchTools, toolHomeUrl, type ToolMeta } from "@fde2e-tools/shared";
 import { AiGuide } from "@fde2e-tools/shared/ai-guide";
 import { Badge } from "@fde2e-tools/shared/ui/badge";
 import { Button } from "@fde2e-tools/shared/ui/button";
@@ -22,16 +22,27 @@ import { registerAppTools } from "./webmcp";
 const DIRECTORY_AI_GUIDE = `===== AI 使用说明（给自动化代理读的纯文本） =====
 本页是 FDE2E 工具黄页（tool.fde2e.com）：全部工具零后端、静态托管。
 - 每个工具有独立站：<tool-id>.tool.fde2e.com（卡片上的「打开工具」）。
+- 带「建设中」Badge 的卡片是主域名预留位（专业编辑器另线开发中，独立站尚未上线）：
+  轻量快速档在 easy-<id>.tool.fde2e.com（如 easy-xlsx.tool.fde2e.com），卡片有直达按钮。
 - 各工具页首都有 <pre id="ai-guide">，是给自动化代理读的完整用法说明（含 URL 参数契约）。
 - URL 参数契约是稳定接口：智能体按参数调用工具，契约变更会同步登记在各工具 ai-guide。
 - 加新工具＝仓库 packages/shared registry 加一条，黄页自动收录。`;
 
 function ToolCard({ tool, previewable }: { tool: ToolMeta; previewable: boolean }) {
   const home = toolHomeUrl(tool);
+  // 建设中占位目（registry comingSoon）：向同名轻量快速档（easy-<id>）引流
+  const easyAlt = tool.comingSoon ? getTool(`easy-${tool.id}`) : undefined;
   return (
     <Card className="min-h-0">
       <CardHeader>
-        <CardTitle className="text-lg">{tool.name}</CardTitle>
+        <CardTitle className="text-lg flex flex-wrap items-center gap-2">
+          {tool.name}
+          {tool.comingSoon && (
+            <Badge data-testid="coming-soon-badge" className="shrink-0">
+              建设中
+            </Badge>
+          )}
+        </CardTitle>
         <CardDescription>
           {tool.tagline} · <span className="font-mono text-xs">{tool.subdomain}</span>
         </CardDescription>
@@ -45,7 +56,20 @@ function ToolCard({ tool, previewable }: { tool: ToolMeta; previewable: boolean 
             </Badge>
           ))}
         </div>
-        {previewable ? (
+        {tool.comingSoon ? (
+          <div className="bg-background flex h-[160px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-input px-4 text-center">
+            <p className="m-0 text-sm text-muted-foreground">
+              专业编辑器建设中——独立站尚未上线
+            </p>
+            {easyAlt && (
+              <a href={toolHomeUrl(easyAlt)} target="_blank" rel="noreferrer">
+                <Button variant="outline" size="sm">
+                  用轻量快速档 {easyAlt.id}
+                </Button>
+              </a>
+            )}
+          </div>
+        ) : previewable ? (
           <LivePreview home={home} name={tool.name} />
         ) : (
           <div className="bg-background flex h-[160px] flex-col items-center justify-center gap-2 rounded-lg border border-input px-4 text-center">
@@ -67,9 +91,15 @@ function ToolCard({ tool, previewable }: { tool: ToolMeta; previewable: boolean 
         )}
       </CardContent>
       <CardFooter className="gap-2">
-        <a href={home} target="_blank" rel="noreferrer" className="flex-1">
-          <Button className="w-full">打开工具</Button>
-        </a>
+        {tool.comingSoon ? (
+          <Button className="flex-1" disabled aria-disabled="true">
+            打开工具
+          </Button>
+        ) : (
+          <a href={home} target="_blank" rel="noreferrer" className="flex-1">
+            <Button className="w-full">打开工具</Button>
+          </a>
+        )}
         <span className="font-mono text-xs text-muted-foreground">
           {tool.urlParams.length ? `${tool.urlParams.length} 个 URL 参数契约` : "无 URL 参数"}
         </span>

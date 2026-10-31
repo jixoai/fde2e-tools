@@ -45,7 +45,11 @@ export interface ToolMeta {
   description: string;
   /** 检索标签 */
   tags: string[];
-  /** 独立站子域（域名体系 Owner 2026-10-30：<tool>.tool.fde2e.com） */
+  /**
+   * 独立站子域（域名体系 Owner 2026-10-30：<tool>.tool.fde2e.com；
+   * 2026-10-31 裁决：轻量生成线用 easy-* 前缀子域，xlsx/docx/pptx 主域
+   * 留给专业编辑器——见 comingSoon 占位目）。
+   */
   subdomain: string;
   /** 给 AI/自动化代理的用法摘要（黄页展示；全文以各工具页内 #ai-guide 为准） */
   aiGuideSummary: string;
@@ -55,6 +59,12 @@ export interface ToolMeta {
   tools: ToolEntryPoint[];
   /** 仓库内实现路径 */
   repoPath: string;
+  /**
+   * 建设中占位目（可选，缺省 false）：独立站尚未上线，本条仅作黄页占位——
+   * 黄页渲染「建设中」Badge 且禁用「打开工具」入口（Owner 裁决 2026-10-31：
+   * 轻量生成线更名 easy-*，xlsx/docx/pptx 主域名留给另线开发的专业编辑器）。
+   */
+  comingSoon?: boolean;
 }
 
 /** 独立站首页 URL */
@@ -207,13 +217,13 @@ export const TOOLS: ToolMeta[] = [
     repoPath: "apps/file-viewer",
   },
   {
-    id: "xlsx",
-    name: "表格生成站",
-    tagline: "从数据生成真正的 .xlsx 文件",
+    id: "easy-xlsx",
+    name: "简易表格生成站",
+    tagline: "开箱即用快速档：从数据生成真正的 .xlsx 文件",
     description:
-      "输入 JSON（sheets:[{name, rows[][]}]）或多工作表粘贴表格（TSV，## 表名分表）→ 预览 → 一键生成 .xlsx 下载。SheetJS 社区版（Apache-2.0）浏览器本地生成，零后端零上传。",
-    tags: ["excel", "xlsx", "表格", "生成", "sheetjs"],
-    subdomain: "xlsx.tool.fde2e.com",
+      "轻量快速档：输入 JSON（sheets:[{name, rows[][]}]）或多工作表粘贴表格（TSV，## 表名分表）→ 预览 → 一键得到 .xlsx 下载。SheetJS 社区版（Apache-2.0）浏览器本地生成，零后端零上传。专业编辑场景由另线编辑器承接（建设中）。",
+    tags: ["excel", "xlsx", "表格", "简易", "快速", "sheetjs"],
+    subdomain: "easy-xlsx.tool.fde2e.com",
     aiGuideSummary:
       "JSON 填入 <textarea id=input-json>（{sheets:[{name,rows}]}）或表格粘贴进 <textarea id=input-tsv>（Tab 分列、## 表名分表），点 generate-xlsx-btn 生成 xlsx-export.xlsx；?sample=1 载入示例。",
     urlParams: [
@@ -232,16 +242,16 @@ export const TOOLS: ToolMeta[] = [
         description: "向当前工作簿追加一张示例工作表（可自定义表名），刷新预览并返回工作簿 JSON——细粒度逐表构建",
       },
     ],
-    repoPath: "apps/xlsx",
+    repoPath: "apps/easy-xlsx",
   },
   {
-    id: "docx",
-    name: "文档生成站",
-    tagline: "从 Markdown 生成真正的 .docx 文件",
+    id: "easy-docx",
+    name: "简易文档生成站",
+    tagline: "开箱即用快速档：从 Markdown 生成真正的 .docx 文件",
     description:
-      "输入 Markdown 子集（标题/段落/有序无序列表/管道表格/**粗** *斜*）→ 结构预览 → 一键生成 .docx 下载。docx 库（MIT）浏览器本地生成，解析单源（同一 AST 驱动预览与产物），零后端零上传。",
-    tags: ["word", "docx", "文档", "markdown", "生成"],
-    subdomain: "docx.tool.fde2e.com",
+      "轻量快速档：输入 Markdown 子集（标题/段落/有序无序列表/管道表格/**粗** *斜*）→ 结构预览 → 一键得到 .docx 下载。docx 库（MIT）浏览器本地生成，解析单源（同一 AST 驱动预览与产物），零后端零上传。专业编辑场景由另线编辑器承接（建设中）。",
+    tags: ["word", "docx", "文档", "markdown", "简易", "快速"],
+    subdomain: "easy-docx.tool.fde2e.com",
     aiGuideSummary:
       "md 子集填入 <textarea id=input-md>（#/##/### 标题、- 列表、1. 列表、| 表格、**粗** *斜*），点 generate-docx-btn 生成 docx-export.docx；?sample=1 载入示例。",
     urlParams: [
@@ -260,16 +270,16 @@ export const TOOLS: ToolMeta[] = [
         description: "向当前文档追加 Markdown 片段（细粒度逐段构建），刷新预览并返回文档统计",
       },
     ],
-    repoPath: "apps/docx",
+    repoPath: "apps/easy-docx",
   },
   {
-    id: "pptx",
-    name: "幻灯生成站",
-    tagline: "从大纲 JSON 生成真正的 .pptx 文件",
+    id: "easy-pptx",
+    name: "简易幻灯生成站",
+    tagline: "开箱即用快速档：从大纲 JSON 生成真正的 .pptx 文件",
     description:
-      "输入 JSON（slides:[{title, bullets[], notes?}]）→ 页面大纲预览 → 一键生成 .pptx 下载（16:9）。pptxgenjs（MIT）浏览器本地生成，零后端零上传。",
-    tags: ["powerpoint", "pptx", "幻灯", "演示", "生成"],
-    subdomain: "pptx.tool.fde2e.com",
+      "轻量快速档：输入 JSON（slides:[{title, bullets[], notes?}]）→ 页面大纲预览 → 一键得到 .pptx 下载（16:9）。pptxgenjs（MIT）浏览器本地生成，零后端零上传。专业编辑场景由另线编辑器承接（建设中）。",
+    tags: ["powerpoint", "pptx", "幻灯", "演示", "简易", "快速"],
+    subdomain: "easy-pptx.tool.fde2e.com",
     aiGuideSummary:
       "slides JSON 填入 <textarea id=input-json>（{\"slides\":[{title,bullets[],notes?}]}），点 generate-pptx-btn 生成 pptx-export.pptx；?sample=1 载入示例。",
     urlParams: [
@@ -288,7 +298,56 @@ export const TOOLS: ToolMeta[] = [
         description: "向当前 slides 追加一页（title/bullets/notes，细粒度逐页构建），刷新预览并返回大纲 JSON",
       },
     ],
-    repoPath: "apps/pptx",
+    repoPath: "apps/easy-pptx",
+  },
+  // ---------- 建设中占位目（Owner 裁决 2026-10-31）----------
+  // 轻量生成线更名 easy-*（开箱即用快速档）；xlsx/docx/pptx 主域名让位给
+  // 另线开发的专业编辑器（打开/编辑/格式转换的重型能力）——先占位登记，
+  // 黄页渲染「建设中」Badge 且禁用入口，并向轻量快速档引流。
+  {
+    id: "xlsx",
+    name: "专业表格编辑器（建设中）",
+    tagline: "打开/编辑/格式转换的重型能力，主域名预留位",
+    description:
+      "专业表格编辑器（打开既有工作簿、编辑、格式转换）另线开发中，本域名为其预留。轻量「数据→文件」快速需求现已可用：easy-xlsx.tool.fde2e.com。",
+    tags: ["excel", "编辑器", "规划中"],
+    subdomain: "xlsx.tool.fde2e.com",
+    aiGuideSummary:
+      "建设中占位：独立站尚未上线。轻量快速档见 easy-xlsx.tool.fde2e.com（JSON/TSV 输入一键产出 .xlsx）。",
+    urlParams: [],
+    tools: [],
+    repoPath: "（规划中，暂无实现目录）",
+    comingSoon: true,
+  },
+  {
+    id: "docx",
+    name: "专业文档编辑器（建设中）",
+    tagline: "打开/编辑/格式转换的重型能力，主域名预留位",
+    description:
+      "专业文档编辑器（打开既有文档、编辑、格式转换）另线开发中，本域名为其预留。轻量 Markdown 快速需求现已可用：easy-docx.tool.fde2e.com。",
+    tags: ["word", "编辑器", "规划中"],
+    subdomain: "docx.tool.fde2e.com",
+    aiGuideSummary:
+      "建设中占位：独立站尚未上线。轻量快速档见 easy-docx.tool.fde2e.com（Markdown 子集一键产出 .docx）。",
+    urlParams: [],
+    tools: [],
+    repoPath: "（规划中，暂无实现目录）",
+    comingSoon: true,
+  },
+  {
+    id: "pptx",
+    name: "专业幻灯编辑器（建设中）",
+    tagline: "打开/编辑/格式转换的重型能力，主域名预留位",
+    description:
+      "专业幻灯编辑器（打开既有演示、编辑、格式转换）另线开发中，本域名为其预留。轻量大纲快速需求现已可用：easy-pptx.tool.fde2e.com。",
+    tags: ["powerpoint", "编辑器", "规划中"],
+    subdomain: "pptx.tool.fde2e.com",
+    aiGuideSummary:
+      "建设中占位：独立站尚未上线。轻量快速档见 easy-pptx.tool.fde2e.com（slides JSON 一键产出 .pptx）。",
+    urlParams: [],
+    tools: [],
+    repoPath: "（规划中，暂无实现目录）",
+    comingSoon: true,
   },
 ];
 

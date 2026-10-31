@@ -18,6 +18,7 @@ function project(tool: (typeof TOOLS)[number]) {
     tags: tool.tags,
     subdomain: tool.subdomain,
     homeUrl: toolHomeUrl(tool),
+    comingSoon: !!tool.comingSoon,
     urlParams: tool.urlParams,
     webmcpTools: tool.tools,
     repoPath: tool.repoPath,
@@ -30,7 +31,7 @@ function buildTools(): WebMCPToolDef[] {
       name: "list_tools",
       title: "枚举全部工具",
       description:
-        "返回工具黄页收录的全部工具元数据：id/名称/一句话/子域/标签/URL 参数契约/该工具的 WebMCP 入口点/独立站 URL。",
+        "返回工具黄页收录的全部工具元数据：id/名称/一句话/子域/标签/URL 参数契约/该工具的 WebMCP 入口点/独立站 URL/comingSoon（true＝建设中占位，独立站未上线，轻量快速档见 easy-* 子域）。",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       async execute() {
