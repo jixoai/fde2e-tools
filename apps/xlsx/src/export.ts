@@ -57,22 +57,28 @@ export interface ExportOk {
 export type ExportResult = ExportOk | { ok: false; error: string };
 
 export async function exportGridPdf(filename?: string): Promise<ExportResult> {
-  const gate = await ensureReady();
-  if (!gate.ok) return gate;
-  const wrap = gridNode();
-  if (!wrap) return { ok: false, error: "找不到网格画布节点（编辑器未挂载？）" };
   const name = resolvePdfName(filename);
-  // 守卫必挂（scope=网格画布：子树字面量 oklch 内联钉扎）且包住**全管线**——
-  // pngsToPdf 的 probe worker 挂在 body 上（容器缺省 border-color 会落回
-  // TW4 preflight 的 oklch 变量），守卫中途卸载=stage2 裸奔（本轮排障实证）
-  const result = await withColorGuard(async () => {
-    // PDF 内嵌走 JPEG（jsPDF 对 PNG 不做有损压缩，10MB 级产物过大——排障实证）
-    const png = await renderNodeToPng(wrap, { scale: 2, imageType: "jpeg", quality: 0.92 });
-    const pdf = await pngsToPdf([png.blob], { orientation: "portrait", pageSize: "a4", imageFormat: "JPEG" });
-    downloadBlob(pdf.blob, name);
-    return { width: png.width, height: png.height, truncated: png.truncated, notice: png.notice };
-  }, wrap);
-  return { ok: true, filename: name, ...result };
+  // 全管线 try/catch（对抗审查顺手项）：守卫内渲染/组装抛错一律转 {ok:false}
+  // 人话返回，WebMCP execute 不 reject（与 pptx 三通道同款对齐）
+  try {
+    const gate = await ensureReady();
+    if (!gate.ok) return gate;
+    const wrap = gridNode();
+    if (!wrap) return { ok: false, error: "找不到网格画布节点（编辑器未挂载？）" };
+    // 守卫必挂（scope=网格画布：子树字面量 oklch 内联钉扎）且包住**全管线**——
+    // pngsToPdf 的 probe worker 挂在 body 上（容器缺省 border-color 会落回
+    // TW4 preflight 的 oklch 变量），守卫中途卸载=stage2 裸奔（本轮排障实证）
+    const result = await withColorGuard(async () => {
+      // PDF 内嵌走 JPEG（jsPDF 对 PNG 不做有损压缩，10MB 级产物过大——排障实证）
+      const png = await renderNodeToPng(wrap, { scale: 2, imageType: "jpeg", quality: 0.92 });
+      const pdf = await pngsToPdf([png.blob], { orientation: "portrait", pageSize: "a4", imageFormat: "JPEG" });
+      downloadBlob(pdf.blob, name);
+      return { width: png.width, height: png.height, truncated: png.truncated, notice: png.notice };
+    }, wrap);
+    return { ok: true, filename: name, ...result };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error && e.message ? e.message : String(e) };
+  }
 }
 
 /* ---------- export_png：快照数据自绘表格 → 整簿长图 ---------- */
@@ -175,24 +181,29 @@ export function snapshotToTablesHtml(
 }
 
 export async function exportSheetLongPng(filename?: string): Promise<ExportResult & { truncated?: boolean; notice?: string }> {
-  const gate = await ensureReady();
-  if (!gate.ok) return gate;
-  const h = getHost();
-  const wb = h!.api.getActiveWorkbook();
-  if (!wb) return { ok: false, error: "当前无活动工作簿" };
   const name = resolvePngName(filename);
-  const snapshot = wb.save() as {
-    sheetOrder?: string[];
-    sheets: Record<string, { name?: string; cellData?: Record<number, Record<number, SeedCell>> }>;
-  };
-  const node = document.createElement("div");
-  node.innerHTML = snapshotToTablesHtml(snapshot, h!.workbookName);
-  const unmount = mountOffscreen(node, 920);
+  // 全管线 try/catch（对抗审查顺手项，同 exportGridPdf）
   try {
-    const png = await withColorGuard(() => renderNodeToPng(node, { width: 920, scale: 2 }), node);
-    downloadBlob(png.blob, name);
-    return { ok: true, filename: name, width: png.width, height: png.height, truncated: png.truncated, notice: png.notice };
-  } finally {
-    unmount();
+    const gate = await ensureReady();
+    if (!gate.ok) return gate;
+    const h = getHost();
+    const wb = h!.api.getActiveWorkbook();
+    if (!wb) return { ok: false, error: "当前无活动工作簿" };
+    const snapshot = wb.save() as {
+      sheetOrder?: string[];
+      sheets: Record<string, { name?: string; cellData?: Record<number, Record<number, SeedCell>> }>;
+    };
+    const node = document.createElement("div");
+    node.innerHTML = snapshotToTablesHtml(snapshot, h!.workbookName);
+    const unmount = mountOffscreen(node, 920);
+    try {
+      const png = await withColorGuard(() => renderNodeToPng(node, { width: 920, scale: 2 }), node);
+      downloadBlob(png.blob, name);
+      return { ok: true, filename: name, width: png.width, height: png.height, truncated: png.truncated, notice: png.notice };
+    } finally {
+      unmount();
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error && e.message ? e.message : String(e) };
   }
 }

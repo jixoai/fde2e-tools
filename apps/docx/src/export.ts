@@ -53,46 +53,57 @@ function clonePageNode(): { node: HTMLElement; unmount: () => void } | { error: 
 
 /** export_pdf：离屏克隆 → 分页 A4 纵向 PDF（html2pdf pagebreak 管线） */
 export async function exportDocPdf(filename?: string): Promise<ExportResult> {
-  const cloned = clonePageNode();
-  if ("error" in cloned) return { ok: false, error: cloned.error };
-  const { node, unmount } = cloned;
-  const name = resolvePdfName(filename);
+  // 全管线 try/catch（对抗审查顺手项）：守卫内管线抛错一律转 {ok:false} 人话
+  // 返回，WebMCP execute 不 reject（与 pptx 三通道同款对齐）
   try {
-    // 守卫必挂（scope=离屏纸面克隆：子树字面量 oklch 内联钉扎），落定后卸载。
-    // pagebreak css/legacy 让长文档按元素边界分页（与 pdf-tool 同管线）；
-    // margin 0——纸面自带内边距。管线走显式分步：toContainer 后先做容器归一化
-    // （克隆回原点＋容器按纸面尺寸定宽——html2pdf 只重置 position 不重置 left，
-    // 离屏克隆会整体漂出容器，产物近空白——排障实证），再 .save() 全管线。
-    await withColorGuard(async () => {
-      const worker = openHtml2pdfWorker().set({
-        margin: 0,
-        filename: name,
-        image: { type: "jpeg", quality: 0.95 },
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false, scrollX: 0, scrollY: 0 },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        pagebreak: { mode: ["css", "legacy"] },
-      }).from(node);
-      await worker.toContainer();
-      normalizeWorkerContainer(worker, 860, node.scrollHeight);
-      await worker.save();
-    }, node);
-    return { ok: true, filename: name, width: 860, height: node.scrollHeight };
-  } finally {
-    unmount();
+    const cloned = clonePageNode();
+    if ("error" in cloned) return { ok: false, error: cloned.error };
+    const { node, unmount } = cloned;
+    const name = resolvePdfName(filename);
+    try {
+      // 守卫必挂（scope=离屏纸面克隆：子树字面量 oklch 内联钉扎），落定后卸载。
+      // pagebreak css/legacy 让长文档按元素边界分页（与 pdf-tool 同管线）；
+      // margin 0——纸面自带内边距。管线走显式分步：toContainer 后先做容器归一化
+      // （克隆回原点＋容器按纸面尺寸定宽——html2pdf 只重置 position 不重置 left，
+      // 离屏克隆会整体漂出容器，产物近空白——排障实证），再 .save() 全管线。
+      await withColorGuard(async () => {
+        const worker = openHtml2pdfWorker().set({
+          margin: 0,
+          filename: name,
+          image: { type: "jpeg", quality: 0.95 },
+          html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false, scrollX: 0, scrollY: 0 },
+          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+          pagebreak: { mode: ["css", "legacy"] },
+        }).from(node);
+        await worker.toContainer();
+        normalizeWorkerContainer(worker, 860, node.scrollHeight);
+        await worker.save();
+      }, node);
+      return { ok: true, filename: name, width: 860, height: node.scrollHeight };
+    } finally {
+      unmount();
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error && e.message ? e.message : String(e) };
   }
 }
 
 /** export_png：整篇文档一张长图 */
 export async function exportDocLongPng(filename?: string): Promise<ExportResult> {
-  const cloned = clonePageNode();
-  if ("error" in cloned) return { ok: false, error: cloned.error };
-  const { node, unmount } = cloned;
-  const name = resolvePngName(filename);
+  // 全管线 try/catch（对抗审查顺手项，同 exportDocPdf）
   try {
-    const png = await withColorGuard(() => renderNodeToPng(node, { width: 860, scale: 2 }), node);
-    downloadBlob(png.blob, name);
-    return { ok: true, filename: name, width: png.width, height: png.height, truncated: png.truncated, notice: png.notice };
-  } finally {
-    unmount();
+    const cloned = clonePageNode();
+    if ("error" in cloned) return { ok: false, error: cloned.error };
+    const { node, unmount } = cloned;
+    const name = resolvePngName(filename);
+    try {
+      const png = await withColorGuard(() => renderNodeToPng(node, { width: 860, scale: 2 }), node);
+      downloadBlob(png.blob, name);
+      return { ok: true, filename: name, width: png.width, height: png.height, truncated: png.truncated, notice: png.notice };
+    } finally {
+      unmount();
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error && e.message ? e.message : String(e) };
   }
 }
