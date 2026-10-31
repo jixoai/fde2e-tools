@@ -7,7 +7,7 @@
  * 幽灵一律显式 ok:false，禁静默失败（openspec: univer-write-gate）。
  * 输出含用户可控内容（untrustedContentHint 纪律）。
  */
-import { downloadBlob, safeFilename, withSelectionTag } from "@fde2e-tools/shared/download";
+import { downloadBlob, resolveDownloadName } from "@fde2e-tools/shared/download";
 import { registerWebMCPTools, type WebMCPToolDef } from "@fde2e-tools/shared/webmcp";
 import {
   canaryProbe,
@@ -19,23 +19,19 @@ import {
   withEditorWrite,
   type FacadeSheet,
 } from "./editor";
-import { exportGridPdf, exportSheetLongPng } from "./export";
+import { exportGridPdf, exportSheetLongPng, snapshotToTablesHtml } from "./export";
 import { snapshotToXlsxBytes, xlsxBytesToSeed } from "./bridge";
-import { resolveExportName } from "./export-name";
-import { assertCompleteSeed, filterSheetIds, type SeedCell, type WorkbookSeed } from "./snapshot";
+import {
+  assertCompleteSeed,
+  parseA1,
+  planSheetDraw,
+  resolveExportSelection,
+  buildUnitWorkSnapshot,
+  type SeedCell,
+  type WorkbookSeed,
+} from "./snapshot";
 
 /* ---------- 基础助手 ---------- */
-
-const A1_RE = /^(\$?[A-Za-z]{1,3})(\$?[1-9]\d{0,6})$/;
-
-/** "B3" → [row, col]（0 基）；非法即抛人话错误 */
-export function parseA1(ref: string): [number, number] {
-  const m = A1_RE.exec(ref.trim());
-  if (!m) throw new Error(`非法单元格地址「${ref}」（期望 A1 形态）`);
-  let col = 0;
-  for (const ch of m[1].toUpperCase()) col = col * 26 + (ch.charCodeAt(0) - 64);
-  return [parseInt(m[2], 10) - 1, col - 1];
-}
 
 function resolveSheet(h: NonNullable<ReturnType<typeof getHost>>, name: string | undefined): FacadeSheet {
   const wb = h.api.getActiveWorkbook();
@@ -44,6 +40,28 @@ function resolveSheet(h: NonNullable<ReturnType<typeof getHost>>, name: string |
   const s = wb.getSheetByName(name);
   if (!s) throw new Error(`找不到工作表「${name}」（现有：${wb.getSheets().map((x) => x.getSheetName()).join("、")}）`);
   return s;
+}
+
+/** 参数「已给出」判定（undefined/null 视为未给） */
+function paramGiven(v: unknown): boolean {
+  return v !== undefined && v !== null;
+}
+
+/** F26：错误文案带收到值形态（人话排障——「给了什么」一眼可判） */
+function describeValue(v: unknown): string {
+  if (Array.isArray(v)) return `数组（长度 ${v.length}${v.length === 0 ? "" : Array.isArray(v[0]) ? "，元素为数组" : "，元素非数组"}）`;
+  if (v === null) return "null";
+  return `${typeof v}（${String(v).slice(0, 40)}）`;
+}
+
+/** F16：A1 前置校验抛错转 {ok:false}（execute 不 reject） */
+function checkA1Prefix(range: string): { ok: false; error: string } | null {
+  try {
+    parseA1(range.split(":")[0]);
+    return null;
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 /** 公式补 = 前缀；计算值轮询（引擎异步算，3s 上限） */
@@ -97,8 +115,8 @@ function buildTools(): WebMCPToolDef[] {
       annotations: { untrustedContentHint: true },
       async execute(input) {
         const values = input.values as unknown;
-        if (!Array.isArray(values) || !values.length || !Array.isArray(values[0])) {
-          return { ok: false, error: "values 必须是非空二维数组" };
+        if (!Array.isArray(values) || !values.length || !values.every((row) => Array.isArray(row))) {
+          return { ok: false, error: `values 必须是非空二维数组（收到 ${describeValue(values)}）` };
         }
         const startRow = typeof input.startRow === "number" && input.startRow >= 0 ? Math.floor(input.startRow) : 0;
         const startCol = typeof input.startCol === "number" && input.startCol >= 0 ? Math.floor(input.startCol) : 0;
@@ -147,7 +165,8 @@ function buildTools(): WebMCPToolDef[] {
         const range = String(input.range ?? "");
         const raw = String(input.formula ?? "").trim();
         if (!range || !raw) return { ok: false, error: "range 与 formula 必填" };
-        parseA1(range.split(":")[0]); // 前置校验地址形态
+        const bad = checkA1Prefix(range); // F16：前置校验抛错转 ok:false，不 reject
+        if (bad) return bad;
         const formula = raw.startsWith("=") ? raw : "=" + raw;
         const res = await withEditorWrite(async (h) => {
           const sheet = resolveSheet(h, typeof input.sheet === "string" ? input.sheet : undefined);
@@ -190,7 +209,8 @@ function buildTools(): WebMCPToolDef[] {
       async execute(input) {
         const range = String(input.range ?? "");
         if (!range) return { ok: false, error: "range 必填" };
-        parseA1(range.split(":")[0]);
+        const bad = checkA1Prefix(range); // F16：前置校验抛错转 ok:false，不 reject
+        if (bad) return bad;
         const styles = (input.styles ?? {}) as Record<string, unknown>;
         const res = await withEditorWrite(async (h) => {
           const sheet = resolveSheet(h, typeof input.sheet === "string" ? input.sheet : undefined);
@@ -276,7 +296,8 @@ function buildTools(): WebMCPToolDef[] {
       name: "import_xlsx",
       title: "导入 .xlsx",
       description:
-        "导入 .xlsx 文件（base64 编码）为可编辑工作簿（SheetJS 桥：值/公式保留；样式与列宽不保留），替换当前工作簿。返回表清单与单元格统计。导入后可继续 set_cells/export_xlsx。",
+        "导入 .xlsx 文件（base64 编码）为可编辑工作簿（SheetJS 桥：值/公式保留；样式与列宽不保留），替换当前工作簿。返回表清单与单元格统计；" +
+        "外部文件的重名工作表自动去重（如「周报」→「周报 (2)」，两表数据各归其位）并在返回值 warning 声明。导入后可继续 set_cells/export_xlsx。",
       inputSchema: {
         type: "object",
         properties: {
@@ -307,9 +328,11 @@ function buildTools(): WebMCPToolDef[] {
           const canary = await canaryProbe(h.api);
           h.health = canary;
           if (!canary.verified) throw new Error(canary.error ?? "导入后 canary 校验失败");
-          return { sheetNames: summary.sheetNames, cells: summary.cells };
+          return { sheetNames: summary.sheetNames, cells: summary.cells, warning: summary.warning };
         });
-        return res.ok ? { ok: true, ...(res.value as { sheetNames: string[]; cells: number }) } : res;
+        if (!res.ok) return res;
+        const value = res.value as { sheetNames: string[]; cells: number; warning?: string };
+        return { ok: true, sheetNames: value.sheetNames, cells: value.cells, ...(value.warning ? { warning: value.warning } : {}) };
       },
     },
     {
@@ -317,23 +340,36 @@ function buildTools(): WebMCPToolDef[] {
       title: "导出 .xlsx",
       description:
         "导出当前工作簿为真 .xlsx 下载（缺省文件名 xlsx-export.xlsx；值/公式保留，v1 样式与列宽不落导出文件）。" +
-        "可选 sheets 选择工作表（如 [\"房源价格表\"]，缺省全部表；选择导出文件名 xlsx-export-表1-表2.xlsx）。" +
-        "返回文件名契约、逐表统计与 selected（实际导出的表名清单）。",
+        '「导出什么」二选一（同传报错）：可选 items 导出单元（每项 {sheet: 表名或1起序号, range?: "A1:F20" 区域}，' +
+        '如 [{"sheet":"房源价格表"},{"sheet":2},{"sheet":"周营收","range":"A1:F5"}]）；或 sheets 兼容糖（表名数组如 ["房源价格表"] 或 1 起序号数组如 [1,3]，缺省全部表）。' +
+        "返回文件名契约（自定义 filename 为主、选择 tag 追加其上）、逐表统计与 selected（sheets 形态＝表名数组；items 形态＝逐单元 {sheet, range?}）。",
       inputSchema: {
         type: "object",
         properties: {
-          filename: { type: "string", description: "可选下载文件名（缺省 xlsx-export.xlsx）" },
+          filename: { type: "string", description: "可选下载文件名（缺省 xlsx-export.xlsx；有选择 tag 时追加其上）" },
+          items: {
+            type: "array",
+            description: '可选导出单元（与 sheets 二选一）：如 [{"sheet":"周营收"},{"sheet":2},{"sheet":"周营收","range":"A1:F5"}]；区域超出实际内容按内容范围收敛',
+            items: {
+              type: "object",
+              properties: {
+                sheet: { type: ["string", "number"], description: "工作表名或 1 起序号（第 1 表=1）" },
+                range: { type: "string", description: '可选 A1 区域（单表内，如 "A1:F20"）' },
+              },
+              required: ["sheet"],
+              additionalProperties: false,
+            },
+          },
           sheets: {
             type: "array",
-            items: { type: "string" },
-            description: '可选工作表名选择（如 ["房源价格表","周营收"]；缺省全部表）',
+            items: { type: ["string", "number"] },
+            description: '可选工作表选择（与 items 二选一）：表名数组如 ["房源价格表","周营收"] 或 1 起序号数组如 [1,3]（第 1 表=1，与 pptx pages 一致）；缺省全部表',
           },
         },
         additionalProperties: false,
       },
       annotations: { untrustedContentHint: true },
       async execute(input) {
-        const filename = resolveExportName(typeof input.filename === "string" ? input.filename : undefined);
         const h = getHost();
         if (!h) return { ok: false, error: "编辑器尚未启动（内核加载中），请稍后重试" };
         const ready = await h.gate.ensureReady(h.api);
@@ -342,14 +378,30 @@ function buildTools(): WebMCPToolDef[] {
         if (!wb) return { ok: false, error: "当前无活动工作簿" };
         try {
           const full = wb.save() as Parameters<typeof snapshotToXlsxBytes>[0];
-          const filter = filterSheetIds(full as { sheetOrder?: string[]; sheets: Record<string, { name?: string }> }, input.sheets);
-          if (filter.error) return { ok: false, error: filter.error };
-          const snapshot = { ...full, sheetOrder: filter.ids } as Parameters<typeof snapshotToXlsxBytes>[0];
+          const sel = resolveExportSelection(full, input.items, input.sheets);
+          if (!sel.ok) return { ok: false, error: sel.error };
+          let snapshot = full;
+          let selected: Array<string | { sheet: string; range?: string }> = sel.units.map((u) => u.name);
+          let tag: string | null = null;
+          if (paramGiven(input.sheets) || paramGiven(input.items)) {
+            const built = buildUnitWorkSnapshot(full, sel.units);
+            if (!built.ok) return { ok: false, error: built.error };
+            snapshot = built.result.work as Parameters<typeof snapshotToXlsxBytes>[0];
+            // selected 形态契约：items 主形态＝逐单元对象；sheets 兼容糖＝表名数组（v1）
+            selected = paramGiven(input.items)
+              ? built.result.selected
+              : built.result.selected.map((u) => (typeof u === "string" ? u : u.sheet));
+            tag = built.result.tag;
+          }
           const { bytes, stats } = await snapshotToXlsxBytes(snapshot);
-          const tag = input.sheets !== undefined && input.sheets !== null ? filter.selected.join("-") : null;
-          const finalName = tag ? safeFilename(withSelectionTag(resolveExportName(undefined), tag), "xlsx-export.xlsx", ".xlsx") : filename;
+          const finalName = resolveDownloadName({
+            defaultName: "xlsx-export.xlsx",
+            filename: typeof input.filename === "string" ? input.filename : undefined,
+            tag,
+            ext: ".xlsx",
+          });
           downloadBlob(new Blob([bytes as unknown as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), finalName);
-          return { ok: true, filename: finalName, sheetCount: stats.length, sheets: stats, selected: filter.selected };
+          return { ok: true, filename: finalName, sheetCount: stats.length, sheets: stats, selected };
         } catch (e) {
           return { ok: false, error: e instanceof Error && e.message ? e.message : String(e) };
         }
@@ -379,23 +431,44 @@ function buildTools(): WebMCPToolDef[] {
       description:
         "把当前工作簿导出为矢量 PDF 下载（缺省 xlsx-export.pdf；真实文本层可搜索可复制；" +
         "A4 纵向多页，列宽自适应/表头加粗/数字右对齐/重复表头/页脚页码；不含编辑器 UI）。" +
-        "可选 sheets 选择工作表（如 [\"周营收\"]，缺省全部表；选择导出文件名 xlsx-export-表1-表2.pdf）。" +
-        "编辑器未就绪时返回 ok:false。返回文件名契约、页数与 selected（实际导出的表名清单）。",
+        '「导出什么」二选一（同传报错）：可选 items 导出单元（每项 {sheet: 表名或1起序号, range?: "A1:F20" 区域}，' +
+        '如 [{"sheet":"周营收"},{"sheet":2},{"sheet":"周营收表","range":"A1:F20"}]——区域级导出文件名如 xlsx-export-周营收表-A1F20.pdf，' +
+        "每单元一个章节、顺序按 items）；或 sheets 兼容糖（表名数组如 [\"周营收\"] 或 1 起序号数组如 [1,3]，缺省全部表）。" +
+        "编辑器未就绪时返回 ok:false。返回文件名契约（自定义 filename 为主、选择 tag 追加其上）、页数与 selected" +
+        "（sheets 形态＝表名数组；items 形态＝逐单元 {sheet, range?}，range 为与内容收敛后的 A1 区间）。",
       inputSchema: {
         type: "object",
         properties: {
-          filename: { type: "string", description: "可选下载文件名（缺省 xlsx-export.pdf）" },
+          filename: { type: "string", description: "可选下载文件名（缺省 xlsx-export.pdf；有选择 tag 时追加其上）" },
+          items: {
+            type: "array",
+            description:
+              '可选导出单元（与 sheets 二选一）：如 [{"sheet":"周营收"},{"sheet":2},{"sheet":"周营收表","range":"A1:F20"}]；区域超出实际内容按内容范围收敛，无交集人话报错',
+            items: {
+              type: "object",
+              properties: {
+                sheet: { type: ["string", "number"], description: "工作表名或 1 起序号（第 1 表=1）" },
+                range: { type: "string", description: '可选 A1 区域（单表内，如 "A1:F20"）' },
+              },
+              required: ["sheet"],
+              additionalProperties: false,
+            },
+          },
           sheets: {
             type: "array",
-            items: { type: "string" },
-            description: '可选工作表名选择（如 ["周营收"]；缺省全部表）',
+            items: { type: ["string", "number"] },
+            description: '可选工作表选择（与 items 二选一）：表名数组如 ["周营收"] 或 1 起序号数组如 [1,3]（第 1 表=1，与 pptx pages 一致）；缺省全部表',
           },
         },
         additionalProperties: false,
       },
       annotations: { untrustedContentHint: true },
       async execute(input) {
-        return await exportGridPdf(typeof input.filename === "string" ? input.filename : undefined, Array.isArray(input.sheets) ? (input.sheets as string[]) : undefined);
+        return await exportGridPdf(
+          typeof input.filename === "string" ? input.filename : undefined,
+          Array.isArray(input.sheets) ? input.sheets : undefined,
+          Array.isArray(input.items) ? input.items : undefined,
+        );
       },
     },
     {
@@ -403,23 +476,44 @@ function buildTools(): WebMCPToolDef[] {
       title: "导出长图 PNG",
       description:
         "把工作表内容导出为一张长图 PNG 下载（缺省 xlsx-long.png）。数据面自绘纯数据表格（无行列号 chrome）：全部工作表按 sheetOrder、" +
-        "值与公式。可选 sheets 选择工作表（如 [\"周营收\"]，缺省全部表；选择导出文件名 xlsx-long-表1.png）。内容超 16384px 会截断并在产物与返回值标注。" +
-        "返回文件名契约与 selected（实际导出的表名清单）。",
+        "值与公式；内容超 16384px 会截断并在产物与返回值标注。" +
+        '「导出什么」二选一（同传报错）：可选 items 导出单元（每项 {sheet: 表名或1起序号, range?: "A1:F20" 区域}，' +
+        '如 [{"sheet":"周营收","range":"A1:F20"}]——区域级导出文件名如 xlsx-long-周营收-A1F20.png）；或 sheets 兼容糖（表名数组如 ["周营收"] ' +
+        "或 1 起序号数组如 [1,3]，缺省全部表）。返回文件名契约（自定义 filename 为主、选择 tag 追加其上）与 selected" +
+        "（sheets 形态＝表名数组；items 形态＝逐单元 {sheet, range?}）。",
       inputSchema: {
         type: "object",
         properties: {
-          filename: { type: "string", description: "可选下载文件名（缺省 xlsx-long.png）" },
+          filename: { type: "string", description: "可选下载文件名（缺省 xlsx-long.png；有选择 tag 时追加其上）" },
+          items: {
+            type: "array",
+            description:
+              '可选导出单元（与 sheets 二选一）：如 [{"sheet":"周营收"},{"sheet":2},{"sheet":"周营收","range":"A1:F20"}]；区域超出实际内容按内容范围收敛，无交集人话报错',
+            items: {
+              type: "object",
+              properties: {
+                sheet: { type: ["string", "number"], description: "工作表名或 1 起序号（第 1 表=1）" },
+                range: { type: "string", description: '可选 A1 区域（单表内，如 "A1:F20"）' },
+              },
+              required: ["sheet"],
+              additionalProperties: false,
+            },
+          },
           sheets: {
             type: "array",
-            items: { type: "string" },
-            description: '可选工作表名选择（如 ["周营收"]；缺省全部表）',
+            items: { type: ["string", "number"] },
+            description: '可选工作表选择（与 items 二选一）：表名数组如 ["周营收"] 或 1 起序号数组如 [1,3]（第 1 表=1，与 pptx pages 一致）；缺省全部表',
           },
         },
         additionalProperties: false,
       },
       annotations: { untrustedContentHint: true },
       async execute(input) {
-        return await exportSheetLongPng(typeof input.filename === "string" ? input.filename : undefined, Array.isArray(input.sheets) ? (input.sheets as string[]) : undefined);
+        return await exportSheetLongPng(
+          typeof input.filename === "string" ? input.filename : undefined,
+          Array.isArray(input.sheets) ? input.sheets : undefined,
+          Array.isArray(input.items) ? input.items : undefined,
+        );
       },
     },
   ];
@@ -438,6 +532,10 @@ interface OfficeTestHooks {
   forcePending: (v: boolean) => void;
   /** 当前生命周期 stage（0 Started / 1 Ready / 2 Rendered） */
   stage: () => number;
+  /** trim 契约绿门（G3）：绘制计划单源探针（纯函数，PDF/PNG 双路径共用） */
+  planSheetDrawProbe: (cellData: unknown) => unknown;
+  /** trim 契约绿门（G3）：长图自绘 HTML 结构探针（PNG 路径同源） */
+  tablesHtmlProbe: (snapshot: unknown, workbookName?: string) => string;
 }
 
 declare global {
@@ -456,6 +554,9 @@ function attachTestHooks(): void {
       const h = getHost();
       return h ? h.gate.stage(h.api) : -1;
     },
+    planSheetDrawProbe: (cellData: unknown) => planSheetDraw(cellData as Record<number, Record<number, SeedCell>>),
+    tablesHtmlProbe: (snapshot: unknown, workbookName?: string) =>
+      snapshotToTablesHtml(snapshot as Parameters<typeof snapshotToTablesHtml>[0], workbookName ?? "探针工作簿"),
   };
 }
 
@@ -474,7 +575,10 @@ export function registerAppTools(): Promise<unknown> {
 }
 
 /** 供 App 的「文件导入」按钮复用（人机同路径）；分块 base64 防大文件爆栈 */
-export async function importFromBytes(bytes: ArrayBuffer, name?: string): Promise<{ ok: boolean; error?: string; sheetNames?: string[]; cells?: number }> {
+export async function importFromBytes(
+  bytes: ArrayBuffer,
+  name?: string,
+): Promise<{ ok: boolean; error?: string; sheetNames?: string[]; cells?: number; warning?: string }> {
   const u8 = new Uint8Array(bytes);
   let bin = "";
   const CHUNK = 0x8000;
@@ -483,7 +587,13 @@ export async function importFromBytes(bytes: ArrayBuffer, name?: string): Promis
   }
   const tools = buildTools();
   const tool = tools.find((t) => t.name === "import_xlsx")!;
-  const out = (await tool.execute({ base64: btoa(bin), filename: name }, { signal: new AbortController().signal })) as { ok: boolean; error?: string; sheetNames?: string[]; cells?: number };
+  const out = (await tool.execute({ base64: btoa(bin), filename: name }, { signal: new AbortController().signal })) as {
+    ok: boolean;
+    error?: string;
+    sheetNames?: string[];
+    cells?: number;
+    warning?: string;
+  };
   return out;
 }
 

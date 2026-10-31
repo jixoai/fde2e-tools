@@ -32,15 +32,20 @@ WebMCP 工具（直接驱动编辑器内核，不经 DOM 输入区；编辑器�
 - set_formula({sheet?, range, formula})：写公式并返回引擎计算值（=SUM(C2:C3)、跨表 Sheet2!A1）。
 - format_range({sheet?, range, styles})：bold/italic/color/bg/align/numfmt/border（all/outside/四边/内部）。
 - add_sheet({name?, rows?})：建表（重名报错）。
-- import_xlsx({base64[, filename]})：导入 .xlsx（值/公式保留；样式与列宽不保留）为可编辑工作簿。
+- import_xlsx({base64[, filename]})：导入 .xlsx（值/公式保留；样式与列宽不保留）为可编辑工作簿；
+  外部文件的重名工作表自动去重（「周报」→「周报 (2)」）并在返回值 warning 声明。
 - export_xlsx({filename?, sheets?})：导出真 .xlsx 下载（缺省 xlsx-export.xlsx；值/公式保留，样式与列宽 v1 不落文件）。
-  可选 sheets 选表（如 ["房源价格表"]，缺省全部表；选择导出文件名 xlsx-export-表1-表2.xlsx；表名不存在报错并列出可用表）。
+  「导出什么」二选一（同传报错）：可选 items 导出单元（[{sheet: 表名或1起序号, range?: "A1:F20"}]）；
+  或 sheets 兼容糖（表名数组如 ["房源价格表"]，或 1 起序号数组如 [1,3]；缺省全部表）。
+  文件名优先级：自定义 filename 为主、选择 tag 追加其上（如 报告-周营收.xlsx）。
 - get_snapshot()：只读全簿快照（v 值 + f 公式）——先读后写。
-- export_pdf({filename?, sheets?})：矢量 PDF 下载（缺省 xlsx-export.pdf；真实文本层可搜索可复制；数据面绘制——
+- export_pdf({filename?, items?|sheets?})：矢量 PDF 下载（缺省 xlsx-export.pdf；真实文本层可搜索可复制；数据面绘制——
   列宽自适应/表头加粗/数字右对齐/多页重复表头/页脚页码；不含任何编辑器 UI，不碰 Univer DOM）。
-  可选 sheets 选表（缺省全部表；选择导出文件名 xlsx-export-表1-表2.pdf）。
-- export_png({filename?, sheets?})：全簿长图 PNG 下载（缺省 xlsx-long.png；纯数据表格——无行列号 chrome；
-  网格 canvas 只含可视视口，长图诚实走数据面；内容超 16384px 会截断并标注）。可选 sheets 选表。
+  items 导出单元（每项 {sheet: 表名或1起序号, range?: "A1:F20" 单表内区域}——区域级导出文件名
+  xlsx-export-周营收-A1F20.pdf，每单元一个章节；区域超出实际内容按内容范围收敛）或 sheets 兼容糖（缺省全部表）。
+  返回 selected：sheets 形态＝表名数组；items 形态＝逐单元 {sheet, range?}。
+- export_png({filename?, items?|sheets?})：全簿长图 PNG 下载（缺省 xlsx-long.png；纯数据表格——无行列号 chrome；
+  网格 canvas 只含可视视口，长图诚实走数据面；内容超 16384px 会截断并标注）。items/sheets 选择同 export_pdf。
 
 操作提示：
 - 页面按钮：载入示例（load-sample-btn）、导入 .xlsx（import-xlsx-btn）、导出 .xlsx（export-xlsx-btn）、
@@ -155,7 +160,8 @@ export default function App() {
       const bytes = await file.arrayBuffer();
       const out = await importFromBytes(bytes, file.name);
       if (!out.ok) throw new Error(out.error ?? "导入失败");
-      showStatus(`已载入 ${file.name}：${(out.sheetNames ?? []).length} 个工作表 · ${out.cells ?? 0} 格（可继续编辑后导出）。`, "ok");
+      const warn = out.warning ? `（注意：${out.warning}）` : "";
+      showStatus(`已载入 ${file.name}：${(out.sheetNames ?? []).length} 个工作表 · ${out.cells ?? 0} 格${warn}（可继续编辑后导出）。`, "ok");
     } catch (e) {
       showStatus("导入失败：" + (e instanceof Error ? e.message : String(e)), "error");
     } finally {

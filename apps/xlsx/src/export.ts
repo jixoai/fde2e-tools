@@ -11,25 +11,32 @@
  * - export_png＝读快照数据自绘 HTML 表格 → 整簿长图 PNG（v1 保留，补页边距与
  *   列宽自适应）。canvas 只含可视视口（200 行簿的可见区仅 ~20 行），「全 sheet
  *   内容一张图」诚实走数据面（get_snapshot 同源数据，全部工作表按 sheetOrder）。
+ * - 「导出什么」统一走 items 选择器（snapshot.resolveExportSelection：单元＝
+ *   {sheet: 表名|1起序号, range?: 区域}；sheets 表名/序号数组为兼容糖）——区域
+ *   单元与实际内容 usedRange 取交集收敛（buildUnitWorkSnapshot）；行/列裁剪
+ *   契约（中间空行占位、不规则右边界）单源在 planSheetDraw，双路径共用。
  *
  * 人机同路径：App 按钮与 WebMCP 工具都走本模块；状态行文案含终态词
  * （「已生成」），中间态（「正在导出…」）不含（B3 词表纪律）。
  */
-import { downloadBlob, safeFilename, withSelectionTag } from "@fde2e-tools/shared/download";
+import { downloadBlob, resolveDownloadName } from "@fde2e-tools/shared/download";
 import { mountOffscreen, renderNodeToPng, withColorGuard } from "@fde2e-tools/shared/export-kit";
 import { VectorPdf } from "@fde2e-tools/shared/pdf-vector";
 import { getHost } from "./editor";
-import { CANARY_MARK, filterSheetIds, type SeedCell } from "./snapshot";
+import {
+  buildUnitWorkSnapshot,
+  cellText,
+  planSheetDraw,
+  resolveExportSelection,
+  type SeedCell,
+} from "./snapshot";
 
 export const DEFAULT_PDF_NAME = "xlsx-export.pdf";
 export const DEFAULT_PNG_NAME = "xlsx-long.png";
 
-function resolvePdfName(name: string | undefined): string {
-  return safeFilename(name, DEFAULT_PDF_NAME, ".pdf");
-}
-
-function resolvePngName(name: string | undefined): string {
-  return safeFilename(name, DEFAULT_PNG_NAME, ".png");
+/** 参数「已给出」判定（undefined/null 视为未给，与 v1 sheets 语义一致） */
+function paramGiven(v: unknown): boolean {
+  return v !== undefined && v !== null;
 }
 
 /* ---------- 就绪门（导出前置校验，与 export_xlsx 同语义） ---------- */
@@ -49,8 +56,12 @@ export interface ExportOk {
   width: number;
   height: number;
   pages?: number;
-  /** 实际导出的工作表名清单（selective-export；缺省＝全部表） */
-  selected?: string[];
+  /**
+   * 实际导出的工作表清单（selective-export）。sheets 兼容糖形态＝表名数组
+   * （v1 契约）；items 形态＝逐单元 {sheet, range?}（range 为与内容收敛后的
+   * A1 区间）；缺省全簿＝全部表名数组。
+   */
+  selected?: Array<string | { sheet: string; range?: string }>;
   truncated?: boolean;
   notice?: string;
 }
@@ -67,32 +78,6 @@ interface SnapshotSheet {
 interface WorkbookSnapshot {
   sheetOrder?: string[];
   sheets: Record<string, SnapshotSheet>;
-}
-
-/** 单元格显示文本：计算值优先，公式兜底（v 缺失时灰显 =f） */
-function cellText(cell: SeedCell | undefined): { text: string; isFormulaFallback: boolean } {
-  if (!cell) return { text: "", isFormulaFallback: false };
-  // canary 哨兵视作空（setValue(null) 不落快照的实证防线，双重保险）
-  if (cell.v === CANARY_MARK) return { text: "", isFormulaFallback: false };
-  if (cell.v !== undefined && cell.v !== null && cell.v !== "") return { text: String(cell.v), isFormulaFallback: false };
-  if (cell.f) return { text: cell.f, isFormulaFallback: true };
-  return { text: "", isFormulaFallback: false };
-}
-
-/** 表头行＝首个含内容的行；已用范围只认有内容格（空壳行键不进导出） */
-function usedRange(cellData: Record<number, Record<number, SeedCell>>): { maxR: number; maxC: number; hasContent: boolean } {
-  let maxR = -1;
-  let maxC = -1;
-  for (const rKey of Object.keys(cellData)) {
-    const r = Number(rKey);
-    for (const cKey of Object.keys(cellData[r])) {
-      const c = Number(cKey);
-      if (cellText(cellData[r]?.[c]).text === "") continue;
-      if (r > maxR) maxR = r;
-      if (c > maxC) maxC = c;
-    }
-  }
-  return { maxR, maxC, hasContent: maxR >= 0 };
 }
 
 function isNumericText(cell: SeedCell | undefined): boolean {
@@ -143,8 +128,7 @@ function drawSheetTitle(pdf: VectorPdf, name: string, y: number): number {
   return y + 9.5;
 }
 
-export async function exportGridPdf(filename?: string, sheets?: string[]): Promise<ExportResult> {
-  const name = resolvePdfName(filename);
+export async function exportGridPdf(filename?: string, sheets?: unknown, items?: unknown): Promise<ExportResult> {
   // 全管线 try/catch（对抗审查顺手项）：抛错一律转 {ok:false} 人话返回，
   // WebMCP execute 不 reject（与 pptx 通道同款对齐）
   try {
@@ -154,11 +138,31 @@ export async function exportGridPdf(filename?: string, sheets?: string[]): Promi
     const wb = h!.api.getActiveWorkbook();
     if (!wb) return { ok: false, error: "当前无活动工作簿" };
     const snapshot = wb.save() as unknown as WorkbookSnapshot;
-    // 选择性导出（openspec: selective-export）：按表名过滤，不存在的表名人话报错
-    const filter = filterSheetIds(snapshot, sheets);
-    if (filter.error) return { ok: false, error: filter.error };
-    const ids = filter.ids;
-    const selectedTag = sheets !== undefined && sheets !== null ? filter.selected.join("-") : null;
+    // 选择性导出：items 统一选择器（sheets 表名/序号数组为兼容糖）——解析失败
+    // 人话报错；区域单元在 buildUnitWorkSnapshot 内与实际内容 usedRange 取交集收敛
+    const sel = resolveExportSelection(snapshot, items, sheets);
+    if (!sel.ok) return { ok: false, error: sel.error };
+    let ids: string[];
+    let selected: ExportOk["selected"];
+    let tag: string | null;
+    let drawSnapshot: WorkbookSnapshot;
+    if (paramGiven(sheets) || paramGiven(items)) {
+      const built = buildUnitWorkSnapshot(snapshot, sel.units);
+      if (!built.ok) return { ok: false, error: built.error };
+      drawSnapshot = built.result.work as unknown as WorkbookSnapshot;
+      ids = built.result.work.sheetOrder;
+      // selected 形态契约：items 主形态＝逐单元对象；sheets 兼容糖＝表名数组（v1）
+      selected = paramGiven(items)
+        ? built.result.selected
+        : built.result.selected.map((u) => (typeof u === "string" ? u : u.sheet));
+      tag = built.result.tag;
+    } else {
+      const order = snapshot.sheetOrder?.length ? snapshot.sheetOrder : Object.keys(snapshot.sheets);
+      drawSnapshot = snapshot;
+      ids = order;
+      selected = order.map((id) => drawSnapshot.sheets[id]?.name ?? id);
+      tag = null;
+    }
 
     const pdf = await VectorPdf.create({ format: "a4", orientation: "portrait", title: h!.workbookName });
     const contentW = pdf.widthMm - PDF_MARGIN_X * 2;
@@ -175,39 +179,34 @@ export async function exportGridPdf(filename?: string, sheets?: string[]): Promi
     y += 6.5;
 
     for (const id of ids) {
-      const sheet = snapshot.sheets[id];
+      const sheet = drawSnapshot.sheets[id];
       if (!sheet) continue;
       const sheetName = sheet.name ?? id;
       const cellData = sheet.cellData ?? {};
-      const range = usedRange(cellData);
+      // 绘制计划单源（trim 契约）：已用范围只认有内容格；中间空行占位；逐行不规则右边界
+      const plan = planSheetDraw(cellData);
       if (y + 20 > pdf.heightMm - PDF_MARGIN_BOTTOM) {
         pdf.addPage();
         y = PDF_MARGIN_TOP;
       }
       y = drawSheetTitle(pdf, sheetName, y);
-      if (!range.hasContent) {
+      if (!plan.hasContent || !plan.rows.length) {
         pdf.drawText("（空表）", PDF_MARGIN_X, y + VectorPdf.baselineOffset(9), { size: 9, color: "#9ca3af" });
         y += 8;
         continue;
       }
 
-      const widths = computeColumnWidths(pdf, cellData, range.maxC, contentW);
+      const widths = computeColumnWidths(pdf, cellData, plan.maxC, contentW);
       const totalW = widths.reduce((a, b) => a + b, 0);
-      // 表头行＝首个有内容行；后续行按顺序，空行跳过
-      const rows: number[] = [];
-      for (let r = 0; r <= range.maxR; r++) {
-        const rowCells = cellData[r] ?? {};
-        if (Object.keys(rowCells).some((cKey) => cellText(rowCells[Number(cKey)]).text !== "")) rows.push(r);
-      }
-      if (!rows.length) continue;
-      const headerRow = rows[0];
+      const rows = plan.rows;
+      const headerRow = rows[0].r;
 
       const drawHeader = (): void => {
         const hLines = Math.max(1, ...widths.map((w, c) => pdf.wrap(cellText(cellData[headerRow]?.[c]).text, w - CELL_PAD_X * 2, CELL_FONT, true).length));
         const rowH = Math.min(20, hLines * VectorPdf.lineHeightMm(CELL_FONT, 1.35) + CELL_PAD_Y * 2);
         pdf.fillRect(PDF_MARGIN_X, y, totalW, rowH, "#eef2f7");
         let x = PDF_MARGIN_X;
-        for (let c = 0; c <= range.maxC; c++) {
+        for (let c = 0; c <= plan.maxC; c++) {
           const text = cellText(cellData[headerRow]?.[c]).text;
           const lines = pdf.wrap(text, widths[c] - CELL_PAD_X * 2, CELL_FONT, true).slice(0, MAX_CELL_LINES);
           let ty = y + CELL_PAD_Y;
@@ -220,7 +219,7 @@ export async function exportGridPdf(filename?: string, sheets?: string[]): Promi
         pdf.strokeRect(PDF_MARGIN_X, y, totalW, rowH, "#c9d2df", 0.2);
         // 列分隔线
         let lx = PDF_MARGIN_X;
-        for (let c = 0; c < range.maxC; c++) {
+        for (let c = 0; c < plan.maxC; c++) {
           lx += widths[c];
           pdf.line(lx, y, lx, y + rowH, "#c9d2df", 0.15);
         }
@@ -229,11 +228,13 @@ export async function exportGridPdf(filename?: string, sheets?: string[]): Promi
 
       drawHeader();
 
-      for (const r of rows.slice(1)) {
-        const rowCells = cellData[r] ?? {};
+      for (const row of rows.slice(1)) {
+        const rowCells = cellData[row.r] ?? {};
+        const extent = row.maxC; // 该行绘制右边界（不规则右边界契约）
+        const rowW = widths.slice(0, extent + 1).reduce((a, b) => a + b, 0);
         const cellLines: string[][] = [];
         let lineCount = 1;
-        for (let c = 0; c <= range.maxC; c++) {
+        for (let c = 0; c <= extent; c++) {
           const text = cellText(rowCells[c]).text;
           let lines = pdf.wrap(text, widths[c] - CELL_PAD_X * 2, CELL_FONT, false);
           if (lines.length > MAX_CELL_LINES) {
@@ -251,7 +252,7 @@ export async function exportGridPdf(filename?: string, sheets?: string[]): Promi
           drawHeader();
         }
         let x = PDF_MARGIN_X;
-        for (let c = 0; c <= range.maxC; c++) {
+        for (let c = 0; c <= extent; c++) {
           const cell = rowCells[c];
           const align = isNumericText(cell) ? "right" : "left";
           const color = cellText(cell).isFormulaFallback ? "#7c3aed" : "#1f2937";
@@ -267,12 +268,13 @@ export async function exportGridPdf(filename?: string, sheets?: string[]): Promi
           }
           x += widths[c];
         }
-        // 行底线 + 列分隔线 + 左右外框（细灰网格）
-        pdf.line(PDF_MARGIN_X, y + rowH, PDF_MARGIN_X + totalW, y + rowH, "#d8dde5", 0.12);
+        // 行底线 + 左右边框 + 列分隔线（细灰网格；全部按行自身右边界收口——
+        // 右侧空区不画格线不渲染空格）
+        pdf.line(PDF_MARGIN_X, y + rowH, PDF_MARGIN_X + rowW, y + rowH, "#d8dde5", 0.12);
         pdf.line(PDF_MARGIN_X, y, PDF_MARGIN_X, y + rowH, "#c9d2df", 0.12);
-        pdf.line(PDF_MARGIN_X + totalW, y, PDF_MARGIN_X + totalW, y + rowH, "#c9d2df", 0.12);
+        pdf.line(PDF_MARGIN_X + rowW, y, PDF_MARGIN_X + rowW, y + rowH, "#c9d2df", 0.12);
         let lx = PDF_MARGIN_X;
-        for (let c = 0; c < range.maxC; c++) {
+        for (let c = 0; c < extent; c++) {
           lx += widths[c];
           pdf.line(lx, y, lx, y + rowH, "#d8dde5", 0.12);
         }
@@ -283,7 +285,8 @@ export async function exportGridPdf(filename?: string, sheets?: string[]): Promi
 
     pdf.stampFooters((page, total) => `第 ${page} 页 / 共 ${total} 页`);
     const blob = pdf.toBlob();
-    const finalName = selectedTag ? safeFilename(withSelectionTag(resolvePdfName(undefined), selectedTag), DEFAULT_PDF_NAME, ".pdf") : name;
+    // 文件名优先级（F8 契约）：自定义 filename 为主、选择 tag 追加其上
+    const finalName = resolveDownloadName({ defaultName: DEFAULT_PDF_NAME, filename, tag, ext: ".pdf" });
     downloadBlob(blob, finalName);
     return {
       ok: true,
@@ -291,7 +294,7 @@ export async function exportGridPdf(filename?: string, sheets?: string[]): Promi
       width: pdf.widthMm,
       height: pdf.heightMm,
       pages: pdf.pages,
-      selected: filter.selected,
+      selected,
       notice: pdf.missingChars > 0 ? `${pdf.missingChars} 个字符不在内置字体覆盖范围，已以 ? 代替` : undefined,
     };
   } catch (e) {
@@ -319,9 +322,10 @@ const TABLE_CSS = `
 `;
 
 /**
- * 快照 → 自绘表格 HTML（全部工作表按 sheetOrder，纯数据表：无列字母/行号
+ * 快照 → 自绘表格 HTML（工作快照按 sheetOrder，纯数据表：无列字母/行号
  * chrome；数据首行作表头，对齐矢量 PDF 路径的表格形态）。
- * 与 get_snapshot 同源（wb.save()）。
+ * 与 get_snapshot 同源（wb.save()）。绘制计划单源 planSheetDraw（trim 契约）：
+ * 中间空行渲染全宽占位空格；不规则右边界行只渲染到自身最右内容列。
  */
 export function snapshotToTablesHtml(snapshot: WorkbookSnapshot, workbookName: string): string {
   const ids = snapshot.sheetOrder?.length ? snapshot.sheetOrder : Object.keys(snapshot.sheets);
@@ -329,29 +333,23 @@ export function snapshotToTablesHtml(snapshot: WorkbookSnapshot, workbookName: s
     const sheet = snapshot.sheets[id];
     if (!sheet) return "";
     const cellData = sheet.cellData ?? {};
-    // 已用范围只认**有内容**的格（v/f 非空）——canary 探针会在远端行写入又
-    // 清空，快照里留下空壳行键（r 键在、cell 全空），按键算 maxR 会把长图撑
-    // 出上百空行
-    const { maxR, maxC, hasContent } = usedRange(cellData);
+    // 已用范围只认**有内容**的格（v/f 渲染文本非空）——canary 探针会在远端行
+    // 写入又清空，快照里留下空壳行键（r 键在、cell 全空），按键算 maxR 会把
+    // 长图撑出上百空行
+    const plan = planSheetDraw(cellData);
     const head = `<h2>${escapeHtml(sheet.name ?? id)}</h2>`;
-    if (!hasContent) return `${head}<p class="empty">（空表）</p>`;
+    if (!plan.hasContent || !plan.rows.length) return `${head}<p class="empty">（空表）</p>`;
     // 纯数据表（对齐矢量 PDF 路径）：无 A/B/C 列字母头、无 1/2/3 行号列、无角格；
     // 数据首行 = 表头（加粗浅底），其余行为数据
-    const contentRows: number[] = [];
-    for (let r = 0; r <= maxR; r++) {
-      const rowCells = cellData[r] ?? {};
-      if (Object.keys(rowCells).some((cKey) => cellText(rowCells[Number(cKey)]).text !== "")) contentRows.push(r);
-    }
-    if (!contentRows.length) return `${head}<p class="empty">（空表）</p>`;
-    const headerRow = contentRows[0];
+    const headerRow = plan.rows[0].r;
     let thead = "<thead><tr>";
-    for (let c = 0; c <= maxC; c++) thead += `<th>${escapeHtml(cellText(cellData[headerRow]?.[c]).text)}</th>`;
+    for (let c = 0; c <= plan.maxC; c++) thead += `<th>${escapeHtml(cellText(cellData[headerRow]?.[c]).text)}</th>`;
     thead += "</tr></thead>";
     let tbody = "<tbody>";
-    for (const r of contentRows.slice(1)) {
+    for (const row of plan.rows.slice(1)) {
       tbody += "<tr>";
-      for (let c = 0; c <= maxC; c++) {
-        const cell = cellData[r]?.[c];
+      for (let c = 0; c <= row.maxC; c++) {
+        const cell = cellData[row.r]?.[c];
         const { text, isFormulaFallback } = cellText(cell);
         const cls = [isFormulaFallback ? "formula" : "", isNumericText(cell) && !isFormulaFallback ? "num" : ""]
           .filter(Boolean)
@@ -367,8 +365,7 @@ export function snapshotToTablesHtml(snapshot: WorkbookSnapshot, workbookName: s
   return `<div class="xl-export"><style>${TABLE_CSS}</style><h1>${escapeHtml(workbookName)}</h1><p class="meta">导出日期 ${today} · ${ids.length} 个工作表</p>${sections.join("")}</div>`;
 }
 
-export async function exportSheetLongPng(filename?: string, sheets?: string[]): Promise<ExportResult & { truncated?: boolean; notice?: string }> {
-  const name = resolvePngName(filename);
+export async function exportSheetLongPng(filename?: string, sheets?: unknown, items?: unknown): Promise<ExportResult & { truncated?: boolean; notice?: string }> {
   // 全管线 try/catch（对抗审查顺手项，同 exportGridPdf）
   try {
     const gate = await ensureReady();
@@ -377,18 +374,34 @@ export async function exportSheetLongPng(filename?: string, sheets?: string[]): 
     const wb = h!.api.getActiveWorkbook();
     if (!wb) return { ok: false, error: "当前无活动工作簿" };
     const snapshot = wb.save() as unknown as WorkbookSnapshot;
-    const filter = filterSheetIds(snapshot, sheets);
-    if (filter.error) return { ok: false, error: filter.error };
-    const filtered: WorkbookSnapshot = { ...snapshot, sheetOrder: filter.ids };
-    const selectedTag = sheets !== undefined && sheets !== null ? filter.selected.join("-") : null;
+    const sel = resolveExportSelection(snapshot, items, sheets);
+    if (!sel.ok) return { ok: false, error: sel.error };
+    let filtered: WorkbookSnapshot;
+    let selected: ExportOk["selected"];
+    let tag: string | null;
+    if (paramGiven(sheets) || paramGiven(items)) {
+      const built = buildUnitWorkSnapshot(snapshot, sel.units);
+      if (!built.ok) return { ok: false, error: built.error };
+      filtered = built.result.work as unknown as WorkbookSnapshot;
+      selected = paramGiven(items)
+        ? built.result.selected
+        : built.result.selected.map((u) => (typeof u === "string" ? u : u.sheet));
+      tag = built.result.tag;
+    } else {
+      const order = snapshot.sheetOrder?.length ? snapshot.sheetOrder : Object.keys(snapshot.sheets);
+      filtered = { ...snapshot, sheetOrder: order };
+      selected = order.map((id) => snapshot.sheets[id]?.name ?? id);
+      tag = null;
+    }
     const node = document.createElement("div");
     node.innerHTML = snapshotToTablesHtml(filtered, h!.workbookName);
     const unmount = mountOffscreen(node, 920);
     try {
       const png = await withColorGuard(() => renderNodeToPng(node, { width: 920, scale: 2 }), node);
-      const finalName = selectedTag ? safeFilename(withSelectionTag(resolvePngName(undefined), selectedTag), DEFAULT_PNG_NAME, ".png") : name;
+      // 文件名优先级（F8 契约）：自定义 filename 为主、选择 tag 追加其上
+      const finalName = resolveDownloadName({ defaultName: DEFAULT_PNG_NAME, filename, tag, ext: ".png" });
       downloadBlob(png.blob, finalName);
-      return { ok: true, filename: finalName, width: png.width, height: png.height, selected: filter.selected, truncated: png.truncated, notice: png.notice };
+      return { ok: true, filename: finalName, width: png.width, height: png.height, selected, truncated: png.truncated, notice: png.notice };
     } finally {
       unmount();
     }

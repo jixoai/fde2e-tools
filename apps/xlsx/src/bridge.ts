@@ -14,6 +14,7 @@
  * 本模块整块 dynamic import（SheetJS ≈492KB 独立 chunk，主包零携带）。
  */
 import { buildWorkbookSeed, isCanaryCell, type SeedCell, type WorkbookSeed } from "./snapshot";
+import { dedupeSheetNames, repairDuplicateSheetNames } from "./xlsx-dup-repair";
 
 /** 从 cellData 读单元格（稀疏 Record 两级索引） */
 function cellAt(cellData: Record<number, Record<number, SeedCell>>, r: number, c: number): SeedCell | undefined {
@@ -99,16 +100,26 @@ export interface ImportSummary {
   sheetNames: string[];
   cells: number;
   seed: WorkbookSeed;
+  /** 重名表自动去重声明（G2a；无重名时缺省） */
+  warning?: string;
 }
 
-/** xlsx 字节 → 完整快照格式 seed（经唯一工厂，幽灵防御路径不变） */
+/**
+ * xlsx 字节 → 完整快照格式 seed（经唯一工厂，幽灵防御路径不变）。
+ * 重名防御（G2a）：外部文件可携带重名表——SheetJS read 的 wb.Sheets 按名字键
+ * 会互相覆盖（实证：两表数据塌缩成最后一张），故先做文件级改名手术（zip 重写，
+ * 见 xlsx-dup-repair），再做名字级兜底去重；发生的改名经 warning 声明。
+ */
 export async function xlsxBytesToSeed(bytes: ArrayBuffer, workbookName: string): Promise<ImportSummary> {
   const XLSX = await loadXLSX();
-  const wb = XLSX.read(new Uint8Array(bytes), { type: "array" });
+  const repair = await repairDuplicateSheetNames(bytes);
+  const wb = XLSX.read(new Uint8Array(repair.bytes), { type: "array" });
+  const dedup = dedupeSheetNames(wb.SheetNames); // 手术后恒无重名；兜底防意外形态
   const sheets: Array<{ name: string; rows: unknown[][] }> = [];
   let cells = 0;
-  for (const name of wb.SheetNames) {
-    const ws = wb.Sheets[name];
+  for (let i = 0; i < wb.SheetNames.length; i++) {
+    const name = dedup.names[i];
+    const ws = wb.Sheets[wb.SheetNames[i]];
     const ref = ws["!ref"] ?? "A1";
     const range = XLSX.utils.decode_range(ref);
     const rows: unknown[][] = [];
@@ -131,8 +142,10 @@ export async function xlsxBytesToSeed(bytes: ArrayBuffer, workbookName: string):
       }
       rows.push(row);
     }
-    sheets.push({ name: name.slice(0, 31), rows });
+    sheets.push({ name, rows });
   }
   if (!sheets.length) throw new Error("该 .xlsx 没有任何工作表");
-  return { sheetNames: sheets.map((s) => s.name), cells, seed: buildWorkbookSeed(workbookName, sheets) };
+  const renames = [...repair.renames, ...dedup.renames];
+  const warning = renames.length ? `检测到重复表名，已自动重命名：${renames.map(({ from, to }) => `「${from}」→「${to}」`).join("、")}` : undefined;
+  return { sheetNames: sheets.map((s) => s.name), cells, seed: buildWorkbookSeed(workbookName, sheets), warning };
 }
