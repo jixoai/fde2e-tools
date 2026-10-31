@@ -37,9 +37,11 @@ WebMCP 工具（直接驱动编辑器内核命令，不经 DOM 输入区；编�
 - insert_table({rows, cols, header?, data?})：文末插表格（data 行优先一维数组）。
 - export_docx({filename?})：导出真 .docx 下载（缺省 docx-export.docx）。
 - import_docx({base64})：导入 .docx 继续编辑（mammoth 语义转换）。
-- export_pdf({filename?})：矢量 PDF 下载（缺省 docx-export.pdf；真实文本层可搜索可复制；标题分级/
-  列表缩进/表格边框与表头底色/A4 纵向多页/页脚页码）。
-- export_png({filename?})：整篇文档 → 结构化长图 PNG 下载（缺省 docx-long.png；超 16384px 会截断并标注）。
+- export_pdf({filename?, section?})：矢量 PDF 下载（缺省 docx-export.pdf；真实文本层可搜索可复制；标题分级/
+  列表缩进/表格边框与表头底色/A4 纵向多页/页脚页码）。可选 section 按标题选节（如 "二、本周问题与处理"：
+  取该标题至下一个同级/更高级标题前；标题不存在报错并列出可用标题）。
+- export_png({filename?, section?})：整篇文档 → 结构化长图 PNG 下载（缺省 docx-long.png；超 16384px 会截断并标注）。
+  可选 section 按标题选节。
 
 操作提示：
 - 页面按钮：载入示例（load-sample-btn）、导入 .docx（import-docx-btn）、导出 .docx

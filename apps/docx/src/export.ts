@@ -38,6 +38,8 @@ export interface ExportOk {
   width: number;
   height: number;
   pages?: number;
+  /** 实际导出的节标题清单（selective-export；缺省＝整篇） */
+  selected?: string[];
   truncated?: boolean;
   notice?: string;
 }
@@ -495,7 +497,43 @@ export function blocksToHtml(blocks: DocBlock[], title: string): string {
 }
 
 /* ============================================================
- * 三、对外入口（人机同路径）
+ * 三、选择性导出（openspec: selective-export）
+ * ============================================================ */
+
+/**
+ * 按标题选节：取该标题（任意层级）至下一个同级或更高级标题之间的内容
+ * （含标题本身；文档末尾无更高标题则取到结尾）。标题不存在＝人话报错并列出
+ * 全部可用标题。
+ */
+export function selectDocSection(
+  blocks: DocBlock[],
+  section: string,
+): { blocks: DocBlock[]; selected: string[]; error?: string } {
+  const headings = blocks.filter((b): b is Extract<DocBlock, { kind: "heading" }> => b.kind === "heading");
+  const wanted = section.trim();
+  const target = headings.find((h) => runsToText(h.runs).trim() === wanted);
+  if (!target) {
+    const available = headings.map((h) => `${"#".repeat(h.level)} ${runsToText(h.runs).trim()}`);
+    return {
+      blocks: [],
+      selected: [],
+      error: `未找到标题「${wanted}」——可用标题：${available.length ? available.join("；") : "（文档没有任何标题）"}`,
+    };
+  }
+  const start = blocks.indexOf(target);
+  let end = blocks.length;
+  for (let i = start + 1; i < blocks.length; i++) {
+    const b = blocks[i];
+    if (b.kind === "heading" && b.level <= target.level) {
+      end = i;
+      break;
+    }
+  }
+  return { blocks: blocks.slice(start, end), selected: [wanted] };
+}
+
+/* ============================================================
+ * 四、对外入口（人机同路径）
  * ============================================================ */
 
 function currentBlocks(): { blocks: DocBlock[]; title: string } | { error: string } {
@@ -508,13 +546,21 @@ function currentBlocks(): { blocks: DocBlock[]; title: string } | { error: strin
   return { blocks, title: title || "文档导出" };
 }
 
-/** export_pdf：块模型 → 矢量 PDF（真实文本层） */
-export async function exportDocPdf(filename?: string): Promise<ExportResult> {
+/** export_pdf：块模型 → 矢量 PDF（真实文本层；可选 section 按标题选节） */
+export async function exportDocPdf(filename?: string, section?: string): Promise<ExportResult> {
   const name = resolvePdfName(filename);
   try {
     const model = currentBlocks();
     if ("error" in model) return { ok: false, error: model.error };
-    const out = await renderDocPdf(model.blocks, model.title);
+    let blocks = model.blocks;
+    let selected: string[] = ["整篇"];
+    if (section !== undefined && section !== null && section !== "") {
+      const picked = selectDocSection(blocks, section);
+      if (picked.error) return { ok: false, error: picked.error };
+      blocks = picked.blocks;
+      selected = picked.selected;
+    }
+    const out = await renderDocPdf(blocks, model.title);
     downloadBlob(out.blob, name);
     return {
       ok: true,
@@ -522,6 +568,7 @@ export async function exportDocPdf(filename?: string): Promise<ExportResult> {
       width: out.width,
       height: out.height,
       pages: out.pages,
+      selected,
       notice: out.missing > 0 ? `${out.missing} 个字符不在内置字体覆盖范围，已以 ? 代替` : undefined,
     };
   } catch (e) {
@@ -529,19 +576,27 @@ export async function exportDocPdf(filename?: string): Promise<ExportResult> {
   }
 }
 
-/** export_png：块模型 → 结构化 HTML → 整篇长图 */
-export async function exportDocLongPng(filename?: string): Promise<ExportResult> {
+/** export_png：块模型 → 结构化 HTML → 长图（可选 section 按标题选节） */
+export async function exportDocLongPng(filename?: string, section?: string): Promise<ExportResult> {
   const name = resolvePngName(filename);
   try {
     const model = currentBlocks();
     if ("error" in model) return { ok: false, error: model.error };
+    let blocks = model.blocks;
+    let selected: string[] = ["整篇"];
+    if (section !== undefined && section !== null && section !== "") {
+      const picked = selectDocSection(blocks, section);
+      if (picked.error) return { ok: false, error: picked.error };
+      blocks = picked.blocks;
+      selected = picked.selected;
+    }
     const node = document.createElement("div");
-    node.innerHTML = blocksToHtml(model.blocks, model.title);
+    node.innerHTML = blocksToHtml(blocks, model.title);
     const unmount = mountOffscreen(node, 900);
     try {
       const png = await withColorGuard(() => renderNodeToPng(node, { width: 900, scale: 2 }), node);
       downloadBlob(png.blob, name);
-      return { ok: true, filename: name, width: png.width, height: png.height, truncated: png.truncated, notice: png.notice };
+      return { ok: true, filename: name, width: png.width, height: png.height, selected, truncated: png.truncated, notice: png.notice };
     } finally {
       unmount();
     }

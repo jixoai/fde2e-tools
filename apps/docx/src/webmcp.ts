@@ -239,36 +239,41 @@ function buildTools(): WebMCPToolDef[] {
       name: "export_pdf",
       title: "导出 PDF",
       description:
-        "把整篇文档导出为矢量 PDF 下载（缺省 docx-export.pdf；真实文本层可搜索可复制；" +
+        "把文档导出为矢量 PDF 下载（缺省 docx-export.pdf；真实文本层可搜索可复制；" +
         "A4 纵向多页，标题分级/列表缩进/表格边框与表头底色/页脚页码）。" +
-        "编辑器未就绪或文档为空时返回 ok:false。返回文件名契约与页数。",
+        "可选 section 按标题选节（如 \"二、本周问题与处理\"：取该标题至下一个同级/更高级标题前；" +
+        "标题不存在人话报错并列出可用标题）。" +
+        "编辑器未就绪或文档为空时返回 ok:false。返回文件名契约、页数与 selected（实际导出的节清单）。",
       inputSchema: {
         type: "object",
         properties: {
           filename: { type: "string", description: "可选下载文件名（缺省 docx-export.pdf）" },
+          section: { type: "string", description: '可选节选择：标题文本（如 "二、本周问题与处理"）；缺省导出整篇' },
         },
         additionalProperties: false,
       },
       annotations: { untrustedContentHint: true },
       async execute(input) {
-        return await exportDocPdf(typeof input.filename === "string" ? input.filename : undefined);
+        return await exportDocPdf(typeof input.filename === "string" ? input.filename : undefined, typeof input.section === "string" ? input.section : undefined);
       },
     },
     {
       name: "export_png",
       title: "导出长图 PNG",
       description:
-        "把整篇文档导出为一张长图 PNG 下载（缺省 docx-long.png；超 16384px 会截断并在产物与返回值标注）。",
+        "把文档导出为一张长图 PNG 下载（缺省 docx-long.png；超 16384px 会截断并在产物与返回值标注）。" +
+        "可选 section 按标题选节（同 export_pdf）。返回文件名契约与 selected（实际导出的节清单）。",
       inputSchema: {
         type: "object",
         properties: {
           filename: { type: "string", description: "可选下载文件名（缺省 docx-long.png）" },
+          section: { type: "string", description: '可选节选择：标题文本（如 "二、本周问题与处理"）；缺省导出整篇' },
         },
         additionalProperties: false,
       },
       annotations: { untrustedContentHint: true },
       async execute(input) {
-        return await exportDocLongPng(typeof input.filename === "string" ? input.filename : undefined);
+        return await exportDocLongPng(typeof input.filename === "string" ? input.filename : undefined, typeof input.section === "string" ? input.section : undefined);
       },
     },
   ];
