@@ -7,6 +7,10 @@ FDE2E 工具集——**全静态、零后端**的公共工具仓库。
   - `pdf-tool` — PDF 工具站：粘贴 Markdown/HTML → 预览 → 导出 PDF
   - `img-tool` — 图片处理工具站：URL 参数即绘制指令（「网页链接＝函数调用」）
   - `url-tool` — URL 拼接器：query / packed（JSON→base64url）双模式 + 反向解码
+  - `xlsx` — 表格生成站：JSON（sheets）或粘贴表格 → 生成 .xlsx 下载（SheetJS 社区版）
+  - `docx` — 文档生成站：Markdown 子集 → 生成 .docx 下载（docx 库，解析单源）
+  - `pptx` — 幻灯生成站：大纲 JSON（slides）→ 生成 .pptx 下载（pptxgenjs）
+  - `editor`（二期）— ranuts/document 编辑器站：AGPL 未修改上游镜像独立部署（见下「办公编辑器（二期）」）
 - 对外仓库：`github.com/jixoai/fde2e-tools`（public）
 
 ## 架构
@@ -17,14 +21,20 @@ apps/
   pdf-tool/    HTML/MD → PDF（vendored marked + html2pdf，UMD 直引）
   img-tool/    canvas 绘制管线（src/text/pos/size/color/bg/pad/w/h/label）
   url-tool/    URL 拼接器（query/packed 双模式 + ?decode= 反向解码）
+  xlsx/        数据 → .xlsx（SheetJS 社区版动态 import 独立分包；JSON/TSV 双输入）
+  docx/        md 子集 → .docx（docx 库独立分包；AST 单源驱动预览与产物）
+  pptx/        大纲 JSON → .pptx（pptxgenjs 独立分包；16:9 + 备注）
 packages/
   shared/      工具 registry 单源 / solid-glass 主题 vendor / shadcn 官方组件收编 /
-               WebMCP 注册助手 + 官方 polyfill vendor
+               WebMCP 注册助手 + 官方 polyfill vendor / 下载助手（downloadBlob/safeFilename）
 deploy/
-  tools-upload.sh   上传脚本（rsync 优先 tar 兜底；目标目录 TOOLS_DEST 由编排者给）
+  tools-upload.sh   上传脚本（tar-over-ssh；目标目录 TOOLS_DEST 由编排者给）
+  editor-fetch.sh   编辑器站二期：钉 digest 拉取/运行/冒烟（AGPL 合规形态）
 scripts/
-  webmcp-check.mjs  WebMCP 绿门（headless Chromium + WebMCP flag 下 getTools() 断言）
-  smoke-check.mjs   参数契约冒烟（URL 契约/状态行文案/渲染产物逐值断言）
+  webmcp-check.mjs  WebMCP 绿门（headless Chromium + WebMCP flag 下 getTools() 断言
+                    + 三站 create_* executeTool 全链真下载）
+  smoke-check.mjs   参数契约冒烟（URL 契约/状态行文案/渲染产物逐值断言
+                    + 办公三站真文件反读：xlsx SheetJS 逐格、docx/pptx 解 zip）
 openspec/      变更管理（project.md + changes/）
 ```
 
@@ -45,6 +55,9 @@ pnpm dev:directory   # http://127.0.0.1:5271（黄页）
 pnpm dev:pdf-tool    # http://127.0.0.1:5272
 pnpm dev:img-tool    # http://127.0.0.1:5273
 pnpm dev:url-tool    # http://127.0.0.1:5274
+pnpm dev:xlsx        # http://127.0.0.1:5275
+pnpm dev:docx        # http://127.0.0.1:5276
+pnpm dev:pptx        # http://127.0.0.1:5277
 ```
 
 dev server 仅绑 IPv4 回环，不对外暴露。黄页的 iframe 实况预览仅生产域开放；
@@ -71,6 +84,9 @@ TOOLS_DEST=/www/tools bash deploy/tools-upload.sh pdf-tool   # 逐 app 上传（
 | pdf-tool | `render_preview` / `export_pdf` |
 | img-tool | `overlay_text` / `export_png` |
 | url-tool | `pack_url` / `decode_url`（纯函数） |
+| xlsx | `create_xlsx` / `add_sheet_sample` |
+| docx | `create_docx` / `append_docx_markdown` |
+| pptx | `create_pptx` / `add_slide` |
 
 **浏览器侧开启方式**：
 
@@ -92,11 +108,34 @@ TOOLS_DEST=/www/tools bash deploy/tools-upload.sh pdf-tool   # 逐 app 上传（
 ## 验证
 
 ```bash
-pnpm -r check              # 四 app tsc 全绿
-pnpm -r build              # 四 app 静态产物齐全
-node scripts/webmcp-check.mjs   # WebMCP：四页面 getTools() 枚举 + executeTool 往返
-node scripts/smoke-check.mjs    # 参数契约冒烟：URL 契约/状态行文案/渲染产物逐值断言
+pnpm -r check              # 七 app tsc 全绿
+pnpm -r build              # 七 app 静态产物齐全（生成库独立 chunk，黄页不背）
+node scripts/webmcp-check.mjs   # WebMCP：七页面 getTools() 枚举 + executeTool 往返
+                                # + 办公三站 create_* 全链（真下载捕获 + 文件名契约）
+node scripts/smoke-check.mjs    # 参数契约冒烟 + 办公三站真文件反读断言：
+                                # xlsx SheetJS 逐格核对（负数/小数/布尔/TSV 分表）、
+                                # docx/pptx 解 zip 核对 document.xml/slide1.xml/notesSlide
 ```
+
+## 办公三件套与编辑器（office-suite）
+
+- **生成走轻量函数库**（选型 digest 结论：ranuts/document 是 OnlyOffice 系编辑器
+  而非生成库）：三站依赖全 MIT/Apache——docx（MIT）、pptxgenjs（MIT）、
+  SheetJS 社区版（Apache-2.0）。**生成链禁 AGPL**：ranuts/document 不以任何
+  依赖形态进三站代码链。
+- **SheetJS 安装形态（如实记录）**：社区版经官方 CDN tarball 钉版引入
+  （`https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`，LICENSE=Apache-2.0）；
+  npm `xlsx` 停在 0.18.5（带已修于新版 CVE），**不引入**。根 devDeps 的
+  xlsx/adm-zip 仅绿门反读消费，不进任何 app 产物。
+- **体积纪律**：三个生成库全部动态 import 独立 chunk；黄页与其它工具站产物
+  零生成库代码（绿门 grep 产物验证）。
+- **办公编辑器（二期）**：ranuts/document（AGPL-3.0）部署到
+  `editor.tool.fde2e.com`——合规形态＝**未修改的上游镜像钉 digest 独立部署**
+  （`deploy/editor-fetch.sh`，OpenResty 反代 + source 指引页）；禁 vendor 其
+  源码进本仓、禁改其源码后部署、禁与其余工具深度集成；AI 消费走其自带
+  WebMCP 7 工具与 embed API。本轮实测（2026-10-31）：上游 release 无构建产物
+  资产、自建须搬 300MB+ vendored 树、镜像内含专用 static-web-server 编码配置
+  ——编辑器降级二期，方案与红线见 openspec `editor-hosting` 规格。
 
 ## 演进边界
 
