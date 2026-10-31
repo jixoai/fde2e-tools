@@ -1,0 +1,2 @@
+# ranuts/document 钉定记录（2026-11-01 02:55:38）——AGPL-3.0，上游 https://github.com/ranuts/document
+sha256:cc5297694e109c3d68d0fb8216746cd008ffa8e227de4f0c6a15c37d5626bc0b

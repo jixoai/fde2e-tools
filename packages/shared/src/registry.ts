@@ -390,6 +390,24 @@ export const TOOLS: ToolMeta[] = [
     ],
     repoPath: "apps/pptx",
   },
+  // ---------- editor 二期（2026-11-01 上线，AGPL 未修改上游镜像独立部署）----------
+  // Owner 指 ranuts/document 全能套件：既有复杂文件（多方协作出品/复杂样式）
+  // 的打开续改归它；从零生成交付物走上面三件套（WebMCP 直驱）。上游 AGPL-3.0，
+  // 本仓零 vendor 零修改（源码指引见 editor.tool.fde2e.com/fde2e-source-note.html）。
+  {
+    id: "editor",
+    name: "全能办公编辑器",
+    tagline: "第三方套件：现有的复杂 xlsx/docx/pptx 打开查看＋小幅续改",
+    description:
+      "ranuts/document 全能办公套件（表格/文档/幻灯一体 ONLYOFFICE 内核），既有 .xlsx/.docx/.pptx/.csv 原件打开、查看、编辑、另存。上游镜像**未修改**直接部署（AGPL-3.0，「源码与许可说明」见页内悬浮条）。注意分工：本站是「人用的续改工作区」——从零生成 AI 交付物走 xlsx/docx/pptx 三件套（WebMCP 直驱、行为可预期）。",
+    tags: ["office", "onlyoffice", "docx", "xlsx", "pptx", "编辑器", "查看"],
+    subdomain: "editor.tool.fde2e.com",
+    aiGuideSummary:
+      "既有复杂文件续改站（AI 无 WebMCP 面，走页面拟真；从零生成走三件套专业站）。落地页选 New Word/Sheet/Slide 进入对应编辑器；页内右下角有「源码与许可说明（AGPL-3.0）」悬浮条（上游 ranuts/document，digest 钉定记录见 deploy/editor-pinned.txt）。",
+    urlParams: [],
+    tools: [],
+    repoPath: "external:ghcr.io/ranuts/document（AGPL 未修改镜像，不经本仓构建）",
+  },
 ];
 
 export function getTool(id: string): ToolMeta | undefined {
