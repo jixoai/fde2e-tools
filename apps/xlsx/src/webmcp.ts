@@ -177,7 +177,7 @@ function buildTools(): WebMCPToolDef[] {
               bg: { type: "string" },
               align: { type: "string", enum: ["left", "center", "right"] },
               numfmt: { type: "string" },
-              border: { type: "string", enum: ["all", "outer", "top", "bottom", "left", "right", "horizontal", "vertical", "inside"], description: "细边框（THIN）应用范围" },
+              border: { type: "string", enum: ["all", "outside", "top", "bottom", "left", "right", "horizontal", "vertical", "inside"], description: "细边框（THIN）应用范围" },
             },
             additionalProperties: false,
           },
@@ -223,7 +223,7 @@ function buildTools(): WebMCPToolDef[] {
             const borderType = String(styles.border).toUpperCase();
             const enumType = h.api.Enum?.BorderType?.[borderType];
             const enumStyle = h.api.Enum?.BorderStyleTypes?.THIN;
-            if (!enumType || !enumStyle) throw new Error("border 当前内核枚举不可用（Enum.BorderType/BorderStyleTypes 缺失）");
+            if (!enumType || !enumStyle) throw new Error("border 范围值不支持（可用：all/outside/top/bottom/left/right/horizontal/vertical/inside）");
             r.setBorder(enumType, enumStyle);
             applied.push("border");
           }
@@ -247,7 +247,7 @@ function buildTools(): WebMCPToolDef[] {
       },
       annotations: { untrustedContentHint: true },
       async execute(input) {
-        const name = typeof input.name === "string" && input.name.trim() ? input.name.trim().slice(0, 31) : "";
+        const name = typeof input.name === "string" && input.name.trim() ? input.name.trim() : "";
         const res = await withEditorWrite(async (h) => {
           const wb = h.api.getActiveWorkbook();
           if (!wb) throw new Error("当前无活动工作簿");

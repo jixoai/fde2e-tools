@@ -323,7 +323,7 @@ export const TOOLS: ToolMeta[] = [
     tools: [
       { name: "set_cells", description: "向工作表写入二维数据（values[][]，支持数字/字符串/布尔/null），返回写入摘要" },
       { name: "set_formula", description: "对 A1 区间写公式（如 =SUM(A1:A9)），返回公式引擎计算值——AI 可自检" },
-      { name: "format_range", description: "对 A1 区间设置样式（bold/italic/color/bg/numfmt/align）" },
+      { name: "format_range", description: "对 A1 区间设置样式（bold/italic/color/bg/numfmt/align/border）" },
       { name: "add_sheet", description: "新增工作表（可带初始 rows 二维数组），返回表名与全簿表清单" },
       { name: "import_xlsx", description: "导入 .xlsx（base64）为可编辑工作簿，返回表清单与单元格统计" },
       { name: "export_xlsx", description: "导出当前工作簿为真 .xlsx 下载（缺省 xlsx-export.xlsx；值/公式保留，v1 样式与列宽不落文件）" },

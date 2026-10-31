@@ -29,7 +29,7 @@ WebMCP 工具（直接驱动编辑器内核，不经 DOM 输入区；编辑器�
 禁静默失败——请重试而非断言成功）：
 - set_cells({sheet?, startRow?, startCol?, values[][]})：写二维数据（字符串/数字/布尔/null）。
 - set_formula({sheet?, range, formula})：写公式并返回引擎计算值（=SUM(C2:C3)、跨表 Sheet2!A1）。
-- format_range({sheet?, range, styles})：bold/italic/color/bg/align/numfmt。
+- format_range({sheet?, range, styles})：bold/italic/color/bg/align/numfmt/border（all/outside/四边/内部）。
 - add_sheet({name?, rows?})：建表（重名报错）。
 - import_xlsx({base64[, filename]})：导入 .xlsx（值/公式保留；样式与列宽不保留）为可编辑工作簿。
 - export_xlsx({filename?})：导出真 .xlsx 下载（缺省 xlsx-export.xlsx；值/公式保留，样式与列宽 v1 不落文件）。
