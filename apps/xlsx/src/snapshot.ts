@@ -34,6 +34,20 @@ export interface WorkbookSeed {
 export const ROW_COUNT = 200;
 export const COLUMN_COUNT = 30;
 
+/**
+ * canary 哨兵（幽灵工作簿运行时探测的写入标记）。导出/桥接必须把它当空单元格
+ * ——Univer 的 setValue(null) 不落快照（实证：导出 PDF 里出现「__canary__」
+ * 远列，把 maxC 撑到 26、整表列宽被压到 8mm，P0-4 内容污染同族问题）。
+ */
+export const CANARY_MARK = "__canary__";
+export const CANARY_ROW = ROW_COUNT - 8; // 远离可视区（200 行簿的第 192 行）
+export const CANARY_COL = COLUMN_COUNT - 4;
+
+/** 该格是否为 canary 哨兵（导出侧一律视作空） */
+export function isCanaryCell(cell: SeedCell | undefined): boolean {
+  return cell?.v === CANARY_MARK;
+}
+
 /** 二维数组 → cellData（稀疏 Record；null/undefined 跳过） */
 export function rowsToCellData(rows: unknown[][]): SeedSheet["cellData"] {
   const cellData: SeedSheet["cellData"] = {};

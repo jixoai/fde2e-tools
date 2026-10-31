@@ -13,7 +13,7 @@
  * - 坑② Rendered 门禁：LifecycleGate.ensureReady() 轮询 stage>=2；forcePending
  *   测试缝供绿门确定性回归（挂起→ok:false / 释放→ok:true）。
  */
-import { buildWorkbookSeed, assertCompleteSeed, ROW_COUNT, COLUMN_COUNT, type WorkbookSeed } from "./snapshot";
+import { buildWorkbookSeed, assertCompleteSeed, ROW_COUNT, COLUMN_COUNT, CANARY_MARK, CANARY_ROW, CANARY_COL, type WorkbookSeed } from "./snapshot";
 
 /* ---------- Univer Facade 的结构化最小面（避免把 1.84MB 的类型拖进主包） ---------- */
 
@@ -102,9 +102,7 @@ export function sleep(ms: number): Promise<void> {
 
 /* ---------- canary 写入校验（幽灵工作簿运行时探测） ---------- */
 
-const CANARY_ROW = ROW_COUNT - 8; // 远离可视区（200 行簿的第 192 行）
-const CANARY_COL = COLUMN_COUNT - 4;
-const CANARY_MARK = "__canary__";
+
 
 export interface Health {
   /** canary 校验通过（工作簿可写） */
@@ -137,7 +135,9 @@ export async function canaryProbe(api: FacadeUniver): Promise<Health> {
       : { verified: false, workbookId, error: "幽灵工作簿判定：写入未落快照（简化格式 seed 创建的工作簿拒绝一切写入——sheet 缺 id/数组形态即中招）——写操作已全部拒绝，请重新导入或重载页面" };
   } finally {
     try {
-      sheet.getRange(CANARY_ROW, CANARY_COL).setValue(null); // 哨兵清理（best-effort）
+      // 哨兵清理（best-effort）：setValue(null) 不落快照（实证），用空串真正清掉值；
+      // 导出/桥接侧另有 isCanaryCell 防线（双保险）
+      sheet.getRange(CANARY_ROW, CANARY_COL).setValue("");
     } catch {
       /* 幽灵态下清理也会失败——health 已如实记录 */
     }
@@ -185,12 +185,12 @@ export function bootEditor(container: HTMLElement, onStatus: StatusSink): Promis
     const gate = new LifecycleGate();
 
     onStatus("正在渲染工作簿…", "ok");
-    const seed = buildWorkbookSeed("演示工作簿", sampleSheets());
+    const seed = buildWorkbookSeed("青旅门店运营工作簿", sampleSheets());
     const err = await createWorkbookFrom(api, seed);
     const h: EditorHost = {
       api,
       gate,
-      workbookName: err ?? "演示工作簿",
+      workbookName: err ?? "青旅门店运营工作簿",
       health: err ? { verified: false, workbookId: null, error: `幽灵工作簿判定：建簿失败（${err}）` } : { verified: false, workbookId: null, error: null },
     };
     host = h;
@@ -251,7 +251,7 @@ export function disposeActiveUnit(api: FacadeUniver): void {
 export async function restoreMainWorkbook(): Promise<boolean> {
   if (!host) throw new Error("编辑器未启动");
   disposeActiveUnit(host.api);
-  const seed = buildWorkbookSeed("演示工作簿", sampleSheets());
+  const seed = buildWorkbookSeed("青旅门店运营工作簿", sampleSheets());
   host.api.createWorkbook(seed);
   await host.gate.ensureReady(host.api);
   await sleep(200);
@@ -288,26 +288,34 @@ export async function withEditorWrite<T>(
 /* ---------- 示例簿（?sample= 与首载共用） ---------- */
 
 function sampleSheets(): Array<{ name: string; rows: unknown[][] }> {
-  const today = new Date().toISOString().slice(0, 10);
+  // 示例＝真实业务内容（青旅门店运营），不用工程术语/内部开发提示（P0-4）。
+  // 数据量撑得起版式：房源价格表 7 列 × 8 行、周营收 7 列 × 9 行（含公式）。
   return [
     {
-      name: "业绩",
+      name: "房源价格表",
       rows: [
-        ["产品", "数量", "单价", "金额"],
-        ["Widget", 3, 9.99, { f: "=B2*C2" }],
-        ["Gadget", 5, 4.5, { f: "=B3*C3" }],
-        ["合计", { f: "=SUM(B2:B3)" }, null, { f: "=SUM(D2:D3)" }],
-        [],
-        ["样例日期", today, "载入 ?sample=1 可重置为本示例"],
+        ["房型", "可住人数", "门市价", "会员价", "周末价", "加床费", "库存"],
+        ["四人间床位", 1, 98, 88, 118, 30, 24],
+        ["双人标间", 2, 268, 238, 328, 60, 12],
+        ["家庭套房", 4, 458, 418, 558, 80, 6],
+        ["单人间", 1, 188, 168, 228, 0, 8],
+        ["露台大床房", 2, 328, 298, 398, 60, 4],
+        ["长住床位（周租）", 1, 560, 520, 560, 0, 10],
+        ["团建包栋", 12, 1880, 1780, 2280, 0, 1],
       ],
     },
     {
-      name: "备注",
+      name: "周营收",
       rows: [
-        ["键", "值"],
-        ["引擎", "Univer preset-sheets-core（Apache-2.0）"],
-        ["文件桥", "SheetJS 双向桥（值/公式保留；样式与列宽 v1 不落文件）"],
-        ["写入防御", "Rendered 门禁 + 幽灵工作簿 canary（禁静默失败）"],
+        ["日期", "入住间夜", "入住率", "房费收入", "餐饮收入", "合计", "备注"],
+        ["10-19 周一", 42, "78%", 8260, 1860, { f: "=D2+E2" }, "工作日协议客为主"],
+        ["10-20 周二", 45, "83%", 8940, 1980, { f: "=D3+E3" }, "两单团建入住"],
+        ["10-21 周三", 48, "89%", 9580, 2140, { f: "=D4+E4" }, "早餐加购 61%"],
+        ["10-22 周四", 51, "94%", 10240, 2260, { f: "=D5+E5" }, "四人间满房"],
+        ["10-23 周五", 58, "100%", 12860, 2680, { f: "=D6+E6" }, "周末溢价生效"],
+        ["10-24 周六", 60, "100%", 13520, 2840, { f: "=D7+E7" }, "满房，加床 6 张"],
+        ["10-25 周日", 56, "96%", 11940, 2520, { f: "=D8+E8" }, "团建包栋退房"],
+        ["本周合计", { f: "=SUM(B2:B8)" }, "", { f: "=SUM(D2:D8)" }, { f: "=SUM(E2:E8)" }, { f: "=SUM(F2:F8)" }, "平均房价 268 元"],
       ],
     },
   ];
@@ -318,7 +326,7 @@ export async function loadSampleWorkbook(onStatus: StatusSink): Promise<boolean>
   const h = host;
   if (!h) return false;
   disposeActiveUnit(h.api);
-  const seed = buildWorkbookSeed("演示工作簿", sampleSheets());
+  const seed = buildWorkbookSeed("青旅门店运营工作簿", sampleSheets());
   try {
     h.api.createWorkbook(seed);
   } catch (e) {

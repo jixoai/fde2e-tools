@@ -365,8 +365,9 @@ function buildTools(): WebMCPToolDef[] {
       name: "export_pdf",
       title: "导出 PDF",
       description:
-        "把当前网格（所见即所得：数据/公式计算值/页签）导出为 PDF 下载（缺省 xlsx-export.pdf；A4 纵向单页）。" +
-        "编辑器未就绪时返回 ok:false。返回文件名契约与画布尺寸。",
+        "把当前工作簿导出为矢量 PDF 下载（缺省 xlsx-export.pdf；真实文本层可搜索可复制；" +
+        "A4 纵向多页，列宽自适应/表头加粗/数字右对齐/重复表头/页脚页码；不含编辑器 UI）。" +
+        "编辑器未就绪时返回 ok:false。返回文件名契约与页数。",
       inputSchema: {
         type: "object",
         properties: {

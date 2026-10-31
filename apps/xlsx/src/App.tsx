@@ -35,7 +35,8 @@ WebMCP 工具（直接驱动编辑器内核，不经 DOM 输入区；编辑器�
 - import_xlsx({base64[, filename]})：导入 .xlsx（值/公式保留；样式与列宽不保留）为可编辑工作簿。
 - export_xlsx({filename?})：导出真 .xlsx 下载（缺省 xlsx-export.xlsx；值/公式保留，样式与列宽 v1 不落文件）。
 - get_snapshot()：只读全簿快照（v 值 + f 公式）——先读后写。
-- export_pdf({filename?})：网格画布所见即所得 → PDF 下载（缺省 xlsx-export.pdf；A4 纵向单页，含公式计算值）。
+- export_pdf({filename?})：矢量 PDF 下载（缺省 xlsx-export.pdf；真实文本层可搜索可复制；数据面绘制——
+  列宽自适应/表头加粗/数字右对齐/多页重复表头/页脚页码；不含任何编辑器 UI，不碰 Univer DOM）。
 - export_png({filename?})：全簿长图 PNG 下载（缺省 xlsx-long.png；全部工作表数据面自绘表格——
   网格 canvas 只含可视视口，长图诚实走数据面；内容超 16384px 会截断并标注）。
 
@@ -43,7 +44,7 @@ WebMCP 工具（直接驱动编辑器内核，不经 DOM 输入区；编辑器�
 - 页面按钮：载入示例（load-sample-btn）、导入 .xlsx（import-xlsx-btn）、导出 .xlsx（export-xlsx-btn）、
   导出 PDF（export-pdf-btn）、导出长图 PNG（export-png-btn）；
   状态行 id=status 实时反馈（成功 ok 色 / 失败 error 色）。
-- URL 参数 ?sample=1（或 sample/示例）：重置为内置示例工作簿（含公式与样式）。
+- URL 参数 ?sample=1（或 sample/示例）：重置为内置示例工作簿（青旅门店运营：房源价格表＋周营收，含公式）。
 - 网格本身可直接编辑：点选单元格输入、工具栏加粗/底色、sheet 页签增删改（Univer 原生交互）。`;
 
 interface Status {
@@ -130,14 +131,17 @@ export default function App() {
     }
   }
 
-  /** 展示级导出（openspec: export-pdf-png）：网格 PDF／全簿长图，人机同路径 */
+  /** 展示级导出（openspec: export-pdf-png）：矢量 PDF／全簿长图，人机同路径 */
   async function onExportShow(kind: "pdf" | "png") {
     showStatus(kind === "pdf" ? "正在导出 PDF…" : "正在导出长图 PNG…", "ok");
     try {
       const r = kind === "pdf" ? await exportGridPdf() : await exportSheetLongPng();
       if (!r.ok) throw new Error(r.error);
-      const tail = r.notice ? ` · ${r.notice}` : `（${r.width}×${r.height} px）`;
-      showStatus(`已生成 ${r.filename}${kind === "pdf" ? "" : tail}（${kind === "pdf" ? "网格画布快照" : "全簿数据面"}）`, "ok");
+      const tail = r.notice ? ` · ${r.notice}` : "";
+      showStatus(
+        `已生成 ${r.filename}（${kind === "pdf" ? `矢量 PDF · ${r.pages ?? 1} 页${tail}` : `${r.width}×${r.height} px · 全簿数据面${tail}`}）`,
+        "ok",
+      );
     } catch (e) {
       showStatus("导出失败：" + (e instanceof Error ? e.message : String(e)), "error");
     }

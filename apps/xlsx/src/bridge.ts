@@ -13,7 +13,7 @@
  * 渐进覆盖，v1 不承诺。
  * 本模块整块 dynamic import（SheetJS ≈492KB 独立 chunk，主包零携带）。
  */
-import { buildWorkbookSeed, type SeedCell, type WorkbookSeed } from "./snapshot";
+import { buildWorkbookSeed, isCanaryCell, type SeedCell, type WorkbookSeed } from "./snapshot";
 
 /** 从 cellData 读单元格（稀疏 Record 两级索引） */
 function cellAt(cellData: Record<number, Record<number, SeedCell>>, r: number, c: number): SeedCell | undefined {
@@ -72,7 +72,7 @@ export async function snapshotToXlsxBytes(
       const row: unknown[] = [];
       for (let c = 0; c <= maxC; c++) {
         const cell = cellAt(cellData, r, c);
-        row.push(cell && cell.v !== undefined && cell.v !== null ? cell.v : null);
+        row.push(cell && !isCanaryCell(cell) && cell.v !== undefined && cell.v !== null ? cell.v : null);
       }
       aoa.push(row);
     }
@@ -81,7 +81,7 @@ export async function snapshotToXlsxBytes(
     for (let r = 0; r <= maxR; r++) {
       for (let c = 0; c <= maxC; c++) {
         const cell = cellAt(cellData, r, c);
-        if (cell?.f) {
+        if (cell?.f && !isCanaryCell(cell)) {
           const addr = XLSX.utils.encode_cell({ r, c });
           ws[addr] = { ...(ws[addr] ?? {}), f: cell.f.replace(/^=/, "") };
         }
