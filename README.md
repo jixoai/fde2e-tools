@@ -40,16 +40,22 @@ deploy/
   editor-fetch.sh   编辑器站二期：钉 digest 拉取/运行/冒烟（AGPL 合规形态）
 scripts/
   webmcp-check.mjs  WebMCP 绿门（headless Chromium + WebMCP flag 下 getTools() 断言
-                    + 三站 create_* executeTool 全链真下载）
+                    + 三站 create_* executeTool 全链真下载 + 非法入参矩阵）
   smoke-check.mjs   参数契约冒烟（URL 契约/状态行文案/渲染产物逐值断言
                     + 办公三站真文件反读：xlsx SheetJS 逐格、docx/pptx 解 zip）
+  interface-lint.mjs 接口一致性静态 lint（三面一致/schema 卫生/items 选择器/ok:false 带 error）
+docs/
+  webmcp-interface-guidelines.md  WebMCP 接口设计指南（接口变更必读必过）
 openspec/      变更管理（project.md + changes/）
 ```
 
 **单源纪律**：`packages/shared/src/registry.ts` 是全部工具元数据的唯一可信源
 （id/名称/一句话/子域/标签/URL 参数契约/WebMCP 入口点）。黄页渲染、各工具页、
 WebMCP inputSchema 派生（schemaFromUrlParams）三面共用。**加新工具 ＝ registry
-加一条 + 新建 apps/<id>**，其余零改动。
+加一条 + 新建 apps/<id>**，其余零改动。**接口设计约束**（选择器命名/文件名契约/
+错误形态/URL·工具双层契约）单源在 `docs/webmcp-interface-guidelines.md`——接口
+变更必须过 `node scripts/interface-lint.mjs` 与 `pnpm webmcp:check`（非法入参矩阵），
+详见仓库 AGENTS.md「接口一致性审查」。
 
 **技术栈**：pnpm workspace；各 app Vite + React 19 + Tailwind v4 + shadcn
 （base-nova style，组件一律官方 registry 一手源收编）；视觉＝solid-glass 主题

@@ -23,6 +23,16 @@
 
 ## 工程纪律
 
+- **接口一致性审查（2026-10-31 接口审查裁决制度化，记住！）**：接口变更
+  （新增/改参/改名/改返回形态）必须——①对照 `docs/webmcp-interface-guidelines.md`
+  逐条自查（items 统一选择器、旧名兼容别名与同传互斥、filename×tag 优先级、
+  ok:false 全带 error 不 reject、URL 层与工具层契约语汇分立）；②过
+  `node scripts/interface-lint.mjs`（静态：registry/EXPECT/webmcp 三面一致＋
+  schema additionalProperties 全关＋参数 camelCase＋选择器白名单）；③
+  `pnpm webmcp:check` 非法入参矩阵（每工具非法输入必须 resolve
+  {ok:false, error}）。同名工具跨站必须同名且同义；同名不同义必须改名或显式
+  区分（先例：pptx export_png＝逐页多文件，长图＝export_long_png＋别名
+  export_pages_png）。
 - **vendor 纪律**：上游副本（solid-glass 主题、WebMCP polyfill）逐字收编、
   本地零改动、文件头/README 注明来源与许可；升级＝重取 diff，适配只在消费侧。
 - **WebMCP**：工具注册走 `@fde2e-tools/shared/webmcp` 统一助手（原生探测＋

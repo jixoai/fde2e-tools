@@ -108,3 +108,26 @@ oklch 色守卫护体）可复用到三站——共享化为 `@fde2e-tools/share
   - docx 两工具 `section`（标题文本；取该标题至下一个同级/更高级标题前；
     不存在人话报错并列出可用标题）；
   - 返回值一律带 `selected`（实际导出的页/表/节清单）。
+
+## 终验回单（2026-10-31 晚，xlsx 导出能力三层＋items 统一重设计）
+
+- **G1 items 统一选择器（接口重设计）**：Owner 裁决——原设计 sheet+range 与
+  sheets 平行参数语义重叠、冲突未定义，收回为统一 `items`（单元＝
+  {sheet: 表名|1起序号, range?}）；sheets 降为兼容糖（表名/序号数组）；同传
+  人话报错。区域单元与实际内容 usedRange 取交集收敛（A1:Z99→A1:D6 文件名即
+  证据）；多单元每单元一节、文件名 `<单元1>-<单元2>`（区域单元 `表名-A1F20`）。
+  resolveExportSelection/buildUnitWorkSnapshot/A1 地址三函数落 snapshot.ts 单源。
+- **G2 寻址加固**：xlsx import_xlsx 重名表防御——本地 0.20.3 矩阵实证 SheetJS
+  read 对重名文件 wb.Sheets 按名字键互相覆盖（两表数据塌缩成最后一张、第一张
+  数据在解析层即丢），故做 zip 级改名手术（中央目录→workbook.xml 重名改写→
+  STORE 重建；DecompressionStream deflate-raw＋自实现 CRC-32；不可解形态原样
+  返回不阻塞）＋名字级兜底去重＋warning 声明；绿门构造外部重名 xlsx 断言
+  「两表俱在且数据各归其位」。sheets 双模寻址（表名/1起序号）落
+  resolveExportSelection（三路径共用）。
+- **G3 trim 三契约**：planSheetDraw 单源（PDF/PNG 双路径）——尾部空区不进产物
+  （远端 canary 壳键产物恰 1 页、文本层无痕迹）；中间空行占位（pdftotext -bbox
+  实测 R2→R4 行距/R1→R2 行距≈2.0）；不规则右边界（行 6-10 绘制计划 maxC=0、
+  长图 HTML 该行 1 td——不画格线不渲染空格）。
+- **顺带（接口一致性 A 批同批）**：xlsx/docx/pptx 导出文件名改为
+  resolveDownloadName（自定义 filename 为主＋tag 追加，F8）；docx 选择 tag
+  落地（F9）；pptx export_png 补 filename 前缀（F5）。

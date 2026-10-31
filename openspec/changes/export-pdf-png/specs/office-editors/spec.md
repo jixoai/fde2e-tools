@@ -39,7 +39,9 @@ xlsx 还把编辑器 UI 截进产物）：
   scale，仍超则截断并在产物与返回值中**诚实标注**。
 - **文件名契约**（safeFilename 单源清洗）：`xlsx-export.pdf` / `xlsx-long.png` /
   `docx-export.pdf` / `docx-long.png` / `pptx-export.pdf` / `pptx-page-N.png`
-  （N 起 01）/ `pptx-long.png`。
+  （N 起 01）/ `pptx-long.png`。**优先级（F8）**：自定义 `filename` 为主、
+  选择 tag 追加其上（`<自定义stem>-<tag>.<ext>`，`resolveDownloadName` 单源），
+  选择导出不再吞掉调用方给出的文件名。
 - **vendored 一致性**：html2pdf.bundle.min.js（内含 jsPDF 4.0.0，MIT）于各站
   public/assets/ 持同一副本（sha 一致），站点独立可部署；字体资产由 shared
   单源经 Vite 各站各出一份；html2canvas(MIT) / jsPDF(MIT) / html-to-image(MIT)
@@ -88,14 +90,33 @@ xlsx 还把编辑器 UI 截进产物）：
 三站展示级导出工具 SHALL 支持**参数级选择**（缺省＝全量，文件名契约不变），
 返回值一律带 `selected`（实际导出的页/表/节清单）：
 
-- **pptx**：`export_pdf/export_png/export_long_png` 加 `pages`（页码数组
-  `[2,3]` 或区间字符串 `"2-3"`，1-based；越界人话报错）。选择导出文件名
-  `pptx-export-p2-3.pdf` / `pptx-long-p2-3.png`；逐页 PNG 以原 deck 页码命名。
-- **xlsx**：`export_pdf/export_png/export_xlsx` 加 `sheets`（表名数组；不存在
-  的表名人话报错并列出可用表名）。选择导出文件名 `xlsx-export-表1-表2.pdf`
-  （超长截断）。
+- **pptx**：`export_pdf/export_png/export_long_png` 加 `items` 统一选择器
+  （主形态：每项 `{page: 页码}`，1-based）；`pages`（页码数组 `[2,3]`、区间
+  字符串 `"2-3"` 或单数，1-based）为兼容别名；两者同传人话报错。越界人话
+  报错。选择导出文件名 `pptx-export-p2-3.pdf` / `pptx-long-p2-3.png`；逐页
+  PNG 以原 deck 页码命名，`filename` 参数为**前缀语义**
+  （传 foo 产出 foo-01.png/foo-02.png）；`export_pages_png` 为 `export_png`
+  别名工具（同 execute，归一路径起点）。
+- **xlsx**：`export_pdf/export_png/export_xlsx` 加 `items` 统一选择器（主形态，
+  2026-10-31 接口重设计：原 sheet+range 平行参数收回 items）——每项
+  `{sheet: 表名|1起序号, range?: "A1:F20"}`；区域必须挂单表，与实际内容
+  usedRange 取交集收敛（超出按内容收敛、无交集人话报错）；多单元每单元一节、
+  顺序按 items。`sheets`（表名数组或 **1 起序号数组** `[1,3]`，与 pptx pages
+  一致）为 v1 兼容糖；items 与 sheets 同传人话报错。选择导出文件名
+  `xlsx-export-表1-表2.pdf` / 区域单元 `xlsx-export-表名-A1F20.pdf`（超长截断）。
+- **xlsx 重名表导入防御（G2a）**：外部构造的 .xlsx 可携带重名工作表（绕过
+  Excel UI 限制）；SheetJS 解析按名字键互相覆盖（两表数据塌缩成最后一张），
+  故导入 SHALL 在解析前做文件级改名——重名者自动去重后缀（「周报」→
+  「周报 (2)」）且**两表数据各归其位**，返回值 `warning` 声明发生的重命名。
+- **xlsx 行列裁剪契约（G3）**：已用范围只认有内容格（远端空壳行键/ canary
+  哨兵不进产物）；行域＝首末内容行之间**中间空行保留**（占位全宽——空行是
+  内容的一部分）；有内容行右边界＝该行自身最右内容列（**不规则右边界**：
+  右侧空区不画格线不渲染空格）。矢量 PDF 与长图 PNG 双路径同源（planSheetDraw）。
 - **docx**：`export_pdf/export_png` 加 `section`（标题文本；取该标题至下一个
-  同级或更高级标题前；不存在人话报错并列出可用标题）。
+  同级或更高级标题前；不存在人话报错并列出可用标题）；**items 多节选择**
+  （`[{section: 标题}]`，顺序按 items）为主形态，section 单值为兼容别名，
+  同传人话报错；选择导出文件名 `docx-export-<节名>.pdf` / `docx-long-<节名>.png`
+  （多节以 `-` 连接）。
 
 #### Scenario: pptx 按页导出
 
@@ -105,15 +126,41 @@ xlsx 还把编辑器 UI 截进产物）：
 
 #### Scenario: xlsx 按表导出
 
-- **WHEN** `export_pdf({sheets:["周营收"]})`
+- **WHEN** `export_pdf({sheets:["周营收"]})` 或 `export_pdf({sheets:[2]})`
 - **THEN** 下载 xlsx-export-周营收.pdf（只含该表内容），返回
-  `selected=["周营收"]`；表名不存在返回人话错误并列出可用表
+  `selected=["周营收"]`；表名不存在/序号越界/混合形态返回人话错误并列出可用表
+
+#### Scenario: xlsx items 区域级导出（G1）
+
+- **WHEN** 示例簿调用 `export_pdf({items:[{sheet:"周营收", range:"A1:F5"}]})`
+- **THEN** 下载 xlsx-export-周营收-A1F5.pdf：含 A1:F5 内表头与数据（10-21 周三），
+  不含区域外内容（合计行/备注列）；`selected=[{sheet:"周营收", range:"A1:F5"}]`；
+  多单元 `[{sheet:1},{sheet:"周营收",range:"A2:F4"}]` 文件名
+  `xlsx-export-房源价格表-周营收-A2F4.pdf`、每单元一个章节；items×sheets 同传
+  返回「只能用一个」；`A1:Z99` 按内容收敛（文件名/selected 均为 A1:D6）
+
+#### Scenario: xlsx 重名表导入（G2a）
+
+- **WHEN** 导入携带重名工作表的外部 .xlsx（两表同名「周报」、数据各异）
+- **THEN** 工作簿得到「周报」「周报 (2)」两表，数据**各归其位**（首表＝首表
+  数据、次表＝次表数据，不塌缩），返回值带 `warning` 声明重命名
+
+#### Scenario: xlsx 行列裁剪三契约（G3）
+
+- **WHEN** 表含 A1:D6 内容＋远端 59 行空壳键；或行 3 全空（行 4 有数据）；
+  或 A 列 10 行、B 列仅 5 行
+- **THEN** ①产物恰 1 页且文本层无空区痕迹（壳键不进 usedRange）；②行 4
+  数据在位且行 3 空行占位（PDF 行距几何 ≈2 个行高）；③B 列 6-10 行区域不画
+  格线不渲染空格（长图 HTML 该行 td 数为 1）
 
 #### Scenario: docx 按节导出
 
 - **WHEN** `export_pdf({section:"二、本周问题与处理"})`
-- **THEN** 下载 docx-export.pdf（只含该节：标题至下一个同级/更高级标题前），
-  返回 `selected=[...]`；标题不存在返回人话错误并列出可用标题
+- **THEN** 下载 docx-export-二、本周问题与处理.pdf（只含该节：标题至下一个
+  同级/更高级标题前），返回 `selected=[...]`；`items` 多节
+  `[{section:"一、经营概况"},{section:"三、下周重点"}]` 文件名
+  `docx-export-一、经营概况-三、下周重点.pdf`；标题不存在返回人话错误并列出
+  可用标题；items×section 同传返回「只能用一个」
 
 ### Requirement: 位图与矢量 PDF 同源模板（pptx）
 

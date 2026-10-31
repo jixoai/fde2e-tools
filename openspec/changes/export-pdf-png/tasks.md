@@ -124,3 +124,31 @@
 - [x] 9.4 绿门：smoke-check 新增「编辑器选择性导出」check（pptx pages=[2]
       单页＋内容正反断言、xlsx sheets 单表、docx section 单节、越界/缺节/缺表
       人话报错）；smoke 39/39 全绿、webmcp-check 原生/polyfill 双路径全绿。
+
+## 10. xlsx 导出能力三层＋接口一致性（2026-10-31 晚，G1/G2/G3 ＋ items 统一）
+
+- [x] 10.1 **G1 items 统一选择器**（接口重设计：sheet+range 平行参数收回
+      items 单元）：`export_pdf/export_png/export_xlsx` 加 `items`
+      （`{sheet: 表名|1起序号, range?: "A1:F20"}` 单元数组）；sheets（表名/1起
+      序号数组）降为兼容糖；items×sheets 同传人话报错；区域 ∩ usedRange 收敛
+      （文件名/返回值按收敛后区域，如 A1:Z99→A1:D6）；多单元 PDF 每单元一节、
+      顺序按 items；文件名 `xlsx-export-<单元1>-<单元2>.pdf`（区域单元
+      `表名-A1F20`）；resolveExportSelection/buildUnitWorkSnapshot 落
+      snapshot.ts 单源（A1 地址解析 parseA1/parseA1Range/encodeA1 同迁）。
+- [x] 10.2 **G2 寻址加固**：import_xlsx 重名表防御（外部构造文件可携带重名
+      表，SheetJS read 的 wb.Sheets 按名字键互相覆盖、两表数据塌缩成最后一张
+      ——本地 0.20.3 矩阵实证）→ zip 级改名手术（xlsx-dup-repair.ts：中央目录
+      解析＋workbook.xml 重名改写「周报 (2)」＋STORE 重建，DecompressionStream
+      deflate-raw＋自实现 CRC-32，不可解形态原样返回）＋桥接层
+      dedupeSheetNames 兜底＋返回值 warning 声明。
+- [x] 10.3 **G3 trim 契约钉死**：planSheetDraw 单源（PDF/PNG 双路径共用）——
+      行域＝首末内容行之间**中间空行保留**（占位全宽）；有内容行右边界＝自身
+      最右内容列（不规则右边界：右侧空区不画格线不渲染空格）。三绿门断言：
+      ①尾部空区不进产物（远端 canary 壳键 → 产物恰 1 页＋文本无 __canary__）；
+      ②中间空行占位（pdftotext -bbox 行距几何证据：R2→R4 行距 ≈2×R1→R2）；
+      ③不规则右边界（绘制计划 seam＋HTML td 数结构断言）。usedRange 扩
+      minR/minC 返回。
+- [x] 10.4 绿门：smoke-check 新增 4 个 xlsx check（trim①+区域收敛、items 三
+      形态＋序号 sheets＋7 项非法入参、trim②③、重名导入）＋pdf-assert 新增
+      pdfWordBoxes；webmcp-check 非法入参矩阵；既有断言零缩水（v1 sheets 表名
+      形态 selected/文件名断言原样保留）。
