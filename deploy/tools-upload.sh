@@ -3,14 +3,16 @@
 #
 # 用法：
 #   TOOLS_DEST=/opt/1panel/apps/openresty/openresty/www/tools bash deploy/tools-upload.sh <app>
-#   <app> ∈ directory|pdf-tool|img-tool|url-tool|file-viewer
+#   <app> ∈ directory|pdf-tool|img-tool|url-tool|file-viewer|xlsx|docx|pptx
 # 目标映射：directory → $TOOLS_DEST/_home（黄页＝tool.fde2e.com 根）；其余 → $TOOLS_DEST/<app>
 # 传输用 tar-over-ssh（alpha-upload.sh 的兜底通道，实证稳；rsync 在本机-服务器组合上报协议错）。
+# 注：editor（ranuts/document 编辑器站）不走本脚本——AGPL 未修改上游镜像独立部署，
+#     见 deploy/editor-fetch.sh 与 openspec editor-hosting 规格。
 set -euo pipefail
-app="${1:?用法: tools-upload.sh <app>（directory|pdf-tool|img-tool|url-tool|file-viewer）}"
+app="${1:?用法: tools-upload.sh <app>（directory|pdf-tool|img-tool|url-tool|file-viewer|xlsx|docx|pptx）}"
 case "${app}" in
-  directory|pdf-tool|img-tool|url-tool|file-viewer) ;;
-  *) echo "✗ 未知 app: ${app}（应为 directory|pdf-tool|img-tool|url-tool）"; exit 1 ;;
+  directory|pdf-tool|img-tool|url-tool|file-viewer|xlsx|docx|pptx) ;;
+  *) echo "✗ 未知 app: ${app}"; exit 1 ;;
 esac
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="${REPO_ROOT}/apps/${app}/dist"

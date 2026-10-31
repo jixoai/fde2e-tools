@@ -12,7 +12,7 @@
  * 用法：pnpm -r build 后 node scripts/smoke-check.mjs
  */
 import { createServer } from "node:http";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -82,7 +82,6 @@ async function main() {
   });
 
   const servers = {};
-  for (const app of ["pdf-tool", "img-tool", "url-tool", "directory", "file-viewer"]) {
   for (const app of ["pdf-tool", "img-tool", "url-tool", "directory", "xlsx", "docx", "pptx"]) {
     servers[app] = { server: await serveDir(join(ROOT, "apps", app, "dist")), get port() { return servers[app].server.address().port; } };
   }
@@ -113,6 +112,73 @@ async function main() {
 
   try {
     // ---------- pdf-tool ----------
+    const fvOrigin = () => `http://127.0.0.1:${servers["file-viewer"].server.address().port}`;
+    const fvDemo = (file, extra = "") =>
+      "?url=" + encodeURIComponent(fvOrigin() + "/demo/" + file) + extra;
+
+    await check("file-viewer ?url=demo/欢迎.md：markdown 自动判定 + 契约渲染", async () => {
+      await withPage("file-viewer", fvDemo(encodeURIComponent("欢迎.md"), "&name=%E6%BC%94%E7%A4%BA.md"), async (page) => {
+        await page.waitForSelector('[data-decoder-root="markdown"]', { timeout: 15000 });
+        const name = await page.textContent('[data-viewer-filename="true"]');
+        if (name !== "演示.md") throw new Error(`显示名不符: ${name}（期望 演示.md——name 参数契约）`);
+        const topbar = await page.getAttribute('[data-viewer-topbar="true"]', "data-viewer-topbar");
+        if (topbar !== "true") throw new Error("顶栏 E2E 标记缺失");
+        // 解码器组件经 React.lazy（独立 chunk）+ marked/shiki 异步渲染——等内容落定
+        await page.waitForFunction(
+          () => (document.querySelector('[data-decoder-root="markdown"]')?.textContent ?? "").includes("通用文件预览站"),
+          { timeout: 15000 },
+        );
+      });
+    });
+
+    await check("file-viewer 缺 url：契约错误文案保真 + #ai-guide 自发现", async () => {
+      await withPage("file-viewer", "", async (page) => {
+        await page.waitForSelector('[data-viewer-error="true"]', { timeout: 10000 });
+        const pane = await page.textContent('[data-viewer-error="true"]');
+        if (!pane.includes("缺少 url 参数——契约：/?url=<encodeURIComponent(绝对URL)>")) {
+          throw new Error(`契约错误文案不符: ${pane.slice(0, 80)}`);
+        }
+        const guide = await page.textContent("#ai-guide");
+        if (!guide.includes("decoder（可选）：强制解码器 id")) throw new Error("ai-guide 契约说明缺失");
+        if (!guide.includes("svg image video audio pdf markdown json csv html docx xlsx pptx zip text")) {
+          throw new Error("ai-guide 解码器清单缺失");
+        }
+        if ((guide.match(/\/\?url=/g) ?? []).length === 0) throw new Error("ai-guide 缺 URL 契约行");
+        // 示例链接：4 条同源 demo 夹具链接，href 必须是「契约形态」（含 url= 且指向同源 /demo）
+        const links = await page.evaluate(() =>
+          Array.from(document.querySelectorAll("#ai-guide a")).map((a) => a.href),
+        );
+        if (links.length !== 4) throw new Error(`ai-guide 示例链接数不符: ${links.length}（期望 4）`);
+        for (const href of links) {
+          const u = new URL(href);
+          if (u.pathname !== "/") throw new Error(`示例链接路径异常: ${href}`);
+          const target = u.searchParams.get("url");
+          if (!target || !target.startsWith(u.origin + "/demo/")) {
+            throw new Error(`示例链接未按契约包 url 参数: ${href}`);
+          }
+        }
+      });
+    });
+
+    await check("file-viewer decoder=text 强制 svg：二进制嗅探「未支持＋下载」兜底", async () => {
+      // 嗅探用二进制夹具（NUL 字节）动态落进 dist（构建产物目录，可再生）——
+      // 优雅拒绝规格场景：强制 text 打开二进制内容 → 未支持态，不渲染乱码
+      const binPath = join(ROOT, "apps", "file-viewer", "dist", "demo", "__smoke__.bin");
+      writeFileSync(binPath, Buffer.from([0x00, 0x01, 0x02, 0x00, 0x7f, 0x00]));
+      try {
+        await withPage("file-viewer", fvDemo(encodeURIComponent("__smoke__.bin"), "&decoder=text"), async (page) => {
+          await page.waitForSelector('[data-viewer-error-kind="unsupported-binary"]', { timeout: 15000 });
+          const rootId = await page.getAttribute("[data-decoder-root]", "data-decoder-root");
+          if (rootId !== "text") throw new Error(`强制解码器未生效: ${rootId}`);
+          const body = await page.textContent("body");
+          if (body.includes("unpack")) throw new Error("疑似渲染了乱码");
+        });
+      } finally {
+        rmSync(binPath, { force: true });
+      }
+    });
+
+
     await check("pdf-tool ?autoload=sample：自动载入示例并渲染", async () => {
       await withPage("pdf-tool", "?autoload=sample", async (page) => {
         await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例周报"), { timeout: 10000 });
@@ -258,6 +324,45 @@ async function main() {
       });
     });
 
+    // B1 回归门（对抗审查 2026-10-31）：add_sheet_sample 必须与页面真相源同
+    // 语义——TSV-only 场景（JSON 空只粘表格）追加后 TSV 表不得静默丢失，且
+    // TSV 表必须出现在生成产物里
+    await check("xlsx WebMCP add_sheet_sample：TSV-only 场景表不丢（B1 回归门）", async () => {
+      await withPage("xlsx", "", async (page) => {
+        await page.waitForFunction(
+          () => document.modelContext && document.modelContext.getTools().then((ts) => ts.some((t) => t.name === "add_sheet_sample")),
+          { timeout: 10000 },
+        );
+        await page.fill("#input-tsv", "## 表A\n名字\t数值\n甲\t3.5"); // 只粘 TSV，JSON 留空
+        const out = await page.evaluate(async () => {
+          const ts = await document.modelContext.getTools();
+          const tool = ts.find((t) => t.name === "add_sheet_sample");
+          const raw = await document.modelContext.executeTool(tool, { name: "审查表" });
+          return JSON.parse(raw);
+        });
+        if (!out.ok) throw new Error(`add_sheet_sample 失败: ${JSON.stringify(out)}`);
+        if (!Array.isArray(out.sheets) || !out.sheets.includes("表A") || !out.sheets.includes("审查表")) {
+          throw new Error(`B1：TSV 表静默丢失或未追加（sheets=${JSON.stringify(out.sheets)}）`);
+        }
+        // 产物断言：生成真文件，TSV 表 + 追加表都必须在产物里且数据保真
+        const dlPromise = page.waitForEvent("download", { timeout: 30000 });
+        await page.click("#generate-xlsx-btn");
+        const download = await dlPromise;
+        if (download.suggestedFilename() !== "xlsx-export.xlsx") {
+          throw new Error(`下载文件名不符: ${download.suggestedFilename()}`);
+        }
+        const dlPath = await download.path();
+        const wb = XLSX.read(readFileSync(dlPath), { type: "buffer" });
+        if (!wb.SheetNames.includes("表A") || !wb.SheetNames.includes("审查表")) {
+          throw new Error(`B1：产物缺表（实际 ${wb.SheetNames.join(",")}）`);
+        }
+        if (wb.Sheets["表A"]["B2"].v !== 3.5 || wb.Sheets["表A"]["B2"].t !== "n") {
+          throw new Error("B1：TSV 表数据丢失（表A!B2 应为数字 3.5）");
+        }
+        console.log(`      反读证据：TSV-only 追加后产物 2 表（${wb.SheetNames.join(" / ")}）· 表A!B2=3.5(n)`);
+      });
+    });
+
     // ---------- docx（真文件反读断言） ----------
     await check("docx ?sample=1：示例文档载入 + 预览刷新", async () => {
       await withPage("docx", "?sample=1", async (page) => {
@@ -297,6 +402,30 @@ async function main() {
         const missing = probes.filter((p) => !doc.includes(p));
         if (missing.length) throw new Error(`document.xml 缺关键内容: ${missing.join(", ")}`);
         console.log(`      反读证据：zip ${names.length} 项 · document.xml 含标题/列表/表格文本 + <w:b/>/<w:i/> 标记`);
+      });
+    });
+
+    // 折叠线回归门（视觉验收追加修复项 2026-10-31）：小视口长预览下点生成，
+    // #status 必须滚入视口（shared scrollStatusIntoView 统一模式）
+    await check("docx 折叠线回归门：小视口长预览点生成后 #status 在视口内", async () => {
+      await withPage("docx", "?sample=1", async (page) => {
+        await page.setViewportSize({ width: 1280, height: 640 }); // 小视口复现折叠线场景
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例文档已载入"), { timeout: 10000 });
+        const dlPromise = page.waitForEvent("download", { timeout: 30000 });
+        await page.click("#generate-docx-btn");
+        const download = await dlPromise;
+        if (download.suggestedFilename() !== "docx-export.docx") {
+          throw new Error(`下载文件名不符: ${download.suggestedFilename()}`);
+        }
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("已生成"), { timeout: 15000 });
+        await page.waitForTimeout(800); // smooth 滚动落定
+        const rect = await page.evaluate(() => {
+          const r = document.getElementById("status").getBoundingClientRect();
+          return { top: r.top, bottom: r.bottom, vh: window.innerHeight };
+        });
+        if (!(rect.top >= 0 && rect.bottom <= rect.vh)) {
+          throw new Error(`状态行仍在视口外: top=${rect.top} bottom=${rect.bottom} vh=${rect.vh}`);
+        }
       });
     });
 
@@ -440,86 +569,16 @@ async function main() {
       });
     });
 
-    // ---------- file-viewer ----------
-    // 同源 demo 夹具随构建迁出（apps/file-viewer/public/demo → dist/demo），
-    // 零外网依赖即可断言 URL 契约/解码判定/E2E 标记家族。
-    // 注意：withPage 拼 URL 形如 base + "/" + query——query 必须以 ? 开头
-    const fvOrigin = () => `http://127.0.0.1:${servers["file-viewer"].server.address().port}`;
-    const fvDemo = (file, extra = "") =>
-      "?url=" + encodeURIComponent(fvOrigin() + "/demo/" + file) + extra;
-
-    await check("file-viewer ?url=demo/欢迎.md：markdown 自动判定 + 契约渲染", async () => {
-      await withPage("file-viewer", fvDemo(encodeURIComponent("欢迎.md"), "&name=%E6%BC%94%E7%A4%BA.md"), async (page) => {
-        await page.waitForSelector('[data-decoder-root="markdown"]', { timeout: 15000 });
-        const name = await page.textContent('[data-viewer-filename="true"]');
-        if (name !== "演示.md") throw new Error(`显示名不符: ${name}（期望 演示.md——name 参数契约）`);
-        const topbar = await page.getAttribute('[data-viewer-topbar="true"]', "data-viewer-topbar");
-        if (topbar !== "true") throw new Error("顶栏 E2E 标记缺失");
-        // 解码器组件经 React.lazy（独立 chunk）+ marked/shiki 异步渲染——等内容落定
-        await page.waitForFunction(
-          () => (document.querySelector('[data-decoder-root="markdown"]')?.textContent ?? "").includes("通用文件预览站"),
-          { timeout: 15000 },
-        );
-      });
-    });
-
-    await check("file-viewer 缺 url：契约错误文案保真 + #ai-guide 自发现", async () => {
-      await withPage("file-viewer", "", async (page) => {
-        await page.waitForSelector('[data-viewer-error="true"]', { timeout: 10000 });
-        const pane = await page.textContent('[data-viewer-error="true"]');
-        if (!pane.includes("缺少 url 参数——契约：/?url=<encodeURIComponent(绝对URL)>")) {
-          throw new Error(`契约错误文案不符: ${pane.slice(0, 80)}`);
-        }
-        const guide = await page.textContent("#ai-guide");
-        if (!guide.includes("decoder（可选）：强制解码器 id")) throw new Error("ai-guide 契约说明缺失");
-        if (!guide.includes("svg image video audio pdf markdown json csv html docx xlsx pptx zip text")) {
-          throw new Error("ai-guide 解码器清单缺失");
-        }
-        if ((guide.match(/\/\?url=/g) ?? []).length === 0) throw new Error("ai-guide 缺 URL 契约行");
-        // 示例链接：4 条同源 demo 夹具链接，href 必须是「契约形态」（含 url= 且指向同源 /demo）
-        const links = await page.evaluate(() =>
-          Array.from(document.querySelectorAll("#ai-guide a")).map((a) => a.href),
-        );
-        if (links.length !== 4) throw new Error(`ai-guide 示例链接数不符: ${links.length}（期望 4）`);
-        for (const href of links) {
-          const u = new URL(href);
-          if (u.pathname !== "/") throw new Error(`示例链接路径异常: ${href}`);
-          const target = u.searchParams.get("url");
-          if (!target || !target.startsWith(u.origin + "/demo/")) {
-            throw new Error(`示例链接未按契约包 url 参数: ${href}`);
-          }
-        }
-      });
-    });
-
-    await check("file-viewer decoder=text 强制 svg：二进制嗅探「未支持＋下载」兜底", async () => {
-      // 嗅探用二进制夹具（NUL 字节）动态落进 dist（构建产物目录，可再生）——
-      // 优雅拒绝规格场景：强制 text 打开二进制内容 → 未支持态，不渲染乱码
-      const binPath = join(ROOT, "apps", "file-viewer", "dist", "demo", "__smoke__.bin");
-      writeFileSync(binPath, Buffer.from([0x00, 0x01, 0x02, 0x00, 0x7f, 0x00]));
-      try {
-        await withPage("file-viewer", fvDemo(encodeURIComponent("__smoke__.bin"), "&decoder=text"), async (page) => {
-          await page.waitForSelector('[data-viewer-error-kind="unsupported-binary"]', { timeout: 15000 });
-          const rootId = await page.getAttribute("[data-decoder-root]", "data-decoder-root");
-          if (rootId !== "text") throw new Error(`强制解码器未生效: ${rootId}`);
-          const body = await page.textContent("body");
-          if (body.includes("unpack")) throw new Error("疑似渲染了乱码");
-        });
-      } finally {
-        rmSync(binPath, { force: true });
-      }
-    });
-
     // ---------- directory ----------
-    await check("directory：registry 渲染 + 纯前端搜索（含办公三站共 6 卡）", async () => {
+    await check("directory：registry 渲染 + 纯前端搜索（含办公三站+文件预览共 7 卡）", async () => {
       await withPage("directory", "", async (page) => {
-        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length >= 6, { timeout: 10000 });
+        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length >= 7, { timeout: 10000 });
         const total = await page.evaluate(() => document.querySelectorAll('[data-slot="card"]').length);
-        if (total !== 6) throw new Error(`卡片数不符: ${total}（期望 6）`);
+        if (total !== 6) throw new Error(`卡片数不符: ${total}（期望 7）`);
         await page.fill('input[aria-label="搜索工具"]', "图片");
         await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 5000 });
         const count = await page.textContent("main, body");
-        if (!count.includes("1 / 6")) throw new Error("搜索计数未显示 1 / 6");
+        if (!count.includes("1 / 7")) throw new Error("搜索计数未显示 1 / 7");
         await page.fill('input[aria-label="搜索工具"]', "xlsx");
         await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 5000 });
       });
@@ -531,7 +590,7 @@ async function main() {
         const out = await page.evaluate(async () => {
           const ts = await document.modelContext.getTools();
           const tool = ts.find((t) => t.name === "search_tools");
-          return JSON.parse(await document.modelContext.executeTool(tool, { query: "html2pdf" }));
+          return JSON.parse(await document.modelContext.executeTool(tool, { query: "pdf" }));
         });
         if (out.count !== 1 || out.tools[0].id !== "pdf-tool") {
           throw new Error(`search_tools 结果异常: ${JSON.stringify(out).slice(0, 200)}`);
