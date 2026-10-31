@@ -786,6 +786,68 @@ async function main() {
       });
     });
 
+    // 未就绪显式拒绝门（对抗审查回单：spec「未就绪 ok:false」SHALL 钉死）——
+    // xlsx：Rendered 门禁 forcePending 挂起→export_pdf 必须 resolve {ok:false,人话可重试}
+    // （forcePending 测试缝确定性复现，与 univer-write-gate 回归同款）；
+    // pptx：CDP 限速把岛 chunk 拖慢→内核未就绪早调用 export_pdf 必须 resolve
+    // {ok:false} 而非 reject（P1 修复回归：异常通道已全部转返回值形态）
+    await check("编辑器展示级导出未就绪门：xlsx forcePending→ok:false＋pptx 限速早调用→resolve {ok:false} 不 reject", async () => {
+      await withPage("xlsx", "", async (page) => {
+        await page.waitForFunction(() => !!document.getElementById("status")?.textContent, { timeout: 30000 });
+        await page.waitForFunction(() => !!window.__officeTest, { timeout: 30000 });
+        const out = await page.evaluate(async () => {
+          window.__officeTest.forcePending(true);
+          try {
+            const ts = await document.modelContext.getTools();
+            const tool = ts.find((t) => t.name === "export_pdf");
+            if (!tool) return { ok: false, error: "工具未注册: export_pdf" };
+            const raw = await document.modelContext.executeTool(tool, {});
+            return JSON.parse(raw);
+          } finally {
+            window.__officeTest.forcePending(false);
+          }
+        });
+        if (out.ok !== false) throw new Error(`门禁挂起时 export_pdf 未显式拒绝（ok=${out.ok}）`);
+        if (!/渲染|就绪|加载/.test(String(out.error ?? ""))) throw new Error(`拒绝文案非人话可重试: ${out.error}`);
+        console.log(`      证据：forcePending 挂起 → resolve {ok:false, "${String(out.error).slice(0, 40)}…"}（execute 未 reject）`);
+      });
+      // pptx：CDP 限速 50KB/s（domcontentloaded 后即开——岛 chunk ≈1.66MB 拖到
+      // 30s+，主包与工具注册不受影响）→ 内核未就绪窗口早调用 export_pdf，
+      // 钉死「resolve {ok:false} 不 reject」契约（P1 修复回归）
+      {
+        const page = await browser.newPage();
+        const server = servers["pptx"].server;
+        try {
+          await page.goto(base("pptx") + "/", { waitUntil: "domcontentloaded" });
+          const cdp = await page.context().newCDPSession(page);
+          await cdp.send("Network.enable");
+          await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 400, downloadThroughput: 50 * 1024, uploadThroughput: 50 * 1024 });
+          await page.waitForFunction(() => !!document.modelContext, { timeout: 30000, polling: 500 });
+          const out = await page.evaluate(async () => {
+            for (let i = 0; i < 16; i++) {
+              const ts = await document.modelContext.getTools();
+              const tool = ts.find((t) => t.name === "export_pdf");
+              if (tool) {
+                // 原生 executeTool 返回 DOMString（spec 形态）；polyfill 裸 object——
+                // 双形态归一后断言（B2 偏差纪律）
+                const raw = await document.modelContext.executeTool(tool, {});
+                const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+                return { parsed, rawType: typeof raw };
+              }
+              await new Promise((r) => setTimeout(r, 2500));
+            }
+            return { parsed: { ok: false, error: "工具未注册: export_pdf" }, rawType: "object" };
+          });
+          if (!["string", "object"].includes(out.rawType)) throw new Error(`execute 返回形态异常: ${out.rawType}`);
+          if (out.parsed.ok !== false) throw new Error(`未就绪窗口 export_pdf 应 ok:false，实为 ${JSON.stringify(out.parsed).slice(0, 80)}`);
+          if (!/就绪|加载|渲染/.test(String(out.parsed.error ?? ""))) throw new Error(`拒绝文案非人话可重试: ${out.parsed.error}`);
+          console.log(`      证据：岛加载限速窗口早调用 → resolve {ok:false, "${String(out.parsed.error).slice(0, 40)}…"}（execute 未 reject——P1 修复回归）`);
+        } finally {
+          await page.close();
+        }
+      }
+    });
+
     // ---------- img-tool ----------
     await check("directory：registry 渲染 + 纯前端搜索（编辑器三站转现役后 10 卡全现役、0 建设中占位）", async () => {
       await withPage("directory", "", async (page) => {

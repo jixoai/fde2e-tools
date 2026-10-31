@@ -74,3 +74,10 @@
       仍需过 html2canvas 文档底色解析）
 - [x] 7.3 **xlsx 快照空壳行防御**：canary 探针在远端行写入又清空，快照留空壳行键
       ——长图 used range 只认有内容格（v/f 渲染文本非空），防长图撑出上百空行
+- [x] 7.4 **对抗审查回单闭合（8.5/10 → 修后重跑全绿）**：P1＝pptx 三导出工具
+      未就绪走异常通道（execute promise reject）→ captureSlidePngs 三通道全包
+      try/catch 转 {ok:false} 人话返回（WebMCP 与按钮同源受益）；P2＝捕获失败
+      泄漏离屏 Vue 岛 → catch 内先 cleanup() 再上抛；顺手＝xlsx/docx 四个导出
+      函数全管线 try/catch 转 {ok:false}（站内风格统一）。新增绿门断言
+      「未就绪门」（smoke 38/38）：xlsx forcePending 挂起→resolve {ok:false}；
+      pptx CDP 限速岛加载窗口早调用→resolve {ok:false} 不 reject（P1 回归）
