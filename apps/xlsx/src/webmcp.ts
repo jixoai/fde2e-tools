@@ -19,6 +19,7 @@ import {
   withEditorWrite,
   type FacadeSheet,
 } from "./editor";
+import { exportGridPdf, exportSheetLongPng } from "./export";
 import { snapshotToXlsxBytes, xlsxBytesToSeed } from "./bridge";
 import { resolveExportName } from "./export-name";
 import { assertCompleteSeed, type SeedCell, type WorkbookSeed } from "./snapshot";
@@ -358,6 +359,42 @@ function buildTools(): WebMCPToolDef[] {
         if (!wb) return { ok: false, error: "当前无活动工作簿" };
         const snapshot = compactSnapshot(wb.save(), h.workbookName);
         return { ok: true, ...snapshot };
+      },
+    },
+    {
+      name: "export_pdf",
+      title: "导出 PDF",
+      description:
+        "把当前网格（所见即所得：数据/公式计算值/页签）导出为 PDF 下载（缺省 xlsx-export.pdf；A4 纵向单页）。" +
+        "编辑器未就绪时返回 ok:false。返回文件名契约与画布尺寸。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          filename: { type: "string", description: "可选下载文件名（缺省 xlsx-export.pdf）" },
+        },
+        additionalProperties: false,
+      },
+      annotations: { untrustedContentHint: true },
+      async execute(input) {
+        return await exportGridPdf(typeof input.filename === "string" ? input.filename : undefined);
+      },
+    },
+    {
+      name: "export_png",
+      title: "导出长图 PNG",
+      description:
+        "把全部工作表内容导出为一张长图 PNG 下载（缺省 xlsx-long.png）。数据面自绘表格（网格 canvas 只含可视视口，" +
+        "长图诚实走快照数据）：全部工作表按 sheetOrder、列头 A/B/C、值与公式。内容超 16384px 会截断并在产物与返回值标注。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          filename: { type: "string", description: "可选下载文件名（缺省 xlsx-long.png）" },
+        },
+        additionalProperties: false,
+      },
+      annotations: { untrustedContentHint: true },
+      async execute(input) {
+        return await exportSheetLongPng(typeof input.filename === "string" ? input.filename : undefined);
       },
     },
   ];
