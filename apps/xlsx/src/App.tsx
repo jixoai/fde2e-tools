@@ -11,7 +11,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { AiGuide } from "@fde2e-tools/shared/ai-guide";
-import { statusTextClass, type StatusKind } from "@fde2e-tools/shared/status";
+import { scrollStatusIntoView, statusTextClass, type StatusKind } from "@fde2e-tools/shared/status";
 import { Button } from "@fde2e-tools/shared/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@fde2e-tools/shared/ui/card";
 import { Label } from "@fde2e-tools/shared/ui/label";
@@ -54,6 +54,12 @@ export default function App() {
   });
   const [preview, setPreview] = useState<WorkbookSpec | null>(null);
 
+  // 生成反馈折叠线修复：状态更新即滚入视口（block:nearest，已在视口则零滚动）
+  function showStatus(s: Status) {
+    setStatus(s);
+    scrollStatusIntoView();
+  }
+
   // 解析单源：读两个输入区（JSON 优先），返回解析后的工作簿；人话错误进状态行
   function resolveSpec(): WorkbookSpec {
     const json = inputJsonRef.current?.value ?? "";
@@ -69,14 +75,14 @@ export default function App() {
       const spec = resolveSpec();
       setPreview(spec);
       const st = workbookStats(spec);
-      setStatus({
+      showStatus({
         msg: `已按输入刷新预览：${st.sheetCount} 个工作表 · ${st.rowCount} 行。`,
         kind: "ok",
       });
       return spec;
     } catch (e) {
       setPreview(null);
-      setStatus({
+      showStatus({
         msg: e instanceof Error && e.message ? e.message : String(e),
         kind: "error",
       });
@@ -88,16 +94,16 @@ export default function App() {
     const spec = refreshPreview();
     if (!spec) return;
     const filename = getExportName();
-    setStatus({ msg: "正在生成 .xlsx…", kind: "ok" });
+    showStatus({ msg: "正在生成 .xlsx…", kind: "ok" });
     try {
       await generateXlsx(spec, filename);
       const st = workbookStats(spec);
-      setStatus({
+      showStatus({
         msg: `已生成 ${filename}（${st.sheetCount} 个工作表 · ${st.rowCount} 行）`,
         kind: "ok",
       });
     } catch (e) {
-      setStatus({
+      showStatus({
         msg: "生成失败：" + (e instanceof Error && e.message ? e.message : String(e)),
         kind: "error",
       });
@@ -111,7 +117,7 @@ export default function App() {
     inputJsonRef.current.value = sampleWorkbookJson();
     const spec = refreshPreview();
     if (spec) {
-      setStatus({ msg: "示例工作簿已载入并刷新预览，点「生成 .xlsx 下载」即可。", kind: "ok" });
+      showStatus({ msg: "示例工作簿已载入并刷新预览，点「生成 .xlsx 下载」即可。", kind: "ok" });
     }
   }
 

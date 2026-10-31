@@ -10,7 +10,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { AiGuide } from "@fde2e-tools/shared/ai-guide";
-import { statusTextClass, type StatusKind } from "@fde2e-tools/shared/status";
+import { scrollStatusIntoView, statusTextClass, type StatusKind } from "@fde2e-tools/shared/status";
 import { Button } from "@fde2e-tools/shared/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@fde2e-tools/shared/ui/card";
 import { SAMPLE_MD } from "./sample";
@@ -139,16 +139,22 @@ export default function App() {
   });
   const [preview, setPreview] = useState<Block[] | null>(null);
 
+  // 生成反馈折叠线修复：状态更新即滚入视口（block:nearest，已在视口则零滚动）
+  function showStatus(s: Status) {
+    setStatus(s);
+    scrollStatusIntoView();
+  }
+
   function refreshPreview(): Block[] | null {
     const t = inputRef.current?.value ?? "";
     try {
       const blocks = parseMarkdownSub(t);
       setPreview(blocks);
-      setStatus({ msg: `已按输入刷新预览：${statsSummary(blocks)}。`, kind: "ok" });
+      showStatus({ msg: `已按输入刷新预览：${statsSummary(blocks)}。`, kind: "ok" });
       return blocks;
     } catch (e) {
       setPreview(null);
-      setStatus({
+      showStatus({
         msg: e instanceof Error && e.message ? e.message : String(e),
         kind: "error",
       });
@@ -160,16 +166,16 @@ export default function App() {
     const blocks = refreshPreview();
     if (!blocks) return;
     const filename = getExportName();
-    setStatus({ msg: "正在生成 .docx…", kind: "ok" });
+    showStatus({ msg: "正在生成 .docx…", kind: "ok" });
     try {
       await generateDocx(blocks, filename);
       const s = docStats(blocks);
-      setStatus({
+      showStatus({
         msg: `已生成 ${filename}（${statsSummary(blocks)} · 共 ${s.headings + s.paragraphs + s.bullets + s.ordered} 块）`,
         kind: "ok",
       });
     } catch (e) {
-      setStatus({
+      showStatus({
         msg: "生成失败：" + (e instanceof Error && e.message ? e.message : String(e)),
         kind: "error",
       });
@@ -183,7 +189,7 @@ export default function App() {
     inputRef.current.value = SAMPLE_MD;
     const blocks = refreshPreview();
     if (blocks) {
-      setStatus({ msg: "示例文档已载入并刷新预览，点「生成 .docx 下载」即可。", kind: "ok" });
+      showStatus({ msg: "示例文档已载入并刷新预览，点「生成 .docx 下载」即可。", kind: "ok" });
     }
   }
 

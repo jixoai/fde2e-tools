@@ -10,7 +10,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { AiGuide } from "@fde2e-tools/shared/ai-guide";
-import { statusTextClass, type StatusKind } from "@fde2e-tools/shared/status";
+import { scrollStatusIntoView, statusTextClass, type StatusKind } from "@fde2e-tools/shared/status";
 import { Button } from "@fde2e-tools/shared/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@fde2e-tools/shared/ui/card";
 import { sampleDeckJson } from "./sample";
@@ -50,20 +50,26 @@ export default function App() {
   });
   const [preview, setPreview] = useState<DeckSpec | null>(null);
 
+  // 生成反馈折叠线修复：状态更新即滚入视口（block:nearest，已在视口则零滚动）
+  function showStatus(s: Status) {
+    setStatus(s);
+    scrollStatusIntoView();
+  }
+
   function refreshPreview(): DeckSpec | null {
     const t = inputRef.current?.value ?? "";
     try {
       const spec = parseDeckJson(t);
       setPreview(spec);
       const st = deckStats(spec);
-      setStatus({
+      showStatus({
         msg: `已按输入刷新预览：${st.slideCount} 页 · ${st.bulletCount} 条要点。`,
         kind: "ok",
       });
       return spec;
     } catch (e) {
       setPreview(null);
-      setStatus({
+      showStatus({
         msg: e instanceof Error && e.message ? e.message : String(e),
         kind: "error",
       });
@@ -75,16 +81,16 @@ export default function App() {
     const spec = refreshPreview();
     if (!spec) return;
     const filename = getExportName();
-    setStatus({ msg: "正在生成 .pptx…", kind: "ok" });
+    showStatus({ msg: "正在生成 .pptx…", kind: "ok" });
     try {
       await generatePptx(spec, filename);
       const st = deckStats(spec);
-      setStatus({
+      showStatus({
         msg: `已生成 ${filename}（${st.slideCount} 页 · ${st.bulletCount} 条要点）`,
         kind: "ok",
       });
     } catch (e) {
-      setStatus({
+      showStatus({
         msg: "生成失败：" + (e instanceof Error && e.message ? e.message : String(e)),
         kind: "error",
       });
@@ -98,7 +104,7 @@ export default function App() {
     inputRef.current.value = sampleDeckJson();
     const spec = refreshPreview();
     if (spec) {
-      setStatus({ msg: "示例幻灯已载入并刷新预览，点「生成 .pptx 下载」即可。", kind: "ok" });
+      showStatus({ msg: "示例幻灯已载入并刷新预览，点「生成 .pptx 下载」即可。", kind: "ok" });
     }
   }
 

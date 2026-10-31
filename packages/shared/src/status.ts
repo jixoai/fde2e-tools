@@ -17,3 +17,15 @@ export function statusTextClass(kind: StatusKind): string {
       return "text-success";
   }
 }
+
+/**
+ * 生成反馈可见性（office-suite 视觉验收修复，2026-10-31）：预览内容较长时
+ * 「生成按钮＋#status」会落在折叠线下，点击生成后状态反馈不可见（vision 实测
+ * docx 长文档场景）。统一模式＝状态更新后把 #status 滚入视口——block:"nearest"
+ * 最小滚动（已在视口内则零滚动，不抖动），按钮在状态行正上方一并可见。
+ * 生成三站（xlsx/docx/pptx）共用；pdf-tool 暂不动（家族级备忘另行决策）。
+ */
+export function scrollStatusIntoView(): void {
+  if (typeof document === "undefined") return;
+  document.getElementById("status")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
