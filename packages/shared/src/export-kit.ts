@@ -288,8 +288,8 @@ interface Html2pdfWorker {
 export type { Html2pdfWorker };
 
 /**
- * 取 vendored worker（app 需要自定义管线时用——docx export_pdf 的 pagebreak
- * 分页走 .save() 全管线；xlsx 网格 PDF 走 renderNodeToPng+pngsToPdf 组合）。
+ * 取 vendored worker（pdf-tool 的 html2pdf 全管线仍用它；三编辑站 export_pdf
+ * 自 v2 起改走 pdf-vector 的矢量绘制，只借 createJsPdfDocument 取 jsPDF 实例）。
  * bundle 未载入（缺 <script>）时抛人话错误。
  */
 export function openHtml2pdfWorker(): Html2pdfWorker {
@@ -298,9 +298,18 @@ export function openHtml2pdfWorker(): Html2pdfWorker {
 
 /** jsPDF 文档实例的结构化最小面（只用公开 API；构造器不可 new——probe 实证） */
 export interface JsPdfDoc {
-  internal: { pageSize: { getWidth(): number; getHeight(): number } };
-  addPage(format: string | [number, number], orientation: string): JsPdfDoc;
+  internal: {
+    pageSize: { getWidth(): number; getHeight(): number };
+    /**
+     * 字体注册表（Identity-H 中文字体的覆盖率探测用）：getFont(family, style)
+     * 返回 { id, metadata }，metadata.cmap.unicode.codeMap 是 Unicode→glyph 表
+     * （jsPDF 内部 TTFFont parse 产物，probe 实证键为十进制字符串）。
+     */
+    getFont(family: string, style?: string): { id: string; metadata: JsPdfFontMetadata };
+  };
+  addPage(format?: string | [number, number], orientation?: string): JsPdfDoc;
   deletePage(target: number): JsPdfDoc;
+  setPage(page: number): JsPdfDoc;
   addImage(
     data: string,
     format: string,
@@ -311,6 +320,29 @@ export interface JsPdfDoc {
   ): JsPdfDoc;
   getNumberOfPages(): number;
   output(type: "blob"): Blob;
+  /* ---- 矢量绘制面（pdf-vector.ts 使用） ---- */
+  addFileToVFS(filename: string, data: string): JsPdfDoc;
+  addFont(filename: string, family: string, style: string): JsPdfDoc;
+  setFont(family: string, style?: string): JsPdfDoc;
+  setFontSize(size: number): JsPdfDoc;
+  setTextColor(color: string): JsPdfDoc;
+  setDrawColor(color: string): JsPdfDoc;
+  setFillColor(color: string): JsPdfDoc;
+  setLineWidth(width: number): JsPdfDoc;
+  setProperties(props: Record<string, string>): JsPdfDoc;
+  text(text: string | string[], x: number, y: number, options?: Record<string, unknown>): JsPdfDoc;
+  getTextWidth(text: string): number;
+  splitTextToSize(text: string, size: number): string[];
+  rect(x: number, y: number, w: number, h: number, style?: string): JsPdfDoc;
+  line(x1: number, y1: number, x2: number, y2: number): JsPdfDoc;
+}
+
+/** jsPDF TTFFont metadata 的结构化最小面（仅覆盖率探测用到的字段） */
+export interface JsPdfFontMetadata {
+  cmap?: { unicode?: { codeMap: Record<string, number> } };
+  Unicode?: { widths?: Array<number | number[]> };
+  characterToGlyph?(code: number): number;
+  widthOfGlyph?(glyph: number): number;
 }
 
 function html2pdf(): Html2pdfWorker {
@@ -499,8 +531,12 @@ export interface PngsToPdfOptions {
   imageFormat?: "PNG" | "JPEG";
 }
 
-/** 一次性 probe worker：换回 jsPDF 文档实例（1 页占位，调用方 deletePage(1)） */
-async function probeJsPdf(pageSize: string | [number, number], orientation: string): Promise<JsPdfDoc> {
+/**
+ * 一次性 probe worker：换回 jsPDF 文档实例（1 页占位，调用方 deletePage(1)）。
+ * export-pdf-png v2：矢量绘制路径（pdf-vector.ts）复用同一取实例通道——本函数
+ * 公开为 createJsPdfDocument，pngsToPdf 内部同名调用保持既有行为。
+ */
+export async function createJsPdfDocument(pageSize: string | [number, number], orientation: string): Promise<JsPdfDoc> {
   const host = document.createElement("div");
   host.textContent = "fde2e export probe";
   // 内联钉扎：host 挂在 body 上，会继承页面级 oklch 计算色（xlsx 站实证——
@@ -553,7 +589,7 @@ export async function pngsToPdf(blobs: Blob[], opts: PngsToPdfOptions = {}): Pro
   const orientation = opts.orientation ?? "portrait";
   const format = opts.pageSize ?? "a4";
   const imageFormat = opts.imageFormat ?? "PNG";
-  const pdf = await probeJsPdf(format, orientation);
+  const pdf = await createJsPdfDocument(format, orientation);
   const pw = pdf.internal.pageSize.getWidth();
   const ph = pdf.internal.pageSize.getHeight();
   pdf.deletePage(1); // probe 占位页（先读 pageSize 再删——删空后 getter 炸）
@@ -592,8 +628,97 @@ export interface StackResult {
   notice?: string;
 }
 
+export interface FramedStackOptions {
+  /** 卡片内边距（px；幻灯片与卡框之间） */
+  cardPadding?: number;
+  /** 画布外边距（px） */
+  outer?: number;
+  /** 卡片之间的间隔带高（px；页码标注画在带内） */
+  band?: number;
+  background?: string;
+  cardBorder?: string;
+  /** 页码标注（缺省「— i/n —」） */
+  label?: (index: number, total: number) => string;
+  labelColor?: string;
+}
+
 /**
- * 同宽 PNG 序列 → 单张纵向长图（pptx export_long_png 用）。
+ * 幻灯片序列 → 带页框/间隔带/页码标注的纵向长图（pptx export_long_png 用）。
+ * 解决 v1「两页接缝整行纯白、无页界标记」（视觉验收 P0-3）：每页包一层白卡
+ * ＋1px 描边，卡片之间留浅灰间隔带并在带内居中标注「— 1/2 —」。
+ * 超 16384px 上限统一降 scale（内容零丢失）。
+ */
+export async function stackSlidesWithFrames(blobs: Blob[], opts: FramedStackOptions = {}): Promise<StackResult> {
+  if (!blobs.length) throw new Error("没有可拼接的图像（入参为空）");
+  const cardPadding = opts.cardPadding ?? 20;
+  const outer = opts.outer ?? 24;
+  const band = opts.band ?? 56;
+  const background = opts.background ?? "#eef1f5";
+  const cardBorder = opts.cardBorder ?? "#d5dbe4";
+  const labelColor = opts.labelColor ?? "#64748b";
+  const label = opts.label ?? ((i: number, n: number) => `— ${i}/${n} —`);
+
+  const images: Array<{ dataUrl: string; width: number; height: number }> = [];
+  for (const blob of blobs) {
+    const dataUrl = await blobToDataURL(blob);
+    images.push({ dataUrl, ...(await loadImage(dataUrl)) });
+  }
+  const slideW = Math.max(...images.map((i) => i.width));
+  const slideH = Math.max(...images.map((i) => i.height));
+  const cardW = slideW + cardPadding * 2;
+  const cardH = slideH + cardPadding * 2;
+  const rawW = cardW + outer * 2;
+  const rawH = outer * 2 + images.length * cardH + Math.max(0, images.length - 1) * band;
+  let scale = 1;
+  let truncated = false;
+  let notice: string | undefined;
+  if (rawH > CANVAS_MAX_EDGE) scale = CANVAS_MAX_EDGE / rawH;
+  if (scale < MIN_STACK_SCALE) {
+    scale = MIN_STACK_SCALE;
+    truncated = true;
+    notice = "内容过长已截断（长图尺寸超浏览器上限）";
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(rawW * scale);
+  canvas.height = Math.min(CANVAS_MAX_EDGE, Math.round(rawH * scale));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("画布创建失败（长图尺寸超浏览器上限）");
+  ctx.fillStyle = background;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const s = (v: number) => Math.round(v * scale);
+  let y = outer;
+  for (let i = 0; i < images.length; i++) {
+    if (y + cardH * scale > canvas.height) break;
+    // 白卡 + 描边（页框线）
+    const cardX = outer;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(s(cardX), s(y), s(cardW), s(cardH));
+    ctx.strokeStyle = cardBorder;
+    ctx.lineWidth = Math.max(1, Math.round(scale));
+    ctx.strokeRect(s(cardX) + 0.5, s(y) + 0.5, s(cardW) - 1, s(cardH) - 1);
+    const img = new Image();
+    img.src = images[i].dataUrl;
+    await img.decode();
+    ctx.drawImage(img, s(cardX + cardPadding), s(y + cardPadding), s(slideW), s(slideH));
+    y += cardH;
+    if (i < images.length - 1) {
+      // 间隔带 + 页码标注（消除纯白接缝）
+      ctx.fillStyle = labelColor;
+      ctx.font = `${Math.max(12, s(20))}px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(label(i + 1, images.length), canvas.width / 2, s(y + band / 2));
+      y += band;
+    }
+  }
+  if (truncated && notice) drawNotice(canvas, notice);
+  const blob = await canvasToBlob(canvas);
+  return { blob, width: canvas.width, height: canvas.height, truncated, notice };
+}
+
+/**
+ * 同宽 PNG 序列 → 单张纵向长图（通用版）。
  * 总高超上限统一降 scale（内容零丢失）；低于 MIN_STACK_SCALE 才截断＋标注。
  */
 export async function stackPngsVertically(blobs: Blob[], opts: { gap?: number } = {}): Promise<StackResult> {
