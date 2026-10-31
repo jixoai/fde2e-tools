@@ -40,13 +40,21 @@
   docx/pptx 解 zip 核对 OOXML 关键内容——只断言状态行不算覆盖。改动 pdf 导出
   路径必须过 B1 色守卫（export-color-guard）——html2canvas 1.4.x 不识别 oklch，
   守卫缺失＝导出 100% 抛错。
-- **办公三站红线（office-suite）**：生成链依赖全 MIT/Apache，**禁 AGPL**
-  （ranuts/document 不得以任何依赖形态进三站代码链；npm `xlsx` 0.18.5 带
-  CVE 禁引入——用 CDN tarball 0.20.3）；三个生成库一律动态 import 独立
-  chunk（改动后 grep 各 dist 验证黄页等其它站零生成库代码）；下载文件名契约
-  `<站id>-export.<ext>`（xlsx-export.xlsx / docx-export.docx / pptx-export.pptx），
-  shared/download.ts 的 safeFilename 单源清洗；URL 契约只有 `?sample=`
-  （数据通道走页内输入区/WebMCP 传参，URL 不传大数据）。
+- **办公线红线（office-suite ＋ office-editorial-upgrade）**：
+  - **轻量生成线（easy-*）与 packages/shared 禁 AGPL 不放宽**（ranuts/document
+    不得以任何依赖形态进入；npm `xlsx` 0.18.5 带 CVE 禁引入——用 CDN tarball
+    0.20.3）；生成库一律动态 import 独立 chunk（改动后 grep 各 dist 验证其它站
+    零生成库代码）。
+  - **编辑器三站（xlsx/docx/pptx 主域名）**：内核库（Univer/TipTap/docx+mammoth/
+    PPTist）一律 dynamic import 懒加载独立 chunk；**apps/pptx 目录整体 AGPL-3.0
+    隔离**（PPTist vendored 于 src/pptist/ 逐字零改动仅排除入口 main.ts；其代码
+    与依赖禁入 packages/shared 与其它 app；许可边界见 apps/pptx/README.md；
+    上游升级＝git archive 重取 diff）；编辑器站下载文件名契约沿用
+    `<站id>-export.<ext>`，safeFilename 单源清洗；URL 契约只有 `?sample=`。
+  - **Univer 写入双坑防御（univer-write-gate）**：seed 一律经完整快照格式工厂
+    （snapshot.ts 单源，禁简化格式——幽灵工作簿静默拒写）；写命令一律过
+    Rendered 生命周期门禁（未就绪显式 ok:false，禁静默失败）；两坑各有 smoke
+    回归断言，改动写入路径必须重跑。
 - **TW4 扫描面**：各 app 的 app.css 已 `source("../")` 收窄并把 shared 加源；
   给 shared/ui 新增组件类名后无需改 CSS 配置，但新增目录要确认被 `@source`
   覆盖。

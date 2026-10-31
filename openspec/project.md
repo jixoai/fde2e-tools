@@ -22,15 +22,20 @@ FDE2E 工具集：`tool.fde2e.com`（工具黄页：预览 + 搜索 + 入口）�
   或 WebMCP 传参）。
 - **可交互元素 id 稳定**：ai-guide 引用的全部 DOM id 在迁移后保持不变；输入类
   元素非受控（智能体程序化 set value 后点按钮必须仍然生效）。
-- **办公三站红线（office-suite）**：生成链依赖全 MIT/Apache 禁 AGPL；生成库
-  动态 import 独立 chunk（黄页不背）；下载文件名契约 `<站id>-export.<ext>`。
+- **办公线红线（office-suite ＋ office-editorial-upgrade）**：轻量生成链依赖全
+  MIT/Apache 禁 AGPL；生成/编辑器库一律 dynamic import 独立 chunk（黄页不背，
+  grep 验证）；下载文件名契约 `<站id>-export.<ext>`。**apps/pptx 目录 AGPL-3.0
+  隔离**（PPTist vendored 逐字零改动；禁入 shared/其它 app；见 apps/pptx/README.md）。
+  Univer 写入双坑防御（完整快照 seed 工厂＋canary；Rendered 门禁显式 ok:false）
+  见 change office-editorial-upgrade 的 univer-write-gate 规格。
 - **编辑器站（editor，二期）**：ranuts/document AGPL-3.0——未修改上游镜像钉
   digest 独立部署（deploy/editor-fetch.sh），禁 vendor/改源码/深度集成；
   见 openspec change office-suite 的 editor-hosting 规格。
 - 部署：`deploy/tools-upload.sh`（tar-over-ssh；目录与 vhost 由编排者管理）；
   本仓禁把密钥/服务器路径硬编码进任何入库文件。
 - 本地 dev 端口：directory 5271 / pdf-tool 5272 / img-tool 5273 / url-tool 5274 /
-  xlsx 5275 / docx 5276 / pptx 5277（仅绑 IPv4 回环，不进 frp 段、不登记
+  easy-xlsx 5275 / easy-docx 5276 / easy-pptx 5277 / xlsx 编辑站 5278 /
+  docx 编辑站 5279 / pptx 编辑站 5280（仅绑 IPv4 回环，不进 frp 段、不登记
   PORT.md——非对外端口）。
 
 ## WebMCP（页面即 MCP server）
@@ -66,8 +71,10 @@ FDE2E 工具集：`tool.fde2e.com`（工具黄页：预览 + 搜索 + 入口）�
 - 黄页实况预览（iframe 嵌子域）仅生产域开放；本地构建一律新窗口兜底。
 - 品牌色不引入：solid-glass 官方主题原样使用（中性玻璃 + 官方三源光），
   不做 omni 式品牌 teal 换肤。
-- 办公生成走轻量函数库，不走编辑器引擎（ranuts/document 是 OnlyOffice 系
-  编辑器，无数据→文件生成 API）；生成链全 MIT/Apache 禁 AGPL；SheetJS 社区版
-  经官方 CDN tarball 钉 0.20.3（npm 0.18.5 带 CVE 禁引入）；编辑器站以
-  「未修改上游镜像钉 digest 独立部署」形态二期上线（AGPL 合规，见
-  change office-suite 的 editor-hosting）。
+- 办公生成走轻量函数库（easy-* 线）；**编辑器三站（xlsx/docx/pptx 主域名）已于
+  2026-10-31 office-editorial-upgrade 转现役**：内核＝Univer preset-sheets-core
+  （Apache-2.0）/ TipTap v3（MIT）/ PPTist v2 整库嵌入（AGPL-3.0，apps/pptx
+  目录独立许可）——AI 经 WebMCP 直调编辑器内核（不再走 DOM 桥）。ranuts/
+  document（editor.tool.fde2e.com）仍为「未修改上游镜像钉 digest 独立部署」
+  二期形态（见 change office-suite 的 editor-hosting）。SheetJS 社区版经官方
+  CDN tarball 钉 0.20.3（npm 0.18.5 带 CVE 禁引入）。

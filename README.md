@@ -10,7 +10,9 @@ FDE2E 工具集——**全静态、零后端**的公共工具仓库。
   - `easy-xlsx` — 简易表格生成站：JSON（sheets）或粘贴表格 → 生成 .xlsx 下载（SheetJS 社区版；开箱即用快速档）
   - `easy-docx` — 简易文档生成站：Markdown 子集 → 生成 .docx 下载（docx 库，解析单源；开箱即用快速档）
   - `easy-pptx` — 简易幻灯生成站：大纲 JSON（slides）→ 生成 .pptx 下载（pptxgenjs；开箱即用快速档）
-  - `xlsx` / `docx` / `pptx` — 专业表格/文档/幻灯编辑器（建设中占位，主域名留给专业编辑器）
+  - `xlsx` — 专业表格编辑器：Univer 真网格（多 sheet/公式引擎/样式）＋SheetJS 双向桥，WebMCP 直驱内核
+  - `docx` — 专业文档编辑器：TipTap 富文本（标题/列表/表格/粗斜）＋docx/mammoth 双向桥
+  - `pptx` — 专业幻灯编辑器：PPTist 整库嵌入（**AGPL-3.0 隔离目录**）＋store 驱动 WebMCP
   - `editor`（二期）— ranuts/document 编辑器站：AGPL 未修改上游镜像独立部署（见下「办公编辑器（二期）」）
 - 对外仓库：`github.com/jixoai/fde2e-tools`（public）
 
@@ -25,6 +27,11 @@ apps/
   easy-xlsx/   数据 → .xlsx（SheetJS 社区版动态 import 独立分包；JSON/TSV 双输入）
   easy-docx/   md 子集 → .docx（docx 库独立分包；AST 单源驱动预览与产物）
   easy-pptx/   大纲 JSON → .pptx（pptxgenjs 独立分包；16:9 + 备注）
+  xlsx/        专业表格编辑器（Univer preset-sheets-core；SheetJS 双向桥；WebMCP 七工具直驱内核；
+               Rendered 门禁＋幽灵工作簿 canary 双坑防御）
+  docx/        专业文档编辑器（TipTap v3；md 子集单源解析；docx@9/mammoth 双向桥；WebMCP 六语义算子）
+  pptx/        专业幻灯编辑器（PPTist v2 整库嵌入，src/pptist/ 逐字 vendor；**本目录 AGPL-3.0**；
+               Vue 岛挂载＋Pinia store 驱动 WebMCP 五工具；见 apps/pptx/README.md 许可边界）
 packages/
   shared/      工具 registry 单源 / solid-glass 主题 vendor / shadcn 官方组件收编 /
                WebMCP 注册助手 + 官方 polyfill vendor / 下载助手（downloadBlob/safeFilename）
@@ -61,8 +68,24 @@ pnpm dev:easy-docx   # http://127.0.0.1:5276（轻量快速档）
 pnpm dev:easy-pptx   # http://127.0.0.1:5277（轻量快速档）
 ```
 
+pnpm dev:xlsx-editor # http://127.0.0.1:5278（专业表格编辑器）
+pnpm dev:docx-editor # http://127.0.0.1:5279（专业文档编辑器）
+pnpm dev:pptx-editor # http://127.0.0.1:5280（专业幻灯编辑器）
+```
+
 dev server 仅绑 IPv4 回环，不对外暴露。黄页的 iframe 实况预览仅生产域开放；
 本地构建自动降级为「新窗口打开」兜底。
+
+## 许可分区
+
+- **仓库主体＝Apache-2.0**（LICENSE）：apps/directory、pdf-tool、img-tool、
+  url-tool、file-viewer、easy-* 三站、packages/shared、scripts、openspec。
+- **apps/pptx 目录＝AGPL-3.0**：PPTist（上游 AGPL-3.0）整库嵌入——vendored 副本
+  逐字零改动（仅排除其入口），本目录胶水层与 PPTist 状态强耦合同按 AGPL 对外；
+  §13 合规＝本仓公开源码随站点提供。边界细节见 `apps/pptx/README.md`。
+  **easy-* 生成链「禁 AGPL」红线不放宽**（pptxgenjs MIT 与 AGPL 无涉）。
+- 三编辑站内核许可：Univer preset-sheets-core（Apache-2.0）、TipTap（MIT）、
+  docx@9（MIT）/ mammoth（BSD-2）、PPTist（AGPL-3.0，仅 apps/pptx 目录）。
 
 ## 部署
 
