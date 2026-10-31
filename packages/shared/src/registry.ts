@@ -220,7 +220,20 @@ export const TOOLS: ToolMeta[] = [
       {
         name: "sample",
         description: "值=sample（或 1/示例）：自动载入内置示例工作簿并刷新预览（不触发生成）",
-      },,
+      },
+    ],
+    tools: [
+      {
+        name: "create_xlsx",
+        description: "按 sheets 结构生成并下载 xlsx-export.xlsx（sheets:[{name, rows[][]}]，可自定义文件名），返回表数/行数与状态行结果",
+      },
+      {
+        name: "add_sheet_sample",
+        description: "向当前工作簿追加一张示例工作表（可自定义表名），刷新预览并返回工作簿 JSON——细粒度逐表构建",
+      },
+    ],
+    repoPath: "apps/xlsx",
+  },
   {
     id: "docx",
     name: "文档生成站",
@@ -235,7 +248,20 @@ export const TOOLS: ToolMeta[] = [
       {
         name: "sample",
         description: "值=sample（或 1/示例）：自动载入内置示例文档并刷新预览（不触发生成）",
-      },,
+      },
+    ],
+    tools: [
+      {
+        name: "create_docx",
+        description: "按 Markdown 子集生成并下载 docx-export.docx（可自定义文件名），返回段落数/表格数与状态行结果",
+      },
+      {
+        name: "append_docx_markdown",
+        description: "向当前文档追加 Markdown 片段（细粒度逐段构建），刷新预览并返回文档统计",
+      },
+    ],
+    repoPath: "apps/docx",
+  },
   {
     id: "pptx",
     name: "幻灯生成站",
@@ -250,7 +276,20 @@ export const TOOLS: ToolMeta[] = [
       {
         name: "sample",
         description: "值=sample（或 1/示例）：自动载入内置示例幻灯并刷新预览（不触发生成）",
-      },,
+      },
+    ],
+    tools: [
+      {
+        name: "create_pptx",
+        description: "按 slides 结构生成并下载 pptx-export.pptx（[{title,bullets[],notes?}]，可自定义文件名），返回页数与状态行结果",
+      },
+      {
+        name: "add_slide",
+        description: "向当前 slides 追加一页（title/bullets/notes，细粒度逐页构建），刷新预览并返回大纲 JSON",
+      },
+    ],
+    repoPath: "apps/pptx",
+  },
 ];
 
 export function getTool(id: string): ToolMeta | undefined {
