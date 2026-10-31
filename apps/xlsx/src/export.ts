@@ -15,11 +15,11 @@
  * 人机同路径：App 按钮与 WebMCP 工具都走本模块；状态行文案含终态词
  * （「已生成」），中间态（「正在导出…」）不含（B3 词表纪律）。
  */
-import { downloadBlob, safeFilename } from "@fde2e-tools/shared/download";
+import { downloadBlob, safeFilename, withSelectionTag } from "@fde2e-tools/shared/download";
 import { mountOffscreen, renderNodeToPng, withColorGuard } from "@fde2e-tools/shared/export-kit";
 import { VectorPdf } from "@fde2e-tools/shared/pdf-vector";
 import { getHost } from "./editor";
-import { CANARY_MARK, type SeedCell } from "./snapshot";
+import { CANARY_MARK, filterSheetIds, type SeedCell } from "./snapshot";
 
 export const DEFAULT_PDF_NAME = "xlsx-export.pdf";
 export const DEFAULT_PNG_NAME = "xlsx-long.png";
@@ -49,6 +49,8 @@ export interface ExportOk {
   width: number;
   height: number;
   pages?: number;
+  /** 实际导出的工作表名清单（selective-export；缺省＝全部表） */
+  selected?: string[];
   truncated?: boolean;
   notice?: string;
 }
@@ -141,7 +143,7 @@ function drawSheetTitle(pdf: VectorPdf, name: string, y: number): number {
   return y + 9.5;
 }
 
-export async function exportGridPdf(filename?: string): Promise<ExportResult> {
+export async function exportGridPdf(filename?: string, sheets?: string[]): Promise<ExportResult> {
   const name = resolvePdfName(filename);
   // 全管线 try/catch（对抗审查顺手项）：抛错一律转 {ok:false} 人话返回，
   // WebMCP execute 不 reject（与 pptx 通道同款对齐）
@@ -152,8 +154,11 @@ export async function exportGridPdf(filename?: string): Promise<ExportResult> {
     const wb = h!.api.getActiveWorkbook();
     if (!wb) return { ok: false, error: "当前无活动工作簿" };
     const snapshot = wb.save() as unknown as WorkbookSnapshot;
-    const ids = snapshot.sheetOrder?.length ? snapshot.sheetOrder : Object.keys(snapshot.sheets);
-    if (!ids.length) return { ok: false, error: "工作簿没有任何工作表" };
+    // 选择性导出（openspec: selective-export）：按表名过滤，不存在的表名人话报错
+    const filter = filterSheetIds(snapshot, sheets);
+    if (filter.error) return { ok: false, error: filter.error };
+    const ids = filter.ids;
+    const selectedTag = sheets !== undefined && sheets !== null ? filter.selected.join("-") : null;
 
     const pdf = await VectorPdf.create({ format: "a4", orientation: "portrait", title: h!.workbookName });
     const contentW = pdf.widthMm - PDF_MARGIN_X * 2;
@@ -278,13 +283,15 @@ export async function exportGridPdf(filename?: string): Promise<ExportResult> {
 
     pdf.stampFooters((page, total) => `第 ${page} 页 / 共 ${total} 页`);
     const blob = pdf.toBlob();
-    downloadBlob(blob, name);
+    const finalName = selectedTag ? safeFilename(withSelectionTag(resolvePdfName(undefined), selectedTag), DEFAULT_PDF_NAME, ".pdf") : name;
+    downloadBlob(blob, finalName);
     return {
       ok: true,
-      filename: name,
+      filename: finalName,
       width: pdf.widthMm,
       height: pdf.heightMm,
       pages: pdf.pages,
+      selected: filter.selected,
       notice: pdf.missingChars > 0 ? `${pdf.missingChars} 个字符不在内置字体覆盖范围，已以 ? 代替` : undefined,
     };
   } catch (e) {
@@ -304,29 +311,20 @@ const TABLE_CSS = `
 .xl-export .meta { font-size: 13px; color: #6b7280; margin-bottom: 32px; }
 .xl-export h2 { font-size: 16px; margin: 30px 0 10px; padding-bottom: 5px; border-bottom: 2px solid #0f62d6; display: inline-block; font-weight: 600; }
 .xl-export table { border-collapse: collapse; table-layout: auto; margin-bottom: 10px; }
-.xl-export td, .xl-export th { border: 1px solid #d5dbe4; padding: 7px 14px; font-size: 13px; line-height: 1.6; white-space: nowrap; }
-.xl-export thead th { background: #eef2f7; color: #334155; font-weight: 600; text-align: center; width: 46px; }
-.xl-export tbody th { background: #f6f8fb; color: #64748b; font-weight: 500; text-align: center; }
+.xl-export td, .xl-export th { border: 1px solid #d5dbe4; padding: 7px 14px; font-size: 13px; line-height: 1.6; white-space: nowrap; text-align: left; }
+.xl-export thead th { background: #eef2f7; color: #334155; font-weight: 600; }
 .xl-export td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .xl-export td.formula { color: #7c3aed; }
 .xl-export .empty { color: #9ca3af; font-size: 13px; padding: 6px 0; }
 `;
 
 /**
- * 快照 → 自绘表格 HTML（全部工作表按 sheetOrder；列头 A/B/C、行头 1/2/3；
- * 只铺已用范围）。与 get_snapshot 同源（wb.save()）。
+ * 快照 → 自绘表格 HTML（全部工作表按 sheetOrder，纯数据表：无列字母/行号
+ * chrome；数据首行作表头，对齐矢量 PDF 路径的表格形态）。
+ * 与 get_snapshot 同源（wb.save()）。
  */
 export function snapshotToTablesHtml(snapshot: WorkbookSnapshot, workbookName: string): string {
   const ids = snapshot.sheetOrder?.length ? snapshot.sheetOrder : Object.keys(snapshot.sheets);
-  const colName = (c: number): string => {
-    let s = "";
-    let n = c;
-    while (n >= 0) {
-      s = String.fromCharCode(65 + (n % 26)) + s;
-      n = Math.floor(n / 26) - 1;
-    }
-    return s;
-  };
   const sections = ids.map((id) => {
     const sheet = snapshot.sheets[id];
     if (!sheet) return "";
@@ -337,14 +335,21 @@ export function snapshotToTablesHtml(snapshot: WorkbookSnapshot, workbookName: s
     const { maxR, maxC, hasContent } = usedRange(cellData);
     const head = `<h2>${escapeHtml(sheet.name ?? id)}</h2>`;
     if (!hasContent) return `${head}<p class="empty">（空表）</p>`;
-    let thead = "<thead><tr><th></th>";
-    for (let c = 0; c <= maxC; c++) thead += `<th>${colName(c)}</th>`;
+    // 纯数据表（对齐矢量 PDF 路径）：无 A/B/C 列字母头、无 1/2/3 行号列、无角格；
+    // 数据首行 = 表头（加粗浅底），其余行为数据
+    const contentRows: number[] = [];
+    for (let r = 0; r <= maxR; r++) {
+      const rowCells = cellData[r] ?? {};
+      if (Object.keys(rowCells).some((cKey) => cellText(rowCells[Number(cKey)]).text !== "")) contentRows.push(r);
+    }
+    if (!contentRows.length) return `${head}<p class="empty">（空表）</p>`;
+    const headerRow = contentRows[0];
+    let thead = "<thead><tr>";
+    for (let c = 0; c <= maxC; c++) thead += `<th>${escapeHtml(cellText(cellData[headerRow]?.[c]).text)}</th>`;
     thead += "</tr></thead>";
     let tbody = "<tbody>";
-    for (let r = 0; r <= maxR; r++) {
-      const rowHasContent = Object.keys(cellData[r] ?? {}).some((cKey) => cellText(cellData[r]?.[Number(cKey)]).text !== "");
-      if (!rowHasContent) continue;
-      tbody += `<tr><th>${r + 1}</th>`;
+    for (const r of contentRows.slice(1)) {
+      tbody += "<tr>";
       for (let c = 0; c <= maxC; c++) {
         const cell = cellData[r]?.[c];
         const { text, isFormulaFallback } = cellText(cell);
@@ -359,10 +364,10 @@ export function snapshotToTablesHtml(snapshot: WorkbookSnapshot, workbookName: s
     return `${head}<table>${thead}${tbody}</table>`;
   });
   const today = new Date().toISOString().slice(0, 10);
-  return `<div class="xl-export"><style>${TABLE_CSS}</style><h1>${escapeHtml(workbookName)}</h1><p class="meta">导出日期 ${today} · ${ids.length} 个工作表 · 数据面导出（值与公式，样式 v1 不落展示图）</p>${sections.join("")}</div>`;
+  return `<div class="xl-export"><style>${TABLE_CSS}</style><h1>${escapeHtml(workbookName)}</h1><p class="meta">导出日期 ${today} · ${ids.length} 个工作表</p>${sections.join("")}</div>`;
 }
 
-export async function exportSheetLongPng(filename?: string): Promise<ExportResult & { truncated?: boolean; notice?: string }> {
+export async function exportSheetLongPng(filename?: string, sheets?: string[]): Promise<ExportResult & { truncated?: boolean; notice?: string }> {
   const name = resolvePngName(filename);
   // 全管线 try/catch（对抗审查顺手项，同 exportGridPdf）
   try {
@@ -372,13 +377,18 @@ export async function exportSheetLongPng(filename?: string): Promise<ExportResul
     const wb = h!.api.getActiveWorkbook();
     if (!wb) return { ok: false, error: "当前无活动工作簿" };
     const snapshot = wb.save() as unknown as WorkbookSnapshot;
+    const filter = filterSheetIds(snapshot, sheets);
+    if (filter.error) return { ok: false, error: filter.error };
+    const filtered: WorkbookSnapshot = { ...snapshot, sheetOrder: filter.ids };
+    const selectedTag = sheets !== undefined && sheets !== null ? filter.selected.join("-") : null;
     const node = document.createElement("div");
-    node.innerHTML = snapshotToTablesHtml(snapshot, h!.workbookName);
+    node.innerHTML = snapshotToTablesHtml(filtered, h!.workbookName);
     const unmount = mountOffscreen(node, 920);
     try {
       const png = await withColorGuard(() => renderNodeToPng(node, { width: 920, scale: 2 }), node);
-      downloadBlob(png.blob, name);
-      return { ok: true, filename: name, width: png.width, height: png.height, truncated: png.truncated, notice: png.notice };
+      const finalName = selectedTag ? safeFilename(withSelectionTag(resolvePngName(undefined), selectedTag), DEFAULT_PNG_NAME, ".png") : name;
+      downloadBlob(png.blob, finalName);
+      return { ok: true, filename: finalName, width: png.width, height: png.height, selected: filter.selected, truncated: png.truncated, notice: png.notice };
     } finally {
       unmount();
     }

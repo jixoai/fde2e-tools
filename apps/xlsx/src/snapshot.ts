@@ -135,3 +135,40 @@ export function assertCompleteSeed(seed: unknown): asserts seed is WorkbookSeed 
     throw new Error("seed 非完整快照格式（幽灵工作簿风险）：sheetOrder 与 sheets 数量不一致");
   }
 }
+
+/* ---------- 选择性导出（openspec: selective-export） ---------- */
+
+export interface SheetFilterResult {
+  /** 过滤后的 sheetOrder id 序列（按调用方给出的表名顺序） */
+  ids: string[];
+  /** 实际导出的表名清单（返回值 selected 字段） */
+  selected: string[];
+  /** 人话错误（表名不存在时列出可用表名） */
+  error: string | null;
+}
+
+/**
+ * 按表名过滤工作簿快照（export_pdf/export_png/export_xlsx 三路径共用）。
+ * sheets 缺省/空数组＝全部表；表名不存在＝人话报错并列出可用表名。
+ */
+export function filterSheetIds(
+  snapshot: { sheetOrder?: string[]; sheets: Record<string, { name?: string }> },
+  sheets: unknown,
+): SheetFilterResult {
+  const order = snapshot.sheetOrder?.length ? snapshot.sheetOrder : Object.keys(snapshot.sheets);
+  const nameOf = (id: string): string => snapshot.sheets[id]?.name ?? id;
+  const allNames = order.map(nameOf);
+  if (sheets === undefined || sheets === null || (Array.isArray(sheets) && sheets.length === 0)) {
+    return { ids: order, selected: allNames, error: null };
+  }
+  if (!Array.isArray(sheets) || sheets.length === 0 || sheets.some((n) => typeof n !== "string")) {
+    return { ids: [], selected: [], error: `sheets 参数须为工作表名数组（如 ["房源价格表"]）——当前可用表：${allNames.join("、")}` };
+  }
+  const wanted = sheets as string[];
+  const missing = wanted.filter((w) => !allNames.includes(w));
+  if (missing.length) {
+    return { ids: [], selected: [], error: `工作表不存在：${missing.join("、")}——当前可用表：${allNames.join("、")}` };
+  }
+  const ids = wanted.flatMap((w) => order.filter((id) => nameOf(id) === w)); // 按调用方顺序
+  return { ids, selected: ids.map(nameOf), error: null };
+}

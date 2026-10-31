@@ -33,12 +33,14 @@ WebMCP 工具（直接驱动编辑器内核，不经 DOM 输入区；编辑器�
 - format_range({sheet?, range, styles})：bold/italic/color/bg/align/numfmt/border（all/outside/四边/内部）。
 - add_sheet({name?, rows?})：建表（重名报错）。
 - import_xlsx({base64[, filename]})：导入 .xlsx（值/公式保留；样式与列宽不保留）为可编辑工作簿。
-- export_xlsx({filename?})：导出真 .xlsx 下载（缺省 xlsx-export.xlsx；值/公式保留，样式与列宽 v1 不落文件）。
+- export_xlsx({filename?, sheets?})：导出真 .xlsx 下载（缺省 xlsx-export.xlsx；值/公式保留，样式与列宽 v1 不落文件）。
+  可选 sheets 选表（如 ["房源价格表"]，缺省全部表；选择导出文件名 xlsx-export-表1-表2.xlsx；表名不存在报错并列出可用表）。
 - get_snapshot()：只读全簿快照（v 值 + f 公式）——先读后写。
-- export_pdf({filename?})：矢量 PDF 下载（缺省 xlsx-export.pdf；真实文本层可搜索可复制；数据面绘制——
+- export_pdf({filename?, sheets?})：矢量 PDF 下载（缺省 xlsx-export.pdf；真实文本层可搜索可复制；数据面绘制——
   列宽自适应/表头加粗/数字右对齐/多页重复表头/页脚页码；不含任何编辑器 UI，不碰 Univer DOM）。
-- export_png({filename?})：全簿长图 PNG 下载（缺省 xlsx-long.png；全部工作表数据面自绘表格——
-  网格 canvas 只含可视视口，长图诚实走数据面；内容超 16384px 会截断并标注）。
+  可选 sheets 选表（缺省全部表；选择导出文件名 xlsx-export-表1-表2.pdf）。
+- export_png({filename?, sheets?})：全簿长图 PNG 下载（缺省 xlsx-long.png；纯数据表格——无行列号 chrome；
+  网格 canvas 只含可视视口，长图诚实走数据面；内容超 16384px 会截断并标注）。可选 sheets 选表。
 
 操作提示：
 - 页面按钮：载入示例（load-sample-btn）、导入 .xlsx（import-xlsx-btn）、导出 .xlsx（export-xlsx-btn）、

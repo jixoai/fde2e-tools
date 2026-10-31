@@ -7,7 +7,7 @@
  * 幽灵一律显式 ok:false，禁静默失败（openspec: univer-write-gate）。
  * 输出含用户可控内容（untrustedContentHint 纪律）。
  */
-import { downloadBlob } from "@fde2e-tools/shared/download";
+import { downloadBlob, safeFilename, withSelectionTag } from "@fde2e-tools/shared/download";
 import { registerWebMCPTools, type WebMCPToolDef } from "@fde2e-tools/shared/webmcp";
 import {
   canaryProbe,
@@ -22,7 +22,7 @@ import {
 import { exportGridPdf, exportSheetLongPng } from "./export";
 import { snapshotToXlsxBytes, xlsxBytesToSeed } from "./bridge";
 import { resolveExportName } from "./export-name";
-import { assertCompleteSeed, type SeedCell, type WorkbookSeed } from "./snapshot";
+import { assertCompleteSeed, filterSheetIds, type SeedCell, type WorkbookSeed } from "./snapshot";
 
 /* ---------- 基础助手 ---------- */
 
@@ -316,11 +316,18 @@ function buildTools(): WebMCPToolDef[] {
       name: "export_xlsx",
       title: "导出 .xlsx",
       description:
-        "导出当前工作簿为真 .xlsx 下载（缺省文件名 xlsx-export.xlsx；值/公式保留，v1 样式与列宽不落导出文件）。返回文件名契约与逐表统计。",
+        "导出当前工作簿为真 .xlsx 下载（缺省文件名 xlsx-export.xlsx；值/公式保留，v1 样式与列宽不落导出文件）。" +
+        "可选 sheets 选择工作表（如 [\"房源价格表\"]，缺省全部表；选择导出文件名 xlsx-export-表1-表2.xlsx）。" +
+        "返回文件名契约、逐表统计与 selected（实际导出的表名清单）。",
       inputSchema: {
         type: "object",
         properties: {
           filename: { type: "string", description: "可选下载文件名（缺省 xlsx-export.xlsx）" },
+          sheets: {
+            type: "array",
+            items: { type: "string" },
+            description: '可选工作表名选择（如 ["房源价格表","周营收"]；缺省全部表）',
+          },
         },
         additionalProperties: false,
       },
@@ -334,10 +341,15 @@ function buildTools(): WebMCPToolDef[] {
         const wb = h.api.getActiveWorkbook();
         if (!wb) return { ok: false, error: "当前无活动工作簿" };
         try {
-          const snapshot = wb.save() as Parameters<typeof snapshotToXlsxBytes>[0];
+          const full = wb.save() as Parameters<typeof snapshotToXlsxBytes>[0];
+          const filter = filterSheetIds(full as { sheetOrder?: string[]; sheets: Record<string, { name?: string }> }, input.sheets);
+          if (filter.error) return { ok: false, error: filter.error };
+          const snapshot = { ...full, sheetOrder: filter.ids } as Parameters<typeof snapshotToXlsxBytes>[0];
           const { bytes, stats } = await snapshotToXlsxBytes(snapshot);
-          downloadBlob(new Blob([bytes as unknown as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), filename);
-          return { ok: true, filename, sheetCount: stats.length, sheets: stats };
+          const tag = input.sheets !== undefined && input.sheets !== null ? filter.selected.join("-") : null;
+          const finalName = tag ? safeFilename(withSelectionTag(resolveExportName(undefined), tag), "xlsx-export.xlsx", ".xlsx") : filename;
+          downloadBlob(new Blob([bytes as unknown as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), finalName);
+          return { ok: true, filename: finalName, sheetCount: stats.length, sheets: stats, selected: filter.selected };
         } catch (e) {
           return { ok: false, error: e instanceof Error && e.message ? e.message : String(e) };
         }
@@ -367,35 +379,47 @@ function buildTools(): WebMCPToolDef[] {
       description:
         "把当前工作簿导出为矢量 PDF 下载（缺省 xlsx-export.pdf；真实文本层可搜索可复制；" +
         "A4 纵向多页，列宽自适应/表头加粗/数字右对齐/重复表头/页脚页码；不含编辑器 UI）。" +
-        "编辑器未就绪时返回 ok:false。返回文件名契约与页数。",
+        "可选 sheets 选择工作表（如 [\"周营收\"]，缺省全部表；选择导出文件名 xlsx-export-表1-表2.pdf）。" +
+        "编辑器未就绪时返回 ok:false。返回文件名契约、页数与 selected（实际导出的表名清单）。",
       inputSchema: {
         type: "object",
         properties: {
           filename: { type: "string", description: "可选下载文件名（缺省 xlsx-export.pdf）" },
+          sheets: {
+            type: "array",
+            items: { type: "string" },
+            description: '可选工作表名选择（如 ["周营收"]；缺省全部表）',
+          },
         },
         additionalProperties: false,
       },
       annotations: { untrustedContentHint: true },
       async execute(input) {
-        return await exportGridPdf(typeof input.filename === "string" ? input.filename : undefined);
+        return await exportGridPdf(typeof input.filename === "string" ? input.filename : undefined, Array.isArray(input.sheets) ? (input.sheets as string[]) : undefined);
       },
     },
     {
       name: "export_png",
       title: "导出长图 PNG",
       description:
-        "把全部工作表内容导出为一张长图 PNG 下载（缺省 xlsx-long.png）。数据面自绘表格（网格 canvas 只含可视视口，" +
-        "长图诚实走快照数据）：全部工作表按 sheetOrder、列头 A/B/C、值与公式。内容超 16384px 会截断并在产物与返回值标注。",
+        "把工作表内容导出为一张长图 PNG 下载（缺省 xlsx-long.png）。数据面自绘纯数据表格（无行列号 chrome）：全部工作表按 sheetOrder、" +
+        "值与公式。可选 sheets 选择工作表（如 [\"周营收\"]，缺省全部表；选择导出文件名 xlsx-long-表1.png）。内容超 16384px 会截断并在产物与返回值标注。" +
+        "返回文件名契约与 selected（实际导出的表名清单）。",
       inputSchema: {
         type: "object",
         properties: {
           filename: { type: "string", description: "可选下载文件名（缺省 xlsx-long.png）" },
+          sheets: {
+            type: "array",
+            items: { type: "string" },
+            description: '可选工作表名选择（如 ["周营收"]；缺省全部表）',
+          },
         },
         additionalProperties: false,
       },
       annotations: { untrustedContentHint: true },
       async execute(input) {
-        return await exportSheetLongPng(typeof input.filename === "string" ? input.filename : undefined);
+        return await exportSheetLongPng(typeof input.filename === "string" ? input.filename : undefined, Array.isArray(input.sheets) ? (input.sheets as string[]) : undefined);
       },
     },
   ];
