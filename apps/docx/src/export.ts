@@ -31,10 +31,12 @@ export interface ExportOk {
   height: number;
   pages?: number;
   /**
-   * 实际导出的节清单（selective-export）。section 兼容别名形态＝节标题数组
-   * （v1 契约，整篇＝["整篇"]）；items 形态＝逐单元 {section: 标题}。
+   * 实际导出的节清单（selective-export）。section 兼容别名形态＝节标题数组；
+   * items 形态＝逐单元 {section: 标题}。**全量导出（未给选择参数）＝ null**
+   * （v1.2 F17 规范：废除 v1.1 及以前的魔法哨兵 ["整篇"]——null＝全量是唯一
+   * 规范形态，调用方判「是否全量」唯一依据 selected === null）。
    */
-  selected?: Array<string | { section: string }>;
+  selected?: Array<string | { section: string }> | null;
   truncated?: boolean;
   notice?: string;
 }
@@ -499,7 +501,7 @@ export function blocksToHtml(blocks: DocBlock[], title: string): string {
  * 节选择解析（F4 items 统一选择器）：items 主形态＝每项 {section: 标题文本}
  * （**可多节**，顺序按 items；F10：section 单值无法多节的断层在此修掉）；
  * section 单值字符串为 v1 兼容别名。两者同传＝冲突显式报错（禁静默取舍）。
- * 返回节标题序列（空数组＝整篇）。
+ * 返回节标题序列（空数组＝全量导出；selected 空＝null，见 F17）。
  */
 export function resolveDocSections(items: unknown, section: unknown): { ok: false; error: string } | { ok: true; sections: string[] } {
   const itemsGiven = items !== undefined && items !== null;
@@ -598,7 +600,7 @@ export async function exportDocPdf(filename?: string, section?: unknown, items?:
     const sel = resolveDocSections(items, section);
     if (!sel.ok) return { ok: false, error: sel.error };
     let blocks = model.blocks;
-    let selected: Array<string | { section: string }> = ["整篇"];
+    let selected: Array<string | { section: string }> | null = null; // F17：全量＝null（不再用「整篇」哨兵）
     let tag: string | null = null;
     if (sel.sections.length) {
       const picked = pickSections(blocks, sel.sections);
@@ -633,7 +635,7 @@ export async function exportDocLongPng(filename?: string, section?: unknown, ite
     const sel = resolveDocSections(items, section);
     if (!sel.ok) return { ok: false, error: sel.error };
     let blocks = model.blocks;
-    let selected: Array<string | { section: string }> = ["整篇"];
+    let selected: Array<string | { section: string }> | null = null; // F17：全量＝null（不再用「整篇」哨兵）
     let tag: string | null = null;
     if (sel.sections.length) {
       const picked = pickSections(blocks, sel.sections);

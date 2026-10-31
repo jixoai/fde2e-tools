@@ -35,13 +35,13 @@ function buildTools(): WebMCPToolDef[] {
       name: "create_docx",
       title: "生成 .docx",
       description:
-        "按 Markdown 子集生成并下载 docx-export.docx。支持 #/##/### 标题、段落、- 无序列表、" +
+        "按 Markdown 子集生成并下载 easy-docx-export.docx（v2 F19 缺省名；旧名 docx-export.docx 可显式 filename 复现）。支持 #/##/### 标题、段落、- 无序列表、" +
         "1. 有序列表、| 管道表格、**粗** *斜*；可选 filename 自定义下载名（自动补 .docx）。返回文件名/结构统计/状态行结果。",
       inputSchema: {
         type: "object",
         properties: {
           markdown: { type: "string", description: "Markdown 子集全文" },
-          filename: { type: "string", description: "可选下载文件名（缺省 docx-export.docx）" },
+          filename: { type: "string", description: "可选下载文件名（缺省 easy-docx-export.docx；v2 F19 与专业站区分——传 filename 可显式指定任意名，缺省名变更仅影响未指定 filename 的调用）" },
         },
         required: ["markdown"],
         additionalProperties: false,
@@ -52,7 +52,8 @@ function buildTools(): WebMCPToolDef[] {
         try {
           parseMarkdownSub(md); // 仅校验（空文档给人话错误），写入仍用原文
         } catch (e) {
-          return { ok: false, error: e instanceof Error && e.message ? e.message : String(e) };
+          const msg = e instanceof Error && e.message ? e.message : String(e);
+          return { ok: false, error: msg, message: msg }; // F14：error/message 同值
         }
         // 文件名闭包：点击前算好（生成后页面会复位缺省，事后读会拿到缺省值）；
         // 与页面 setExportName 同函数同参，返回值与真实下载名一致
@@ -95,7 +96,8 @@ function buildTools(): WebMCPToolDef[] {
           summary = statsSummary(blocks);
           if (!clickById("preview-btn")) throw new Error("页面未就绪（preview-btn 缺失）");
         } catch (e) {
-          return { ok: false, error: e instanceof Error && e.message ? e.message : String(e) };
+          const msg = e instanceof Error && e.message ? e.message : String(e);
+          return { ok: false, error: msg, message: msg }; // F14：error/message 同值
         }
         const snapshot = await waitForStatusChange();
         return snapshot.ok

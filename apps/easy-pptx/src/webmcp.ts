@@ -43,7 +43,7 @@ function buildTools(): WebMCPToolDef[] {
       name: "create_pptx",
       title: "生成 .pptx",
       description:
-        "按 slides 大纲生成并下载 pptx-export.pptx（16:9）。slides=[{title, bullets[], notes?}]，" +
+        "按 slides 大纲生成并下载 easy-pptx-export.pptx（16:9；v2 F19 缺省名；旧名 pptx-export.pptx 可显式 filename 复现）。slides=[{title, bullets[], notes?}]，" +
         "每页必须有 title；可选 filename 自定义下载名（自动补 .pptx）。返回文件名/页数/要点数/状态行结果。",
       inputSchema: {
         type: "object",
@@ -63,7 +63,7 @@ function buildTools(): WebMCPToolDef[] {
               additionalProperties: false,
             },
           },
-          filename: { type: "string", description: "可选下载文件名（缺省 pptx-export.pptx）" },
+          filename: { type: "string", description: "可选下载文件名（缺省 easy-pptx-export.pptx；v2 F19 与专业站区分——传 filename 可显式指定任意名，缺省名变更仅影响未指定 filename 的调用）" },
         },
         required: ["slides"],
         additionalProperties: false,
@@ -74,7 +74,8 @@ function buildTools(): WebMCPToolDef[] {
         try {
           spec = normalizeDeck({ slides: input.slides });
         } catch (e) {
-          return { ok: false, error: e instanceof Error && e.message ? e.message : String(e) };
+          const msg = e instanceof Error && e.message ? e.message : String(e);
+          return { ok: false, error: msg, message: msg }; // F14：error/message 同值
         }
         // 文件名闭包：点击前算好（生成后页面会复位缺省，事后读会拿到缺省值）；
         // 与页面 setExportName 同函数同参，返回值与真实下载名一致
@@ -114,7 +115,7 @@ function buildTools(): WebMCPToolDef[] {
         try {
           spec = readDeckFromPage() ?? { slides: [] };
           const title = String(input.title ?? "").trim();
-          if (!title) return { ok: false, error: "title 必填（每页必须有标题）" };
+          if (!title) return { ok: false, error: "title 必填（每页必须有标题）", message: "title 必填（每页必须有标题）" };
           spec.slides.push({
             title,
             bullets: Array.isArray(input.bullets) ? input.bullets.map((b) => String(b)) : [],
@@ -124,7 +125,8 @@ function buildTools(): WebMCPToolDef[] {
           });
           spec = normalizeDeck({ slides: spec.slides });
         } catch (e) {
-          return { ok: false, error: e instanceof Error && e.message ? e.message : String(e) };
+          const msg = e instanceof Error && e.message ? e.message : String(e);
+          return { ok: false, error: msg, message: msg }; // F14：error/message 同值
         }
         setInputValue("input-json", JSON.stringify(spec, null, 2));
         if (!clickById("preview-btn")) throw new Error("页面未就绪（preview-btn 缺失）");

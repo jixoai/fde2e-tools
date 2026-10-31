@@ -225,7 +225,7 @@ export const TOOLS: ToolMeta[] = [
     tags: ["excel", "xlsx", "表格", "简易", "快速", "sheetjs"],
     subdomain: "easy-xlsx.tool.fde2e.com",
     aiGuideSummary:
-      "JSON 填入 <textarea id=input-json>（{sheets:[{name,rows}]}）或表格粘贴进 <textarea id=input-tsv>（Tab 分列、## 表名分表），点 generate-xlsx-btn 生成 xlsx-export.xlsx；?sample=1 载入示例。",
+      "JSON 填入 <textarea id=input-json>（{sheets:[{name,rows}]}）或表格粘贴进 <textarea id=input-tsv>（Tab 分列、## 表名分表），点 generate-xlsx-btn 生成 easy-xlsx-export.xlsx（v2 F19 缺省名，与专业站 xlsx-export.xlsx 区分）；?sample=1 载入示例。",
     urlParams: [
       {
         name: "sample",
@@ -235,7 +235,7 @@ export const TOOLS: ToolMeta[] = [
     tools: [
       {
         name: "create_xlsx",
-        description: "按 sheets 结构生成并下载 xlsx-export.xlsx（sheets:[{name, rows[][]}]，可自定义文件名），返回表数/行数与状态行结果",
+        description: "按 sheets 结构生成并下载 easy-xlsx-export.xlsx（v2 F19 缺省名；sheets:[{name, rows[][]}]，可自定义文件名——传 filename 可显式指定任意名），返回表数/行数与状态行结果",
       },
       {
         name: "add_sheet_sample",
@@ -253,7 +253,7 @@ export const TOOLS: ToolMeta[] = [
     tags: ["word", "docx", "文档", "markdown", "简易", "快速"],
     subdomain: "easy-docx.tool.fde2e.com",
     aiGuideSummary:
-      "md 子集填入 <textarea id=input-md>（#/##/### 标题、- 列表、1. 列表、| 表格、**粗** *斜*），点 generate-docx-btn 生成 docx-export.docx；?sample=1 载入示例。",
+      "md 子集填入 <textarea id=input-md>（#/##/### 标题、- 列表、1. 列表、| 表格、**粗** *斜*），点 generate-docx-btn 生成 easy-docx-export.docx（v2 F19 缺省名，与专业站 docx-export.docx 区分）；?sample=1 载入示例。",
     urlParams: [
       {
         name: "sample",
@@ -263,7 +263,7 @@ export const TOOLS: ToolMeta[] = [
     tools: [
       {
         name: "create_docx",
-        description: "按 Markdown 子集生成并下载 docx-export.docx（可自定义文件名），返回段落数/表格数与状态行结果",
+        description: "按 Markdown 子集生成并下载 easy-docx-export.docx（v2 F19 缺省名；可自定义文件名——传 filename 可显式指定任意名），返回段落数/表格数与状态行结果",
       },
       {
         name: "append_docx_markdown",
@@ -281,7 +281,7 @@ export const TOOLS: ToolMeta[] = [
     tags: ["powerpoint", "pptx", "幻灯", "演示", "简易", "快速"],
     subdomain: "easy-pptx.tool.fde2e.com",
     aiGuideSummary:
-      "slides JSON 填入 <textarea id=input-json>（{\"slides\":[{title,bullets[],notes?}]}），点 generate-pptx-btn 生成 pptx-export.pptx；?sample=1 载入示例。",
+      "slides JSON 填入 <textarea id=input-json>（{\"slides\":[{title,bullets[],notes?}]}），点 generate-pptx-btn 生成 easy-pptx-export.pptx（v2 F19 缺省名，与专业站 pptx-export.pptx 区分）；?sample=1 载入示例。",
     urlParams: [
       {
         name: "sample",
@@ -291,7 +291,7 @@ export const TOOLS: ToolMeta[] = [
     tools: [
       {
         name: "create_pptx",
-        description: "按 slides 结构生成并下载 pptx-export.pptx（[{title,bullets[],notes?}]，可自定义文件名），返回页数与状态行结果",
+        description: "按 slides 结构生成并下载 easy-pptx-export.pptx（v2 F19 缺省名；[{title,bullets[],notes?}]，可自定义文件名——传 filename 可显式指定任意名），返回页数与状态行结果",
       },
       {
         name: "add_slide",
@@ -321,7 +321,7 @@ export const TOOLS: ToolMeta[] = [
       },
     ],
     tools: [
-      { name: "set_cells", description: "向工作表写入二维数据（values[][]，支持数字/字符串/布尔/null），返回写入摘要" },
+      { name: "set_cells", description: "向工作表写入二维数据（values[][]，支持数字/字符串/布尔/null；起始锚 start A1 形态主推如 \"A2\"，或 startRow/startCol 0 基 v1 兼容别名，同传报错），返回写入摘要与 A1 起点自证" },
       { name: "set_formula", description: "对 A1 区间写公式（如 =SUM(A1:A9)），返回公式引擎计算值——AI 可自检" },
       { name: "format_range", description: "对 A1 区间设置样式（bold/italic/color/bg/numfmt/align/border）" },
       { name: "add_sheet", description: "新增工作表（可带初始 rows 二维数组），返回表名与全簿表清单" },
@@ -370,7 +370,7 @@ export const TOOLS: ToolMeta[] = [
     tags: ["powerpoint", "pptx", "幻灯", "编辑器", "pptist"],
     subdomain: "pptx.tool.fde2e.com",
     aiGuideSummary:
-      "真幻灯编辑器：WebMCP add_slide({layout=title|bullets|blank,title?,bullets?})/set_title/add_bullets 驱动 store，export_pptx 下载 pptx-export.pptx，import_pptx({base64}) 打开既有 .pptx，export_pdf/export_png/export_long_png 逐页/长图导出；?sample=1 重置为内置示例。",
+      "真幻灯编辑器：WebMCP add_slide({layout=title|bullets|blank,title?,bullets?,page? 插入位置1基})/set_title/add_bullets（目标页 page 1 基主形态，slideIndex 0 基 v1 兼容别名）驱动 store，export_pptx 下载 pptx-export.pptx，import_pptx({base64}) 打开既有 .pptx，export_pdf/export_png/export_long_png 逐页/长图导出；?sample=1 重置为内置示例。",
     urlParams: [
       {
         name: "sample",
@@ -378,9 +378,9 @@ export const TOOLS: ToolMeta[] = [
       },
     ],
     tools: [
-      { name: "add_slide", description: "新增一页（layout=title|bullets|blank，title/bullets[]/index?），返回页索引与元素清单" },
-      { name: "set_title", description: "设置指定页（缺省当前页）标题文本（无标题元素则创建）" },
-      { name: "add_bullets", description: "向指定页追加要点列表（items[]，自动排版在既有内容下方）" },
+      { name: "add_slide", description: "新增一页（layout=title|bullets|blank，title/bullets[]/page 插入位置1基=插最前或 index 0 基 v1 别名），返回 slideCount（总页数，与 import_pptx/export_pptx 同名）＋page/index/slideIndex 双基位置与元素清单" },
+      { name: "set_title", description: "设置指定页标题文本（目标页 page 1 基主形态第 1 页=1 或 slideIndex 0 基 v1 兼容别名，同传报错；无标题元素则创建）" },
+      { name: "add_bullets", description: "向指定页追加要点列表（items[]，自动排版在既有内容下方；目标页 page 1 基主形态或 slideIndex 0 基 v1 兼容别名，同传报错）" },
       { name: "export_pptx", description: "导出当前演示为真 .pptx 下载（缺省 pptx-export.pptx）" },
       { name: "import_pptx", description: "导入 .pptx（base64）为可编辑演示（pptxtojson 解析），返回页数" },
       { name: "export_pdf", description: "每页幻灯一页导出矢量 PDF 下载（缺省 pptx-export.pdf；16:9 横向，真实文本层，右下页码）；可选 items 页单元（[{page: 2}]）或 pages 选页（1-based 数组/区间/单数；选择导出文件名 pptx-export-p2-3.pdf）" },

@@ -24,10 +24,12 @@ const AI_GUIDE = `===== AI 使用说明（给自动化代理读的纯文本） =
 见根 README 许可分区）。轻量「大纲 JSON→文件」快速档在 easy-pptx.tool.fde2e.com。
 
 WebMCP 工具（store 驱动；编辑器未就绪时返回 ok:false——请重试而非断言成功）：
-- add_slide({layout?, title?, bullets?, index?})：新增一页（layout=title|bullets|blank，缺省 bullets；
-  index 缺省插到当前页之后）。
-- set_title({slideIndex?, text})：设置指定页标题（缺省当前页；无标题元素则创建）。
-- add_bullets({slideIndex?, items[]})：向指定页追加要点列表（自动排版在既有内容下方）。
+- add_slide({layout?, title?, bullets?, page?})：新增一页（layout=title|bullets|blank，缺省 bullets；
+  page 插入位置（1 基：1=插最前，缺省当前页之后；index 0 基 v1 兼容别名，同传报错）；返回 slideCount
+  总页数（与 import_pptx/export_pptx 同名）＋page/index/slideIndex 双基位置）。
+- set_title({page?, slideIndex?, text})：设置指定页标题（page 1 基主形态第 1 页=1；slideIndex 0 基 v1
+  兼容别名，同传报错；缺省当前页；无标题元素则创建）。
+- add_bullets({page?, slideIndex?, items[]})：向指定页追加要点列表（自动排版在既有内容下方；页参数同 set_title）。
 - export_pptx({filename?})：导出真 .pptx 下载（缺省 pptx-export.pptx；文本/形状/表格/图表基础项可靠）。
 - import_pptx({base64})：导入 .pptx 置换画布（pptxtojson 解析，复杂版式有损）。
 - export_pdf({filename?, pages?})：矢量 PDF 下载（缺省 pptx-export.pdf；16:9 横向，每页幻灯一页；真实文本层

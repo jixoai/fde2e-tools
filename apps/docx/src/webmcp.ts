@@ -244,7 +244,7 @@ function buildTools(): WebMCPToolDef[] {
         '「导出什么」二选一（同传报错）：可选 items 多节选择（每项 {section: 标题文本}，如 [{section:"一、本周概况"},{section:"三、下周重点"}]）；' +
         '或 section 兼容别名（单节，如 "二、本周问题与处理"：取该标题至下一个同级/更高级标题前）。' +
         "标题不存在人话报错并列出可用标题。选择导出文件名 docx-export-节1-节2.pdf（自定义 filename 为主、tag 追加其上）。" +
-        "编辑器未就绪或文档为空时返回 ok:false。返回文件名契约、页数与 selected（section 形态＝节标题数组；items 形态＝逐单元 {section}）。",
+        "编辑器未就绪或文档为空时返回 ok:false。返回文件名契约、页数与 selected（选择导出时：section 形态＝节标题数组；items 形态＝逐单元 {section}；全量导出＝null——null 即全量，v1.2 F17 规范）。",
       inputSchema: {
         type: "object",
         properties: {
@@ -259,7 +259,7 @@ function buildTools(): WebMCPToolDef[] {
               additionalProperties: false,
             },
           },
-          section: { type: "string", description: '可选单节选择（与 items 二选一，v1 兼容别名）：标题文本（如 "二、本周问题与处理"）；缺省导出整篇' },
+          section: { type: "string", description: '可选单节选择（与 items 二选一，v1 兼容别名）：标题文本（如 "二、本周问题与处理"）；缺省（不给 items/section）＝全量导出，selected=null' },
         },
         additionalProperties: false,
       },
@@ -278,7 +278,7 @@ function buildTools(): WebMCPToolDef[] {
       description:
         "把文档导出为一张长图 PNG 下载（缺省 docx-long.png；超 16384px 会截断并在产物与返回值标注）。" +
         '「导出什么」二选一（同传报错）：可选 items 多节选择（每项 {section: 标题文本}）；或 section 兼容别名（单节，同 export_pdf）。' +
-        "选择导出文件名 docx-long-节1-节2.png（自定义 filename 为主、tag 追加其上）。返回文件名契约与 selected（section 形态＝节标题数组；items 形态＝逐单元 {section}）。",
+        "选择导出文件名 docx-long-节1-节2.png（自定义 filename 为主、tag 追加其上）。返回文件名契约与 selected（选择导出时：section 形态＝节标题数组；items 形态＝逐单元 {section}；全量导出＝null——null 即全量，v1.2 F17 规范）。",
       inputSchema: {
         type: "object",
         properties: {
@@ -293,7 +293,7 @@ function buildTools(): WebMCPToolDef[] {
               additionalProperties: false,
             },
           },
-          section: { type: "string", description: '可选单节选择（与 items 二选一，v1 兼容别名）：标题文本（如 "二、本周问题与处理"）；缺省导出整篇' },
+          section: { type: "string", description: '可选单节选择（与 items 二选一，v1 兼容别名）：标题文本（如 "二、本周问题与处理"）；缺省（不给 items/section）＝全量导出，selected=null' },
         },
         additionalProperties: false,
       },

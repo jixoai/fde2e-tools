@@ -60,7 +60,9 @@
     隔离**（PPTist vendored 于 src/pptist/ 逐字零改动仅排除入口 main.ts；其代码
     与依赖禁入 packages/shared 与其它 app；许可边界见 apps/pptx/README.md；
     上游升级＝git archive 重取 diff）；编辑器站下载文件名契约沿用
-    `<站id>-export.<ext>`，safeFilename 单源清洗；URL 契约只有 `?sample=`。
+    `<站id>-export.<ext>`，**easy 轻量线缺省名＝`easy-<域>-export.<ext>`**
+    （v2 F19 与专业站区分；旧调用方显式传 filename 复现旧名——migration 注记见
+    change c-d-batch-interface），safeFilename 单源清洗；URL 契约只有 `?sample=`。
   - **Univer 写入双坑防御（univer-write-gate）**：seed 一律经完整快照格式工厂
     （snapshot.ts 单源，禁简化格式——幽灵工作簿静默拒写）；写命令一律过
     Rendered 生命周期门禁（未就绪显式 ok:false，禁静默失败）；两坑各有 smoke

@@ -76,7 +76,10 @@ function buildTools(): WebMCPToolDef[] {
       annotations: { untrustedContentHint: true },
       async execute(input) {
         const rawUrl = String(input.url ?? "").trim();
-        if (!rawUrl) return { ok: false, error: "url 参数必填：文件的绝对 URL（http/https）——契约 /?url=<encodeURIComponent(绝对URL)>" };
+        if (!rawUrl) {
+          const msg = "url 参数必填：文件的绝对 URL（http/https）——契约 /?url=<encodeURIComponent(绝对URL)>";
+          return { ok: false, error: msg, message: msg }; // F14：error/message 同值
+        }
         // 契约链接拼装与页面 parseViewerSearch 同语义（url/name/decoder 三参）
         const qs = new URLSearchParams();
         qs.set("url", rawUrl);

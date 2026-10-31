@@ -24,7 +24,9 @@ FDE2E 工具集：`tool.fde2e.com`（工具黄页：预览 + 搜索 + 入口）�
   元素非受控（智能体程序化 set value 后点按钮必须仍然生效）。
 - **办公线红线（office-suite ＋ office-editorial-upgrade）**：轻量生成链依赖全
   MIT/Apache 禁 AGPL；生成/编辑器库一律 dynamic import 独立 chunk（黄页不背，
-  grep 验证）；下载文件名契约 `<站id>-export.<ext>`。**apps/pptx 目录 AGPL-3.0
+  grep 验证）；下载文件名契约：编辑器站 `<站id>-export.<ext>`、easy 轻量线
+  `easy-<域>-export.<ext>`（v2 F19 缺省名区分；旧调用方显式传 filename 复现旧名）。
+  **apps/pptx 目录 AGPL-3.0
   隔离**（PPTist vendored 逐字零改动；禁入 shared/其它 app；见 apps/pptx/README.md）。
   Univer 写入双坑防御（完整快照 seed 工厂＋canary；Rendered 门禁显式 ok:false）
   见 change office-editorial-upgrade 的 univer-write-gate 规格。

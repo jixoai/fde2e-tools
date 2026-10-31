@@ -23,6 +23,7 @@ import { exportGridPdf, exportSheetLongPng, snapshotToTablesHtml } from "./expor
 import { snapshotToXlsxBytes, xlsxBytesToSeed } from "./bridge";
 import {
   assertCompleteSeed,
+  encodeA1,
   parseA1,
   planSheetDraw,
   resolveExportSelection,
@@ -99,14 +100,16 @@ function buildTools(): WebMCPToolDef[] {
       name: "set_cells",
       title: "写入单元格",
       description:
-        "向工作表写入二维数据 values[][]（自 startRow/startCol 起，0 基；支持字符串/数字/布尔/null）。" +
+        "向工作表写入二维数据 values[][]（支持字符串/数字/布尔/null）。起始锚二选一（F11 v2）：" +
+        'start="A1"（A1 主推形态，如 "A2"）或 startRow/startCol（0 基数字，v1 兼容别名）；同传报错。' +
         "编辑器未渲染完成或工作簿异常时返回 ok:false（禁静默失败）。返回写入数量与覆盖范围。",
       inputSchema: {
         type: "object",
         properties: {
           sheet: { type: "string", description: "目标工作表名（缺省当前活动表）" },
-          startRow: { type: "number", description: "起始行（0 基，缺省 0）" },
-          startCol: { type: "number", description: "起始列（0 基，缺省 0）" },
+          start: { type: "string", description: "A1 起始锚（主推形态，如 \"A2\"＝第 2 行第 1 列；与 startRow/startCol 二选一，同传报错）" },
+          startRow: { type: "number", description: "起始行（0 基数字别名，缺省 0；与 start 二选一）" },
+          startCol: { type: "number", description: "起始列（0 基数字别名，缺省 0；与 start 二选一）" },
           values: { type: "array", description: "二维数组，如 [[\"产品\",\"数量\"],[\"Widget\",3]]", items: { type: "array" } },
         },
         required: ["values"],
@@ -116,10 +119,43 @@ function buildTools(): WebMCPToolDef[] {
       async execute(input) {
         const values = input.values as unknown;
         if (!Array.isArray(values) || !values.length || !values.every((row) => Array.isArray(row))) {
-          return { ok: false, error: `values 必须是非空二维数组（收到 ${describeValue(values)}）` };
+          return { ok: false, error: `values 必须是非空二维数组（收到 ${describeValue(values)}）`, message: `values 必须是非空二维数组（收到 ${describeValue(values)}）` };
         }
-        const startRow = typeof input.startRow === "number" && input.startRow >= 0 ? Math.floor(input.startRow) : 0;
-        const startCol = typeof input.startCol === "number" && input.startCol >= 0 ? Math.floor(input.startCol) : 0;
+        // F11（v2）：起始锚双形态——start（A1 主推）×startRow/startCol（0 基 v1 别名）；
+        // 同传＝显式人话报错（禁静默取舍）；非法 A1 转人话 ok:false（parseA1 单源）
+        const rowGiven = paramGiven(input.startRow);
+        const colGiven = paramGiven(input.startCol);
+        const startGiven = paramGiven(input.start);
+        if (startGiven && (rowGiven || colGiven)) {
+          return {
+            ok: false,
+            error: 'start 与 startRow/startCol 只能用一个——start 形态如 "A2"（A1 主推），startRow/startCol 是 0 基数字 v1 兼容别名',
+            message: 'start 与 startRow/startCol 只能用一个——start 形态如 "A2"（A1 主推），startRow/startCol 是 0 基数字 v1 兼容别名',
+          };
+        }
+        let startRow = 0;
+        let startCol = 0;
+        if (startGiven) {
+          const ref = String(input.start);
+          try {
+            [startRow, startCol] = parseA1(ref);
+          } catch (e) {
+            return {
+              ok: false,
+              error: `start 必须是 A1 形态（收到「${ref}」）：${e instanceof Error ? e.message : String(e)}`,
+              message: `start 必须是 A1 形态（收到「${ref}」）：${e instanceof Error ? e.message : String(e)}`,
+            };
+          }
+        } else {
+          if (rowGiven && typeof input.startRow === "number" && input.startRow >= 0) startRow = Math.floor(input.startRow);
+          else if (rowGiven) {
+            return { ok: false, error: `startRow 须为非负整数（收到 ${describeValue(input.startRow)}）`, message: `startRow 须为非负整数（收到 ${describeValue(input.startRow)}）` };
+          }
+          if (colGiven && typeof input.startCol === "number" && input.startCol >= 0) startCol = Math.floor(input.startCol);
+          else if (colGiven) {
+            return { ok: false, error: `startCol 须为非负整数（收到 ${describeValue(input.startCol)}）`, message: `startCol 须为非负整数（收到 ${describeValue(input.startCol)}）` };
+          }
+        }
         const res = await withEditorWrite(async (h) => {
           const sheet = resolveSheet(h, typeof input.sheet === "string" ? input.sheet : undefined);
           let written = 0;
@@ -139,6 +175,7 @@ function buildTools(): WebMCPToolDef[] {
           return {
             sheet: sheet.getSheetName(),
             written,
+            start: encodeA1(startRow, startCol), // F11：A1 形态自证（双形态统一）
             range: `${startRow},${startCol} 起 ${values.length} 行 × ${maxCols} 列`,
           };
         });

@@ -28,7 +28,7 @@ easy-xlsx.tool.fde2e.com。
 
 WebMCP 工具（直接驱动编辑器内核，不经 DOM 输入区；编辑器未就绪时写工具返回 ok:false，
 禁静默失败——请重试而非断言成功）：
-- set_cells({sheet?, startRow?, startCol?, values[][]})：写二维数据（字符串/数字/布尔/null）。
+- set_cells({sheet?, start?="A2" | startRow?, startCol?, values[][]})：写二维数据（字符串/数字/布尔/null）。起始锚二选一（F11 v2）：start A1 形态主推（如 start:"A2"）或 startRow/startCol 0 基数字（v1 兼容别名）；同传报错。
 - set_formula({sheet?, range, formula})：写公式并返回引擎计算值（=SUM(C2:C3)、跨表 Sheet2!A1）。
 - format_range({sheet?, range, styles})：bold/italic/color/bg/align/numfmt/border（all/outside/四边/内部）。
 - add_sheet({name?, rows?})：建表（重名报错）。

@@ -38,8 +38,8 @@ const AI_GUIDE = `===== AI 使用说明（给自动化代理读的纯文本） =
 操作步骤：
 1. 把 Markdown 填入输入框 <textarea id="input-md">；点按钮 id=load-sample（文案「载入示例」）可载入内置示例文档（含标题/粗斜/列表/表格）。
 2. 点按钮 id=preview-btn（文案「刷新预览」），下方 <div id="preview"> 显示解析出的文档结构（与产物同源）。
-3. 点按钮 id=generate-docx-btn（文案「生成 .docx 下载」），浏览器开始下载 docx-export.docx。
-4. 状态行 id=status 显示「已生成 docx-export.docx（…）」即完成。
+3. 点按钮 id=generate-docx-btn（文案「生成 .docx 下载」），浏览器开始下载 easy-docx-export.docx（v2 F19 缺省名；旧名 docx-export.docx 可传 filename 复现）。
+4. 状态行 id=status 显示「已生成 easy-docx-export.docx（…）」即完成。
 
 备注：
 - URL 参数 ?sample=1（或 sample/示例）自动载入示例并刷新预览，不触发生成——URL 不承载数据（大数据走本输入区或 WebMCP 传参）。

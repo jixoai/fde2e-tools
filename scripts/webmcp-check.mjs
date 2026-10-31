@@ -55,19 +55,19 @@ const FULL_CHAIN = [
     app: "easy-xlsx",
     tool: "create_xlsx",
     input: { sheets: [{ name: "Gates", rows: [["K", "V"], ["engine", "SheetJS"], [42, 1.5]] }] },
-    filename: "xlsx-export.xlsx",
+    filename: "easy-xlsx-export.xlsx", // v2 F19：easy 线缺省名与专业站区分
   },
   {
     app: "easy-docx",
     tool: "create_docx",
     input: { markdown: "# Gate\n\n**bold** and *italic* probe" },
-    filename: "docx-export.docx",
+    filename: "easy-docx-export.docx", // v2 F19
   },
   {
     app: "easy-pptx",
     tool: "create_pptx",
     input: { slides: [{ title: "Gate", bullets: ["a", "b"] }] },
-    filename: "pptx-export.pptx",
+    filename: "easy-pptx-export.pptx", // v2 F19
   },
 ];
 
@@ -85,6 +85,8 @@ const FULL_CHAIN = [
 const ILLEGAL_MATRIX = [
   {
     app: "pdf-tool",
+    // DOM 桥站（f14StopList）：ok:false 必须带 error 且 message＝error 同值（F14）
+    f14: true,
     cases: [
       { tool: "render_preview", input: {}, word: "输入为空" },
       { tool: "render_preview", input: { content: "" }, word: "输入为空" },
@@ -92,6 +94,7 @@ const ILLEGAL_MATRIX = [
   },
   {
     app: "img-tool",
+    f14: true,
     cases: [
       { tool: "overlay_text", input: {}, word: "底图" },
       { tool: "export_png", input: {}, word: "底图" },
@@ -106,20 +109,24 @@ const ILLEGAL_MATRIX = [
   },
   {
     app: "file-viewer",
+    f14: true,
     cases: [
       { tool: "preview_file", input: {}, word: "url 参数必填" },
     ],
   },
   {
     app: "easy-xlsx",
+    f14: true,
     cases: [{ tool: "create_xlsx", input: {}, word: "sheets 结构错误" }],
   },
   {
     app: "easy-docx",
+    f14: true,
     cases: [{ tool: "create_docx", input: {}, word: "输入为空" }],
   },
   {
     app: "easy-pptx",
+    f14: true,
     cases: [{ tool: "create_pptx", input: {}, word: "slides 结构错误" }],
   },
   {
@@ -149,6 +156,9 @@ const EDITOR_FULL_CHAIN = [
       { tool: "export_pdf", input: { items: [{ sheet: "周营收" }], sheets: ["房源价格表"] }, word: "只能用一个" },
       { tool: "export_pdf", input: { items: [{ sheet: "周营收", range: "hello" }] }, word: "非法区域" },
       { tool: "export_pdf", input: { items: [{ sheet: "周营收", range: "Z50:AB60" }] }, word: "无交集" },
+      // F11（v2 D 批）：start×startRow 同传互斥；非法 A1 人话报错
+      { tool: "set_cells", input: { start: "A2", startRow: 1, values: [["x"]] }, word: "只能用一个" },
+      { tool: "set_cells", input: { start: "!!", values: [["x"]] }, word: "非法单元格地址" },
     ],
     // export-pdf-png 扩容：展示级导出真下载断言（%PDF / PNG 头）
     extraExports: [
@@ -190,6 +200,9 @@ const EDITOR_FULL_CHAIN = [
       { tool: "export_pdf", input: { items: [{ page: 2 }], pages: [3] }, word: "只能用一个" },
       { tool: "export_pdf", input: { items: [{ page: 99 }] }, word: "越界" },
       { tool: "export_pages_png", input: { items: [{ page: 0 }] }, word: "越界" },
+      // F12（v2 D 批）：page×slideIndex 同传互斥报错；page 越界人话报错
+      { tool: "set_title", input: { page: 1, slideIndex: 0, text: "x" }, word: "只能用一个" },
+      { tool: "set_title", input: { page: 99, text: "x" }, word: "越界" },
     ],
     extraExports: [
       { tool: "export_pdf", filename: "pptx-export.pdf", header: "%PDF", keywords: ["青旅门店周会汇报", "入住间夜"] },
@@ -197,6 +210,22 @@ const EDITOR_FULL_CHAIN = [
       { tool: "export_long_png", filename: "pptx-long.png", header: "png" },
     ],
     readyMs: 120000,
+    // F12/F6（v2）：page=1 命中首页＋add_slide 增返 slideCount（编辑器就绪后执行）
+    pageProbe: async (call) => {
+      const t = await call("set_title", { page: 1, text: "__wc_first_page_probe__" });
+      if (!t.ok) throw new Error(`set_title(page=1) 未成功: ${JSON.stringify(t)}`);
+      if (t.page !== 1 || t.index !== 0 || t.slideIndex !== 0) {
+        throw new Error(`F12 返回页码自证不符: ${JSON.stringify({ page: t.page, index: t.index, slideIndex: t.slideIndex })}`);
+      }
+      const s = await call("add_slide", { layout: "blank" });
+      if (!s.ok) throw new Error(`add_slide 未成功: ${JSON.stringify(s)}`);
+      if (typeof s.slideCount !== "number" || s.slideCount !== s.total) {
+        throw new Error(`F6: slideCount 缺失或≠total: ${JSON.stringify(s)}`);
+      }
+      // 复原首页标题（探针不污染后续摘要断言）
+      await call("set_title", { page: 1, text: "青旅门店周会汇报" });
+      return true;
+    },
   },
 ];
 
@@ -451,6 +480,10 @@ async function assertNativePath(browser) {
         }
         if (item.r.ok !== false) throw new Error(`非法入参未被拒绝（${item.tool}）: ${JSON.stringify(item.r).slice(0, 120)}`);
         if (!String(item.r.error ?? "")) throw new Error(`非法入参拒绝缺 error（${item.tool}）`);
+        // F14（v1.2）：DOM 桥站 ok:false 必带 message＝error 同值（人话/机器双字段同源）
+        if (matrix.f14 && item.kind === "illegal" && item.r.message !== item.r.error) {
+          throw new Error(`F14：message≠error 或缺 message（${item.tool}）: ${JSON.stringify(item.r).slice(0, 120)}`);
+        }
         if (item.word && !String(item.r.error).includes(item.word)) {
           throw new Error(`非法入参报错未命中「${item.word}」（${item.tool}）: ${String(item.r.error).slice(0, 120)}`);
         }
@@ -589,6 +622,21 @@ async function assertNativePath(browser) {
         if (bad.word && !String(out.error).includes(bad.word)) {
           throw new Error(`非法入参报错未命中「${bad.word}」（${bad.tool}）: ${String(out.error).slice(0, 120)}`);
         }
+      }
+      // v2 扩展探针（chain.pageProbe）：page=1 命中首页 / add_slide slideCount 等
+      // 编辑器就绪语义断言（函数进 evaluate 字符串源——与 editorCall 同款形态）
+      if (chain.pageProbe) {
+        await page.evaluate(async (src) => {
+          const call = async (name, input) => {
+            const ts = await document.modelContext.getTools();
+            const tool = ts.find((t) => t.name === name);
+            if (!tool) throw new Error("工具未注册: " + name);
+            const raw = await document.modelContext.executeTool(tool, input);
+            return typeof raw === "string" ? JSON.parse(raw) : raw;
+          };
+          const fn = eval("(" + src + ")");
+          await fn(call);
+        }, chain.pageProbe.toString());
       }
       await page.close();
       server.close();

@@ -25,11 +25,40 @@ import { exportTitleOf, resolveExportName } from "./export-name";
 
 /* ---------- 基础助手 ---------- */
 
-function slideOf(slides: SlidesStoreApi, slideIndex: number | undefined, label = "slideIndex"): PPTSlide {
-  const idx = slideIndex === undefined ? slides.slideIndex : Math.floor(slideIndex);
-  const slide = slides.slides[idx];
-  if (!slide) throw new Error(`${label} 越界（当前共 ${slides.slides.length} 页，有效索引 0~${slides.slides.length - 1}）`);
-  return slide;
+/**
+ * F12（v2）：目标页双形态解析——`page`（1 基主形态：第 1 页＝1，与全仓序号
+ * 寻址一致）/ `index`·`slideIndex`（0 基 v1 兼容别名：语义照旧不加不减）。
+ * page 与旧名同传＝显式人话报错（禁静默取舍）；两者皆缺＝当前页。
+ * 返回 0 基放置位（store 内部仍 0 基）。
+ */
+function pageParam(input: { page?: unknown; index?: unknown; slideIndex?: unknown }, slidesLen: number): number {
+  const pageGiven = input.page !== undefined && input.page !== null;
+  const idxGiven =
+    (input.index !== undefined && input.index !== null) ||
+    (input.slideIndex !== undefined && input.slideIndex !== null);
+  if (pageGiven && idxGiven) {
+    throw new Error("page 与 index/slideIndex 只能用一个——page 是 1 基主形态（第 1 页=1），index/slideIndex 是 0 基 v1 兼容别名");
+  }
+  if (pageGiven) {
+    const n = input.page as number;
+    if (typeof n !== "number" || !Number.isInteger(Math.floor(n)) || n < 1 || n > slidesLen) {
+      throw new Error(`page 越界（当前共 ${slidesLen} 页，有效 1~${slidesLen}；第 1 页=1）`);
+    }
+    return Math.floor(n) - 1;
+  }
+  if (idxGiven) {
+    const raw = (input.index ?? input.slideIndex) as number;
+    if (raw < 0 || raw >= slidesLen) {
+      throw new Error(`${typeof raw === "number" ? "index/slideIndex" : "index"} 越界（当前共 ${slidesLen} 页，有效索引 0~${slidesLen - 1}）`);
+    }
+    return Math.floor(raw);
+  }
+  return -1; // 未给：调用方按当前页/插入位语义处理
+}
+
+/** 返回值双基页码：page（1 基主形态）＋ index/slideIndex（0 基 v1 兼容读取） */
+function pageViews(idx0: number): Record<string, unknown> {
+  return { page: idx0 + 1, index: idx0, slideIndex: idx0 };
 }
 
 function slideSummary(slide: PPTSlide): Record<string, unknown> {
@@ -68,14 +97,15 @@ function buildTools(): WebMCPToolDef[] {
       name: "add_slide",
       title: "新增幻灯页",
       description:
-        "新增一页幻灯：layout=title（标题页：大标题）/ bullets（标题+要点列表）/ blank（空白页），可带 title/bullets[]/index（插入位置，缺省插到当前页之后）。返回新页索引与元素摘要。",
+        "新增一页幻灯：layout=title（标题页：大标题）/ bullets（标题+要点列表）/ blank（空白页），可带 title/bullets[]/page（插入位置，1 基：1＝插到第 1 页前，缺省当前页之后；F12 v2 主形态）。返回新页位置（page 1 基＋index/slideIndex 0 基兼容读取）、slideCount（总页数，与 import_pptx/export_pptx 同名）与元素摘要。",
       inputSchema: {
         type: "object",
         properties: {
           layout: { type: "string", enum: ["title", "bullets", "blank"], description: "页面布局（缺省 bullets）" },
           title: { type: "string", description: "页标题（title/bullets 布局用）" },
           bullets: { type: "array", description: "要点列表（bullets 布局用；每条一个要点）", items: { type: "string" } },
-          index: { type: "number", description: "插入位置（0 基；缺省当前页之后）" },
+          page: { type: "number", description: "插入位置（1 基：page=1 插到最前，page=页数+1 或缺省＝当前页之后；与 index 二选一）" },
+          index: { type: "number", description: "插入位置兼容别名（0 基，v1 契约；与 page 二选一，同传报错）" },
         },
         additionalProperties: false,
       },
@@ -97,17 +127,32 @@ function buildTools(): WebMCPToolDef[] {
           // （下游渲染 undefined.id 崩溃）——空 deck 直接 setSlides 立为首页
           if (!slides.slides.length) {
             slides.setSlides([slide]);
-          } else {
-            // index 边界（顺手②）：0~length 有效，index=length＝队尾插入——
-            // addSlide 语义＝插当前页之后，尾插先把当前页切到末页即自然落队尾
-            const idx = typeof input.index === "number" ? Math.floor(input.index) : undefined;
-            if (idx !== undefined && (idx < 0 || idx > slides.slides.length)) {
-              throw new Error(`index 越界（当前共 ${slides.slides.length} 页，有效 0~${slides.slides.length}；index=length 表示队尾插入）`);
-            }
-            if (idx !== undefined) slides.updateSlideIndex(Math.min(idx, slides.slides.length - 1));
-            slides.addSlide(slide);
+            return {
+              ...pageViews(slides.slideIndex),
+              slideCount: slides.slides.length, // F6：与 import_pptx/export_pptx 同名
+              total: slides.slides.length, // v1 兼容字段（F6 保留）
+              slide: slideSummary(slides.slides[slides.slideIndex]),
+            };
           }
-          return { index: slides.slideIndex, total: slides.slides.length, slide: slideSummary(slides.slides[slides.slideIndex]) };
+          // 插入位双形态（F12）：page 1 基主形态 / index 0 基 v1 别名；同传报错。
+          // 边界：0 基 0~length（index=length＝队尾插入），1 基 1~length+1。
+          const given = pageParam({ page: input.page, index: input.index }, slides.slides.length + 1);
+          if (given !== -1) {
+            if (given < 0 || given > slides.slides.length) {
+              throw new Error(`插入位置越界（当前共 ${slides.slides.length} 页；page 有效 1~${slides.slides.length + 1}，index 有效 0~${slides.slides.length}）`);
+            }
+            // addSlide 语义＝插当前页之后：先把当前页切到目标位前一格即自然落位
+            slides.updateSlideIndex(Math.min(given - 1, slides.slides.length - 1));
+            slides.addSlide(slide);
+          } else {
+            slides.addSlide(slide); // 缺省插当前页之后（v1 行为不变）
+          }
+          return {
+            ...pageViews(slides.slideIndex),
+            slideCount: slides.slides.length, // F6：与 import_pptx/export_pptx 同名
+            total: slides.slides.length, // v1 兼容字段（F6 保留）
+            slide: slideSummary(slides.slides[slides.slideIndex]),
+          };
         });
         return res.ok ? { ok: true, ...(res.value as Record<string, unknown>) } : res;
       },
@@ -116,11 +161,13 @@ function buildTools(): WebMCPToolDef[] {
       name: "set_title",
       title: "设置页标题",
       description:
-        "设置指定页（slideIndex 缺省当前页）的标题文本：改写页内首个文本元素（保留原样式）；无文本元素则自动创建标题元素。",
+        "设置指定页的标题文本：改写页内首个文本元素（保留原样式）；无文本元素则自动创建标题元素。" +
+        "目标页二选一（F12 v2）：page（1 基主形态，第 1 页=1）或 slideIndex（0 基 v1 兼容别名）；同传报错；缺省当前页。",
       inputSchema: {
         type: "object",
         properties: {
-          slideIndex: { type: "number", description: "目标页索引（0 基，缺省当前页）" },
+          page: { type: "number", description: "目标页（1 基主形态：第 1 页=1；与 slideIndex 二选一）" },
+          slideIndex: { type: "number", description: "目标页兼容别名（0 基，v1 契约；与 page 二选一，同传报错）" },
           text: { type: "string", description: "标题文本" },
         },
         required: ["text"],
@@ -129,10 +176,17 @@ function buildTools(): WebMCPToolDef[] {
       annotations: { untrustedContentHint: true },
       async execute(input) {
         const text = String(input.text ?? "").trim();
-        if (!text) return { ok: false, error: "text 为空" };
+        if (!text) return { ok: false, error: "text 为空", message: "text 为空" };
         const res = await withPPTist((m) => {
           const { slides } = m;
-          const slide = slideOf(slides, typeof input.slideIndex === "number" ? input.slideIndex : undefined);
+          let slide: PPTSlide;
+          try {
+            const pos = pageParam({ page: input.page, slideIndex: input.slideIndex }, slides.slides.length);
+            slide = pos === -1 ? slides.slides[slides.slideIndex] : slides.slides[pos];
+            if (!slide) throw new Error("目标页越界（deck 为空）——请先 add_slide 或 ?sample=1 载入示例");
+          } catch (e) {
+            throw e instanceof Error ? e : new Error(String(e));
+          }
           const firstText = slide.elements.find((el) => el.type === "text") as (typeof slide.elements)[number] | undefined;
           if (firstText) {
             slides.updateElement({ id: firstText.id, props: { content: `<p>${text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>` }, slideId: slide.id });
@@ -140,7 +194,8 @@ function buildTools(): WebMCPToolDef[] {
             slides.updateSlideIndex(slides.slides.indexOf(slide));
             slides.addElement(buildTitleElement(text));
           }
-          return { slideIndex: slides.slides.indexOf(slide), ...slideSummary(slide) };
+          const idx0 = slides.slides.indexOf(slide);
+          return { ...pageViews(idx0), ...slideSummary(slide) };
         });
         return res.ok ? { ok: true, ...(res.value as Record<string, unknown>) } : res;
       },
@@ -149,11 +204,13 @@ function buildTools(): WebMCPToolDef[] {
       name: "add_bullets",
       title: "追加要点列表",
       description:
-        "向指定页（slideIndex 缺省当前页）追加要点列表元素（每条一个 • 段落，自动排版在既有内容下方）。",
+        "向指定页追加要点列表元素（每条一个 • 段落，自动排版在既有内容下方）。" +
+        "目标页二选一（F12 v2）：page（1 基主形态，第 1 页=1）或 slideIndex（0 基 v1 兼容别名）；同传报错；缺省当前页。",
       inputSchema: {
         type: "object",
         properties: {
-          slideIndex: { type: "number", description: "目标页索引（0 基，缺省当前页）" },
+          page: { type: "number", description: "目标页（1 基主形态：第 1 页=1；与 slideIndex 二选一）" },
+          slideIndex: { type: "number", description: "目标页兼容别名（0 基，v1 契约；与 page 二选一，同传报错）" },
           items: { type: "array", description: "要点数组（每条一个字符串）", items: { type: "string" } },
         },
         required: ["items"],
@@ -162,14 +219,17 @@ function buildTools(): WebMCPToolDef[] {
       annotations: { untrustedContentHint: true },
       async execute(input) {
         const items = Array.isArray(input.items) ? (input.items as unknown[]).map((b) => String(b)).filter((b) => b.trim()) : [];
-        if (!items.length) return { ok: false, error: "items 为空（至少一条要点）" };
+        if (!items.length) return { ok: false, error: "items 为空（至少一条要点）", message: "items 为空（至少一条要点）" };
         const res = await withPPTist((m) => {
           const { slides } = m;
-          const slide = slideOf(slides, typeof input.slideIndex === "number" ? input.slideIndex : undefined);
+          const pos = pageParam({ page: input.page, slideIndex: input.slideIndex }, slides.slides.length);
+          const slide = pos === -1 ? slides.slides[slides.slideIndex] : slides.slides[pos];
+          if (!slide) throw new Error("目标页越界（deck 为空）——请先 add_slide 或 ?sample=1 载入示例");
           slides.updateSlideIndex(slides.slides.indexOf(slide));
           const el = buildBulletsElement(items, Math.min(slideContentBottom(slide) + 20, 560));
           slides.addElement(el);
-          return { slideIndex: slides.slides.indexOf(slide), added: items.length, ...slideSummary(slide) };
+          const idx0 = slides.slides.indexOf(slide);
+          return { ...pageViews(idx0), added: items.length, ...slideSummary(slide) };
         });
         return res.ok ? { ok: true, ...(res.value as Record<string, unknown>) } : res;
       },

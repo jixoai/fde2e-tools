@@ -277,8 +277,8 @@ async function main() {
       await withPage("easy-xlsx", "?sample=1", async (page) => {
         await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例工作簿已载入"), { timeout: 10000 });
         const { suggested, bytes } = await generateAndCapture(page, "generate-xlsx-btn");
-        if (suggested !== "xlsx-export.xlsx") throw new Error(`下载文件名不符: ${suggested}`);
-        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("已生成 xlsx-export.xlsx"), { timeout: 15000 });
+        if (suggested !== "easy-xlsx-export.xlsx") throw new Error(`下载文件名不符: ${suggested}`);
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("已生成 easy-xlsx-export.xlsx"), { timeout: 15000 });
         const wb = XLSX.read(bytes, { type: "buffer" });
         const wantSheets = JSON.stringify(["报销明细", "汇总"]);
         if (JSON.stringify(wb.SheetNames) !== wantSheets) {
@@ -314,7 +314,7 @@ async function main() {
       await withPage("easy-xlsx", "", async (page) => {
         await page.fill("#input-tsv", "## 表A\n名字\t数值\n甲\t3.5\n## 表B\n乙\t-2");
         const { suggested, bytes } = await generateAndCapture(page, "generate-xlsx-btn");
-        if (suggested !== "xlsx-export.xlsx") throw new Error(`下载文件名不符: ${suggested}`);
+        if (suggested !== "easy-xlsx-export.xlsx") throw new Error(`下载文件名不符: ${suggested}`);
         const wb = XLSX.read(bytes, { type: "buffer" });
         if (JSON.stringify(wb.SheetNames) !== JSON.stringify(["表A", "表B"])) {
           throw new Error(`TSV 分表不符: ${wb.SheetNames.join(",")}`);
@@ -353,7 +353,7 @@ async function main() {
         const dlPromise = page.waitForEvent("download", { timeout: 30000 });
         await page.click("#generate-xlsx-btn");
         const download = await dlPromise;
-        if (download.suggestedFilename() !== "xlsx-export.xlsx") {
+        if (download.suggestedFilename() !== "easy-xlsx-export.xlsx") {
           throw new Error(`下载文件名不符: ${download.suggestedFilename()}`);
         }
         const dlPath = await download.path();
@@ -392,8 +392,8 @@ async function main() {
       await withPage("easy-docx", "?sample=1", async (page) => {
         await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例文档已载入"), { timeout: 10000 });
         const { suggested, bytes } = await generateAndCapture(page, "generate-docx-btn");
-        if (suggested !== "docx-export.docx") throw new Error(`下载文件名不符: ${suggested}`);
-        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("已生成 docx-export.docx"), { timeout: 15000 });
+        if (suggested !== "easy-docx-export.docx") throw new Error(`下载文件名不符: ${suggested}`);
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("已生成 easy-docx-export.docx"), { timeout: 15000 });
         const zip = new AdmZip(bytes);
         const names = zip.getEntries().map((e) => e.entryName);
         for (const must of ["[Content_Types].xml", "word/document.xml"]) {
@@ -419,7 +419,7 @@ async function main() {
         const dlPromise = page.waitForEvent("download", { timeout: 30000 });
         await page.click("#generate-docx-btn");
         const download = await dlPromise;
-        if (download.suggestedFilename() !== "docx-export.docx") {
+        if (download.suggestedFilename() !== "easy-docx-export.docx") {
           throw new Error(`下载文件名不符: ${download.suggestedFilename()}`);
         }
         await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("已生成"), { timeout: 15000 });
@@ -458,8 +458,8 @@ async function main() {
       await withPage("easy-pptx", "?sample=1", async (page) => {
         await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例幻灯已载入"), { timeout: 10000 });
         const { suggested, bytes } = await generateAndCapture(page, "generate-pptx-btn");
-        if (suggested !== "pptx-export.pptx") throw new Error(`下载文件名不符: ${suggested}`);
-        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("已生成 pptx-export.pptx"), { timeout: 15000 });
+        if (suggested !== "easy-pptx-export.pptx") throw new Error(`下载文件名不符: ${suggested}`);
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("已生成 easy-pptx-export.pptx"), { timeout: 15000 });
         const zip = new AdmZip(bytes);
         const names = zip.getEntries().map((e) => e.entryName);
         for (const must of ["ppt/presentation.xml", "ppt/slides/slide1.xml", "ppt/slides/slide3.xml", "ppt/notesSlides/notesSlide1.xml"]) {
@@ -497,6 +497,12 @@ async function main() {
         const write = await editorCall(page, `async (call) => {
           const r1 = await call("set_cells", { startRow: 8, startCol: 0, values: [["绿门探针", 42.5]] });
           const r2 = await call("set_formula", { range: "B10", formula: "=B9*2" });
+          // F11（v2）：A1 锚主推形态——start:"A11"（=0 基 [10,0]）与数字形态等价；
+          // start 返回值带 A1 起点自证
+          const ra1 = await call("set_cells", { start: "A11", values: [["A1锚探针", 7.75]] });
+          // 同传互斥：start × startRow 必须报「只能用一个」；非法 A1 人话报错不 reject
+          const conflict = await call("set_cells", { start: "A20", startRow: 19, values: [["不应生效"]] });
+          const badA1 = await call("set_cells", { start: "!!", values: [["不应生效"]] });
           // format_range 六键断言（对抗审查 B1 追加 2026-10-31）：全部样式键各执行一次验
           // ok:true——堵「断言面零覆盖」洞（setFontStyle/setNumberFormat/setBorder 经 Enum）
           const fmt = {};
@@ -514,9 +520,20 @@ async function main() {
           }
           const snap = await call("get_snapshot", {});
           const sheet = snap.sheets.find((s) => s.name === "房源价格表");
-          return { r1ok: r1.ok, r2ok: r2.ok, r2value: r2.value, fmt, a9: sheet.cellData[8]?.[0]?.v, b9: sheet.cellData[8]?.[1]?.v, b10: sheet.cellData[9]?.[1] };
+          return { r1ok: r1.ok, ra1ok: ra1.ok, ra1start: ra1.start, r2ok: r2.ok, r2value: r2.value, fmt,
+            conflictOk: conflict.ok, conflictErr: String(conflict.error ?? ""), badA1Ok: badA1.ok,
+            a9: sheet.cellData[8]?.[0]?.v, b9: sheet.cellData[8]?.[1]?.v, b10: sheet.cellData[9]?.[1],
+            a11: sheet.cellData[10]?.[0]?.v, b11: sheet.cellData[10]?.[1]?.v };
         }`);
         if (!write.r1ok || !write.r2ok) throw new Error(`写入工具未成功: ${JSON.stringify(write)}`);
+        // F11 断言：A1 锚产物等价（A11 落格）＋ start 自证 ＋ 同传报错＋非法 A1 转 ok:false
+        if (!write.ra1ok) throw new Error(`F11 A1 锚写入未成功: ${JSON.stringify(write)}`);
+        if (write.ra1start !== "A11") throw new Error(`F11 start 自证不符: ${JSON.stringify(write.ra1start)}`);
+        if (write.conflictOk !== false || !write.conflictErr.includes("只能用一个")) {
+          throw new Error(`F11 start×startRow 同传未互斥报错: ${JSON.stringify(write.conflictErr)}`);
+        }
+        if (write.badA1Ok !== false) throw new Error("F11 非法 A1 未转 ok:false");
+        if (write.a11 !== "A1锚探针" || write.b11 !== 7.75) throw new Error(`F11 A1 锚落位不符: a11=${write.a11} b11=${write.b11}（A1 形态应与 startRow/startCol 等价）`);
         const fmtMissing = Object.entries(write.fmt ?? {}).filter(([, v]) => v !== true).map(([k]) => k);
         if (fmtMissing.length) throw new Error(`format_range 六键断言未全过（未命中键: ${fmtMissing.join(",")}）——B1 修复面失守`);
         if (write.a9 !== "绿门探针" || write.b9 !== 42.5) throw new Error(`get_snapshot 核验不符: a9=${write.a9} b9=${write.b9}`);
@@ -534,7 +551,9 @@ async function main() {
         if (ws["B9"]?.v !== 42.5 || ws["B9"]?.t !== "n") throw new Error(`B9 反读不符（应数字 42.5）: ${ws["B9"]?.v}`);
         if (ws["B10"]?.f !== "B9*2") throw new Error(`B10 公式反读不符: ${ws["B10"]?.f}`);
         if (ws["B10"]?.v !== 85) throw new Error(`B10 计算值反读不符（应 85）: ${ws["B10"]?.v}`);
-        console.log(`      反读证据：A9=绿门探针 · B9=42.5(n) · B10 f=${ws["B10"].f} v=${ws["B10"].v} · format_range 七键断言全过（bold/italic/color/numfmt/bg/border/align）`);
+        if (ws["A11"]?.v !== "A1锚探针") throw new Error(`F11 A11 反读不符: ${ws["A11"]?.v}`);
+        if (ws["B11"]?.v !== 7.75) throw new Error(`F11 B11 反读不符（应 7.75）: ${ws["B11"]?.v}`);
+        console.log(`      反读证据：A9=绿门探针 · B9=42.5(n) · B10 f=${ws["B10"].f} v=${ws["B10"].v} · format_range 七键断言全过（bold/italic/color/numfmt/bg/border/align）· F11 start:"A11"≡startRow/startCol（A11/B11 落格等价，同传报错＋非法 A1 人话拒绝）`);
       });
     });
 
@@ -636,15 +655,29 @@ async function main() {
         const write = await editorCall(page, `async (call) => {
           const r1 = await call("add_slide", { layout: "bullets", title: "绿门探针页", bullets: ["要点甲：绿门", "要点乙：导出"] });
           const idx = r1.index;
+          // F6（v1.2 C 批）：add_slide 增返 slideCount（与 import/export 同名；total 保留）
+          if (typeof r1.slideCount !== "number" || r1.slideCount !== r1.total) {
+            throw new Error("F6: add_slide slideCount 缺失或≠total: " + JSON.stringify({ slideCount: r1.slideCount, total: r1.total }));
+          }
+          // D2 双形态（v2）：page=4（1 基，命中第 4 页＝探针页）≡ slideIndex=3（0 基别名）
+          const rp = await call("set_title", { page: idx + 1, text: "绿门探针页（page 形态核验）" });
           const r2 = await call("set_title", { slideIndex: idx, text: "绿门探针页（核验改名）" });
           const r3 = await call("add_bullets", { slideIndex: idx, items: ["追加要点丙"] });
+          // page 形态返回自证：page=1 基、index/slideIndex=0 基同值
+          if (rp.page !== idx + 1 || rp.slideIndex !== idx) throw new Error("D2: set_title(page) 返回页码自证不符: " + JSON.stringify(rp));
+          // 同传报错：page×slideIndex 同传必须 ok:false
+          const conflict = await call("set_title", { page: 1, slideIndex: 0, text: "不应生效" });
           const deck = window.__officeTest.deck();
-          return { r1ok: r1.ok, r2ok: r2.ok, r3ok: r3.ok, idx, total: deck.total, targetTexts: JSON.stringify(deck.slides[idx]?.texts ?? []) };
+          return { r1ok: r1.ok, rpok: rp.ok, r2ok: r2.ok, r3ok: r3.ok, conflictOk: conflict.ok, conflictErr: String(conflict.error ?? ""), idx, total: deck.total, firstTitle: deck.slides[0]?.texts ?? [], targetTexts: JSON.stringify(deck.slides[idx]?.texts ?? []) };
         }`);
         if (!write.r1ok || !write.r2ok || !write.r3ok) throw new Error(`写入工具未成功: ${JSON.stringify(write)}`);
+        if (write.conflictOk !== false || !write.conflictErr.includes("只能用一个")) {
+          throw new Error(`D2 page×slideIndex 同传未互斥报错: ${JSON.stringify(write.conflictErr)}`);
+        }
         if (write.total !== 4) throw new Error(`deck 页数不符: ${write.total}（期望 4＝三页示例＋探针页）`);
+        if (JSON.stringify(write.firstTitle).includes("不应生效")) throw new Error("D2: 同传冲突仍生效（静默取舍回归）");
         const joined = write.targetTexts;
-        if (!joined.includes("绿门探针页（核验改名）") || !joined.includes("追加要点丙") || !joined.includes("要点甲：绿门")) {
+        if (!joined.includes("绿门探针页（核验改名）") || !joined.includes("追加要点丙")) {
           throw new Error(`deck 核验不符: ${joined.slice(0, 120)}`);
         }
         const dlPromise = page.waitForEvent("download", { timeout: 90000 });
@@ -664,7 +697,7 @@ async function main() {
         for (const probe of ["绿门探针页（核验改名）", "要点甲：绿门", "追加要点丙"]) {
           if (!slideXml.includes(probe)) throw new Error(`${slideEntry} 缺写入内容: ${probe}`);
         }
-        console.log(`      反读证据：zip ${names.length} 项 · ${slideEntry} 含改名标题/要点/追加要点`);
+        console.log(`      反读证据：zip ${names.length} 项 · ${slideEntry} 含改名标题/要点/追加要点 · D2 page≡slideIndex 双形态（同传报只能用一个）· F6 slideCount=${write.total}`);
       });
     });
 
@@ -854,6 +887,12 @@ async function main() {
       // 文件名带节名 tag——docx-export-<节名>.pdf，与 xlsx-export-表1 同款规则）
       await withPage("docx", "?sample=1", async (page) => {
         await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例文档已载入"), { timeout: 30000 });
+        // F17：全量导出 selected=null（v1.2 规范——废除「整篇」哨兵）
+        const full = await editorCall(page, `async (call) => call("export_pdf", {})`);
+        if (!full.ok || full.selected !== null) {
+          throw new Error(`F17 全量导出 selected 应为 null: ${JSON.stringify(full.selected)}`);
+        }
+        console.log("      反读证据：F17 全量导出 selected=null（无「整篇」哨兵）");
         const r = await selectiveExport(page, "export_pdf", { section: "二、本周问题与处理" });
         if (r.suggested !== "docx-export-二、本周问题与处理.pdf") throw new Error(`文件名契约不符: ${r.suggested}`);
         assertPdfText(r.bytes, "docx section", { requireChinese: true, keywords: ["本周问题与处理", "热水压力不足"], forbidden: ["下周重点", "淡季长住套餐"] });

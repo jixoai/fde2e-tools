@@ -72,7 +72,7 @@ function buildTools(): WebMCPToolDef[] {
       name: "create_xlsx",
       title: "生成 .xlsx",
       description:
-        "按 sheets 结构生成并下载 xlsx-export.xlsx。sheets=[{name, rows[][]}]，rows 是二维数组，" +
+        "按 sheets 结构生成并下载 easy-xlsx-export.xlsx（v2 F19 缺省名；旧名 xlsx-export.xlsx 可显式 filename 复现）。sheets=[{name, rows[][]}]，rows 是二维数组，" +
         "单元格支持 字符串/数字/布尔/null；可选 filename 自定义下载名（自动补 .xlsx）。返回文件名/表数/行数/状态行结果。",
       inputSchema: {
         type: "object",
@@ -95,7 +95,7 @@ function buildTools(): WebMCPToolDef[] {
               additionalProperties: false,
             },
           },
-          filename: { type: "string", description: "可选下载文件名（缺省 xlsx-export.xlsx）" },
+          filename: { type: "string", description: "可选下载文件名（缺省 easy-xlsx-export.xlsx；v2 F19 与专业站区分——传 filename 可显式指定任意名，缺省名变更仅影响未指定 filename 的调用）" },
         },
         required: ["sheets"],
         additionalProperties: false,
@@ -107,7 +107,8 @@ function buildTools(): WebMCPToolDef[] {
         try {
           spec = normalizeWorkbook({ sheets: rawSheets });
         } catch (e) {
-          return { ok: false, error: e instanceof Error && e.message ? e.message : String(e) };
+          const msg = e instanceof Error && e.message ? e.message : String(e);
+          return { ok: false, error: msg, message: msg }; // F14：error/message 同值
         }
         // 文件名闭包：点击前算好（生成后页面会复位缺省，事后读会拿到缺省值）
         const filename = safeFilename(
@@ -149,7 +150,8 @@ function buildTools(): WebMCPToolDef[] {
           spec.sheets.push({ name, rows: sampleSheetRows() });
           spec = normalizeWorkbook({ sheets: spec.sheets });
         } catch (e) {
-          return { ok: false, error: e instanceof Error && e.message ? e.message : String(e) };
+          const msg = e instanceof Error && e.message ? e.message : String(e);
+          return { ok: false, error: msg, message: msg }; // F14：error/message 同值
         }
         // 写回归一 JSON（TSV 数据已并入，写 JSON 形态）并清空 TSV 区——与页面
         // 「JSON 优先」真相源一致，后续 add/create 读到的都是同一份工作簿

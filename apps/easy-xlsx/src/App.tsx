@@ -32,8 +32,8 @@ const AI_GUIDE = `===== AI 使用说明（给自动化代理读的纯文本） =
 操作步骤：
 1. 把数据填入上述输入区；点按钮 id=load-sample（文案「载入示例」）可载入内置示例工作簿（含负数/小数/布尔/多表）。
 2. 点按钮 id=preview-btn（文案「刷新预览」），下方 <div id="preview"> 显示解析出的工作表结构（首行按表头样式）。
-3. 点按钮 id=generate-xlsx-btn（文案「生成 .xlsx 下载」），浏览器开始下载 xlsx-export.xlsx。
-4. 状态行 id=status 显示「已生成 xlsx-export.xlsx（N 个工作表 · M 行）」即完成。
+3. 点按钮 id=generate-xlsx-btn（文案「生成 .xlsx 下载」），浏览器开始下载 easy-xlsx-export.xlsx（v2 F19 缺省名；旧名 xlsx-export.xlsx 可传 filename 复现）。
+4. 状态行 id=status 显示「已生成 easy-xlsx-export.xlsx（N 个工作表 · M 行）」即完成。
 
 备注：
 - URL 参数 ?sample=1（或 sample/示例）自动载入示例并刷新预览，不触发生成——URL 不承载数据（大数据走本输入区或 WebMCP 传参）。
