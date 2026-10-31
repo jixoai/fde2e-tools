@@ -109,6 +109,9 @@ async function captureSlidePngs(opts: { format?: "png" | "jpeg" } = {}): Promise
       blobs.push(blob);
     }
   } catch (e) {
+    // 对齐上方页数不符分支：失败路径必须先拆离屏岛再上抛（外层拿不到 cap，
+    // 不拆＝泄漏 fixed 容器＋整只 Vue app——对抗审查 P2）
+    cleanup();
     throw new Error("幻灯渲染失败：" + (e instanceof Error && e.message ? e.message : String(e)));
   }
   return { blobs, width: SLIDE_CAPTURE_WIDTH, height: Math.round(SLIDE_CAPTURE_WIDTH * ratio), ratio, cleanup };
@@ -116,20 +119,30 @@ async function captureSlidePngs(opts: { format?: "png" | "jpeg" } = {}): Promise
 
 /* ---------- 三通道 ---------- */
 
+/* 错误 → 人话（WebMCP execute 不 reject 的关键：未就绪/渲染失败一律
+   {ok:false, error} 返回值形态——对抗审查 P1，spec「未就绪显式拒绝」SHALL） */
+function toError(e: unknown): { ok: false; error: string } {
+  return { ok: false, error: e instanceof Error && e.message ? e.message : String(e) };
+}
+
 /** export_pdf：每页幻灯一页 PDF（页面尺寸随幻灯纵横比，横向；JPEG 内嵌控体积） */
 export async function exportSlidesPdf(filename?: string): Promise<ExportResult> {
-  const name = resolvePdfName(filename);
-  const cap = await captureSlidePngs({ format: "jpeg" });
   try {
-    const pdf = await pngsToPdf(cap.blobs, {
-      orientation: "landscape",
-      pageSize: [PAGE_WIDTH_MM, +(PAGE_WIDTH_MM * cap.ratio).toFixed(2)],
-      imageFormat: "JPEG",
-    });
-    downloadBlob(pdf.blob, name);
-    return { ok: true, filename: name, width: cap.width, height: cap.height, pages: pdf.pages };
-  } finally {
-    cap.cleanup();
+    const name = resolvePdfName(filename);
+    const cap = await captureSlidePngs();
+    try {
+      const pdf = await pngsToPdf(cap.blobs, {
+        orientation: "landscape",
+        pageSize: [PAGE_WIDTH_MM, +(PAGE_WIDTH_MM * cap.ratio).toFixed(2)],
+        imageFormat: "JPEG",
+      });
+      downloadBlob(pdf.blob, name);
+      return { ok: true, filename: name, width: cap.width, height: cap.height, pages: pdf.pages };
+    } finally {
+      cap.cleanup();
+    }
+  } catch (e) {
+    return toError(e);
   }
 }
 
@@ -140,38 +153,46 @@ export function pageName(index: number): string {
 
 /** export_png：逐页 PNG 多文件下载 */
 export async function exportSlidesPng(): Promise<ExportResult> {
-  const cap = await captureSlidePngs();
   try {
-    const files: string[] = [];
-    for (let i = 0; i < cap.blobs.length; i++) {
-      const name = pageName(i);
-      downloadBlob(cap.blobs[i], name);
-      files.push(name);
-      // 间隔触发：防浏览器「多文件下载」拦截吞掉后续文件
-      if (i < cap.blobs.length - 1) await new Promise((r) => setTimeout(r, 350));
+    const cap = await captureSlidePngs();
+    try {
+      const files: string[] = [];
+      for (let i = 0; i < cap.blobs.length; i++) {
+        const name = pageName(i);
+        downloadBlob(cap.blobs[i], name);
+        files.push(name);
+        // 间隔触发：防浏览器「多文件下载」拦截吞掉后续文件
+        if (i < cap.blobs.length - 1) await new Promise((r) => setTimeout(r, 350));
+      }
+      return { ok: true, filename: files[0], files, pages: files.length, width: cap.width, height: cap.height };
+    } finally {
+      cap.cleanup();
     }
-    return { ok: true, filename: files[0], files, pages: files.length, width: cap.width, height: cap.height };
-  } finally {
-    cap.cleanup();
+  } catch (e) {
+    return toError(e);
   }
 }
 
 /** export_long_png：全部幻灯纵向拼一张长图 */
 export async function exportSlidesLongPng(filename?: string): Promise<ExportResult> {
-  const name = resolveLongName(filename);
-  const cap = await captureSlidePngs();
   try {
-    const stack = await stackPngsVertically(cap.blobs, { gap: 12 });
-    downloadBlob(stack.blob, name);
-    return {
-      ok: true,
-      filename: name,
-      width: stack.width,
-      height: stack.height,
-      truncated: stack.truncated,
-      notice: stack.notice,
-    };
-  } finally {
-    cap.cleanup();
+    const name = resolveLongName(filename);
+    const cap = await captureSlidePngs();
+    try {
+      const stack = await stackPngsVertically(cap.blobs, { gap: 12 });
+      downloadBlob(stack.blob, name);
+      return {
+        ok: true,
+        filename: name,
+        width: stack.width,
+        height: stack.height,
+        truncated: stack.truncated,
+        notice: stack.notice,
+      };
+    } finally {
+      cap.cleanup();
+    }
+  } catch (e) {
+    return toError(e);
   }
 }
