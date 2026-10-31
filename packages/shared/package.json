@@ -12,7 +12,8 @@
     "./ai-guide": "./src/ai-guide.tsx",
     "./status": "./src/status.ts",
     "./webmcp": "./src/webmcp.ts",
-    "./download": "./src/download.ts"
+    "./download": "./src/download.ts",
+    "./export-kit": "./src/export-kit.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
