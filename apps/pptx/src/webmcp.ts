@@ -87,10 +87,16 @@ function buildTools(): WebMCPToolDef[] {
               if (items.length) slide.elements.push(buildBulletsElement(items, 220));
             }
           }
-          if (typeof input.index === "number" && input.index >= 0 && input.index < slides.slides.length) {
-            slides.updateSlideIndex(Math.floor(input.index));
+          // 空画布安全：初始 mock 尚未载入时 addSlide 会在空数组上 splice 出空洞
+          // （下游渲染 undefined.id 崩溃）——空 deck 直接 setSlides 立为首页
+          if (!slides.slides.length) {
+            slides.setSlides([slide]);
+          } else {
+            if (typeof input.index === "number" && input.index >= 0 && input.index < slides.slides.length) {
+              slides.updateSlideIndex(Math.floor(input.index));
+            }
+            slides.addSlide(slide);
           }
-          slides.addSlide(slide);
           return { index: slides.slideIndex, total: slides.slides.length, slide: slideSummary(slides.slides[slides.slideIndex]) };
         });
         return res.ok ? { ok: true, ...(res.value as Record<string, unknown>) } : res;
@@ -280,8 +286,14 @@ function attachTestHooks(): void {
     loadSample: () => {
       const m = getIsland();
       if (!m) return;
-      m.slides.setSlides(sampleDeck());
-      m.slides.updateSlideIndex(0);
+      // 等初始 deck 落定（App.vue onMounted 异步载 mock）再重置，避免被 mock 覆盖
+      const deadline = Date.now() + 10000;
+      const wait = () => new Promise((r) => setTimeout(r, 100));
+      void (async () => {
+        while (!m.slides.slides.length && Date.now() < deadline) await wait();
+        m.slides.setSlides(sampleDeck());
+        m.slides.updateSlideIndex(0);
+      })();
     },
   };
 }

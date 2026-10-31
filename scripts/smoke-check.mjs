@@ -19,10 +19,13 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { rmSync, writeFileSync } from 'node:fs';
 // 真文件反读：xlsx 用 SheetJS 社区版（根 devDeps，与页面同库但走 Node 侧独立
-// 路径反读）；docx/pptx 用 adm-zip 解 zip（MIT）核对 OOXML 关键内容
+// 路径反读）；docx/pptx 用 adm-zip 解 zip（MIT）核对 OOXML 关键内容；
+// 编辑器三站（office-editorial-upgrade）另用 mammoth（BSD-2，docx 导出桥的
+// 非亲缘独立解析器）做 Node 侧回读
 const XLSXMOD = await import("xlsx");
 const XLSX = XLSXMOD.default ?? XLSXMOD;
 const AdmZip = (await import("adm-zip")).default;
+const mammoth = (await import("mammoth")).default;
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const MIME = {
@@ -83,7 +86,7 @@ async function main() {
   });
 
   const servers = {};
-  for (const app of ["pdf-tool", "img-tool", "url-tool", "directory", "easy-xlsx", "easy-docx", "easy-pptx", "file-viewer"]) {
+  for (const app of ["pdf-tool", "img-tool", "url-tool", "directory", "easy-xlsx", "easy-docx", "easy-pptx", "file-viewer", "xlsx", "docx", "pptx"]) {
     servers[app] = { server: await serveDir(join(ROOT, "apps", app, "dist")), get port() { return servers[app].server.address().port; } };
   }
   const base = (app) => `http://127.0.0.1:${servers[app].server.address().port}`;
@@ -472,19 +475,196 @@ async function main() {
       });
     });
 
+    // ---------- 编辑器三站（office-editorial-upgrade：编辑器路径真文件反读） ----------
+    /** 编辑器站工具调用助手：getTools → executeTool（JSON.parse 归一） */
+    async function editorCall(page, fn) {
+      return await page.evaluate(async (fnSrc) => {
+        const call = async (name, input) => {
+          const ts = await document.modelContext.getTools();
+          const tool = ts.find((t) => t.name === name);
+          if (!tool) throw new Error(`工具未注册: ${name}`);
+          const raw = await document.modelContext.executeTool(tool, input);
+          return JSON.parse(raw);
+        };
+        return eval("(" + fnSrc + ")")(call);
+      }, fn);
+    }
+
+    await check("xlsx 编辑器全链：WebMCP 写入→get_snapshot 核验→导出→SheetJS 反读（值/数字/公式 f+计算值 v）", async () => {
+      await withPage("xlsx", "?sample=1", async (page) => {
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("编辑器就绪"), { timeout: 90000 });
+        const write = await editorCall(page, `async (call) => {
+          const r1 = await call("set_cells", { startRow: 8, startCol: 0, values: [["绿门探针", 42.5]] });
+          const r2 = await call("set_formula", { range: "B10", formula: "=B9*2" });
+          const snap = await call("get_snapshot", {});
+          const sheet = snap.sheets.find((s) => s.name === "业绩");
+          return { r1ok: r1.ok, r2ok: r2.ok, r2value: r2.value, a9: sheet.cellData[8]?.[0]?.v, b9: sheet.cellData[8]?.[1]?.v, b10: sheet.cellData[9]?.[1] };
+        }`);
+        if (!write.r1ok || !write.r2ok) throw new Error(`写入工具未成功: ${JSON.stringify(write)}`);
+        if (write.a9 !== "绿门探针" || write.b9 !== 42.5) throw new Error(`get_snapshot 核验不符: a9=${write.a9} b9=${write.b9}`);
+        if (write.b10?.f !== "=B9*2" || write.b10?.v !== 85) throw new Error(`公式核验不符: ${JSON.stringify(write.b10)}（引擎真算应 85）`);
+        const dlPromise = page.waitForEvent("download", { timeout: 30000 });
+        const exp = await editorCall(page, `async (call) => call("export_xlsx", {})`);
+        const download = await dlPromise;
+        if (download.suggestedFilename() !== "xlsx-export.xlsx") throw new Error(`下载文件名契约不符: ${download.suggestedFilename()}`);
+        if (!exp.ok) throw new Error(`export_xlsx 未成功: ${JSON.stringify(exp)}`);
+        const bytes = readFileSync(await download.path());
+        const wb = XLSX.read(bytes, { type: "buffer" });
+        const ws = wb.Sheets["业绩"];
+        if (!ws) throw new Error(`反读缺业绩表（实际 ${wb.SheetNames.join(",")}）`);
+        if (ws["A9"]?.v !== "绿门探针") throw new Error(`A9 反读不符: ${ws["A9"]?.v}`);
+        if (ws["B9"]?.v !== 42.5 || ws["B9"]?.t !== "n") throw new Error(`B9 反读不符（应数字 42.5）: ${ws["B9"]?.v}`);
+        if (ws["B10"]?.f !== "B9*2") throw new Error(`B10 公式反读不符: ${ws["B10"]?.f}`);
+        if (ws["B10"]?.v !== 85) throw new Error(`B10 计算值反读不符（应 85）: ${ws["B10"]?.v}`);
+        console.log(`      反读证据：A9=绿门探针 · B9=42.5(n) · B10 f=${ws["B10"].f} v=${ws["B10"].v}`);
+      });
+    });
+
+    // Univer 双坑回归（openspec: univer-write-gate）——坑①幽灵工作簿：注入简化
+    // seed（sheet 缺 id/数组形态即中招，本地 1.3.1 矩阵实证）创建的工作簿静默
+    // 拒绝一切写入，写工具必须 ok:false（含幽灵判定）；恢复工厂 seed 后 ok:true
+    await check("xlsx 编辑器双坑回归①：幽灵工作簿注入→set_cells 必须 ok:false→恢复后 ok:true", async () => {
+      await withPage("xlsx", "?sample=1", async (page) => {
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("编辑器就绪"), { timeout: 90000 });
+        const out = await page.evaluate(async () => {
+          const ts = await document.modelContext.getTools();
+          const call = async (name, input) => {
+            const tool = ts.find((t) => t.name === name);
+            return JSON.parse(await document.modelContext.executeTool(tool, input));
+          };
+          await window.__officeTest.injectGhostWorkbook();
+          const onGhost = await call("set_cells", { values: [["x"]] });
+          const restored = await window.__officeTest.restoreMainWorkbook();
+          const after = await call("set_cells", { values: [["恢复探针"]] });
+          return { onGhostOk: onGhost.ok, onGhostErr: String(onGhost.error ?? ""), restored, afterOk: after.ok };
+        });
+        if (out.onGhostOk !== false) throw new Error(`幽灵工作簿写入未被拒绝（ok=${out.onGhostOk}）——坑①防御失效`);
+        if (!out.onGhostErr.includes("幽灵工作簿")) throw new Error(`幽灵错误文案不符: ${out.onGhostErr.slice(0, 80)}`);
+        if (out.restored !== true) throw new Error("恢复健康工作簿失败");
+        if (out.afterOk !== true) throw new Error("恢复后写入仍被拒绝");
+        console.log("      证据：幽灵注入后 ok=false（含幽灵判定）→ 恢复后 ok=true");
+      });
+    });
+
+    // 坑②Rendered 门禁：生命周期挂起时写命令必须显式 ok:false（禁静默失败），
+    // 释放后 ok:true 且写入落格
+    await check("xlsx 编辑器双坑回归②：Rendered 门禁挂起→set_cells 必须 ok:false→释放后 ok:true", async () => {
+      await withPage("xlsx", "?sample=1", async (page) => {
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("编辑器就绪"), { timeout: 90000 });
+        const out = await page.evaluate(async () => {
+          const ts = await document.modelContext.getTools();
+          const call = async (name, input) => {
+            const tool = ts.find((t) => t.name === name);
+            return JSON.parse(await document.modelContext.executeTool(tool, input));
+          };
+          window.__officeTest.forcePending(true);
+          const blocked = await call("set_cells", { values: [["x"]] });
+          window.__officeTest.forcePending(false);
+          const released = await call("set_cells", { values: [["门禁释放探针"]] });
+          const snap = await call("get_snapshot", {});
+          const sheet = snap.sheets.find((s) => s.name === "业绩");
+          const landed = JSON.stringify(sheet?.cellData ?? {}).includes("门禁释放探针");
+          return { blockedOk: blocked.ok, blockedErr: String(blocked.error ?? ""), releasedOk: released.ok, landed };
+        });
+        if (out.blockedOk !== false) throw new Error(`门禁挂起时写入未被拒绝（ok=${out.blockedOk}）——坑②防御失效`);
+        if (!/渲染|就绪/.test(out.blockedErr)) throw new Error(`门禁错误文案不符: ${out.blockedErr.slice(0, 80)}`);
+        if (out.releasedOk !== true) throw new Error("门禁释放后写入仍被拒绝");
+        if (!out.landed) throw new Error("释放后写入未落快照");
+        console.log("      证据：挂起 ok=false（含未渲染判定）→ 释放 ok=true 且写入落快照");
+      });
+    });
+
+    await check("docx 编辑器全链：set_content/insert_heading/insert_table→状态核验→导出→解 zip 核对 document.xml＋mammoth 独立回读", async () => {
+      await withPage("docx", "", async (page) => {
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("编辑器就绪"), { timeout: 30000 });
+        const write = await editorCall(page, `async (call) => {
+          const r1 = await call("set_content", { content: "# 探针文档标题\\n\\n正文带**粗体**与*斜体*。", format: "markdown" });
+          const r2 = await call("insert_heading", { text: "追加二级标题", level: 2 });
+          const r3 = await call("insert_table", { rows: 2, cols: 2, header: true, data: ["指标", "值", "营收", "1.2 亿"] });
+          const text = window.__officeTest.text();
+          return { r1ok: r1.ok, r2ok: r2.ok, r3ok: r3.ok, hasProbe: text.includes("探针文档标题") && text.includes("追加二级标题") && text.includes("营收") && text.includes("1.2 亿") };
+        }`);
+        if (!write.r1ok || !write.r2ok || !write.r3ok) throw new Error(`写入工具未成功: ${JSON.stringify(write)}`);
+        if (!write.hasProbe) throw new Error(`编辑器状态核验不符（文本未含写入探针）`);
+        const dlPromise = page.waitForEvent("download", { timeout: 30000 });
+        const exp = await editorCall(page, `async (call) => call("export_docx", {})`);
+        const download = await dlPromise;
+        if (download.suggestedFilename() !== "docx-export.docx") throw new Error(`下载文件名契约不符: ${download.suggestedFilename()}`);
+        if (!exp.ok) throw new Error(`export_docx 未成功: ${JSON.stringify(exp)}`);
+        const bytes = readFileSync(await download.path());
+        const zip = new AdmZip(bytes);
+        const names = zip.getEntries().map((e) => e.entryName);
+        for (const must of ["[Content_Types].xml", "word/document.xml"]) {
+          if (!names.includes(must)) throw new Error(`OOXML 结构缺 ${must}（实际 ${names.length} 项）`);
+        }
+        const doc = zip.readAsText("word/document.xml");
+        if (!doc.includes('xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/')) throw new Error("wordprocessingml 命名空间缺失");
+        const probes = ["探针文档标题", "追加二级标题", "粗体", "斜体", "营收", "1.2 亿", "<w:b/>", "<w:i/>"];
+        const missing = probes.filter((p) => !doc.includes(p));
+        if (missing.length) throw new Error(`document.xml 缺关键内容: ${missing.join(", ")}`);
+        if (!/w:val="Heading2"/.test(doc)) throw new Error("Heading2 样式缺失（insert_heading 未映射标题层级）");
+        // mammoth 独立回读（与导出桥非亲缘的解析路径）
+        const { value: html } = await mammoth.convertToHtml({ buffer: bytes });
+        for (const probe of ["探针文档标题", "追加二级标题", "营收"]) {
+          if (!html.includes(probe)) throw new Error(`mammoth 回读缺: ${probe}`);
+        }
+        console.log(`      反读证据：zip ${names.length} 项 · document.xml 含标题/Heading2/<w:b/>/<w:i/>/表格 · mammoth 回读全命中`);
+      });
+    });
+
+    await check("pptx 编辑器全链：add_slide/set_title/add_bullets→deck 核验→导出→解 zip 核对 slideN.xml", async () => {
+      await withPage("pptx", "?sample=1", async (page) => {
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("编辑器就绪"), { timeout: 120000 });
+        const write = await editorCall(page, `async (call) => {
+          const r1 = await call("add_slide", { layout: "bullets", title: "绿门探针页", bullets: ["要点甲：绿门", "要点乙：导出"] });
+          const idx = r1.index;
+          const r2 = await call("set_title", { slideIndex: idx, text: "绿门探针页（核验改名）" });
+          const r3 = await call("add_bullets", { slideIndex: idx, items: ["追加要点丙"] });
+          const deck = window.__officeTest.deck();
+          return { r1ok: r1.ok, r2ok: r2.ok, r3ok: r3.ok, idx, total: deck.total, targetTexts: JSON.stringify(deck.slides[idx]?.texts ?? []) };
+        }`);
+        if (!write.r1ok || !write.r2ok || !write.r3ok) throw new Error(`写入工具未成功: ${JSON.stringify(write)}`);
+        if (write.total !== 3) throw new Error(`deck 页数不符: ${write.total}（期望 3）`);
+        const joined = write.targetTexts;
+        if (!joined.includes("绿门探针页（核验改名）") || !joined.includes("追加要点丙") || !joined.includes("要点甲：绿门")) {
+          throw new Error(`deck 核验不符: ${joined.slice(0, 120)}`);
+        }
+        const dlPromise = page.waitForEvent("download", { timeout: 90000 });
+        const exp = await editorCall(page, `async (call) => call("export_pptx", {})`);
+        const download = await dlPromise;
+        if (download.suggestedFilename() !== "pptx-export.pptx") throw new Error(`下载文件名契约不符: ${download.suggestedFilename()}`);
+        if (!exp.ok) throw new Error(`export_pptx 未成功: ${JSON.stringify(exp)}`);
+        const bytes = readFileSync(await download.path());
+        const zip = new AdmZip(bytes);
+        const names = zip.getEntries().map((e) => e.entryName);
+        for (const must of ["ppt/presentation.xml", "ppt/slides/slide2.xml"]) {
+          if (!names.includes(must)) throw new Error(`OOXML 结构缺 ${must}（实际 ${names.length} 项）`);
+        }
+        const slide2 = zip.readAsText("ppt/slides/slide2.xml");
+        for (const probe of ["绿门探针页（核验改名）", "要点甲：绿门", "追加要点丙"]) {
+          if (!slide2.includes(probe)) throw new Error(`slide2.xml 缺写入内容: ${probe}`);
+        }
+        console.log(`      反读证据：zip ${names.length} 项 · slide2.xml 含改名标题/要点/追加要点`);
+      });
+    });
+
     // ---------- img-tool ----------
-    await check("directory：registry 渲染 + 纯前端搜索（含 easy-* 三站+建设中占位 10 卡）", async () => {
+    await check("directory：registry 渲染 + 纯前端搜索（编辑器三站转现役后 10 卡全现役、0 建设中占位）", async () => {
       await withPage("directory", "", async (page) => {
         await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length >= 10, { timeout: 30000 });
         const total = await page.evaluate(() => document.querySelectorAll('[data-slot="card"]').length);
-        if (total !== 10) throw new Error(`卡片数不符: ${total}（期望 10＝7 现役 + 3 建设中占位）`);
+        if (total !== 10) throw new Error(`卡片数不符: ${total}（期望 10＝10 现役 + 0 建设中占位）`);
         const comingSoon = await page.evaluate(() => document.querySelectorAll('[data-testid="coming-soon-badge"]').length);
-        if (comingSoon !== 3) throw new Error(`建设中 Badge 数不符: ${comingSoon}（期望 3）`);
+        if (comingSoon !== 0) throw new Error(`建设中 Badge 数不符: ${comingSoon}（期望 0——编辑器三站已转现役）`);
+        // 「图片」命中 img-tool + pptx 编辑器（特性描述含「图片表格图表」，2026-10-31 起）
         await page.fill('input[aria-label="搜索工具"]', "图片");
-        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
+        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 2, { timeout: 30000 });
         const count = await page.textContent("main, body");
-        if (!count.includes("1 / 10")) throw new Error("搜索计数未显示 1 / 10");
+        if (!count.includes("2 / 10")) throw new Error("搜索计数未显示 2 / 10");
         await page.fill('input[aria-label="搜索工具"]', "表格生成");
+        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
+        // 编辑器三站转现役：主域名卡带完整 WebMCP 面投影（抽查 xlsx 卡）
+        await page.fill('input[aria-label="搜索工具"]', "univer");
         await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
       });
     });

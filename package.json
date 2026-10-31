@@ -21,12 +21,16 @@
     "test:file-viewer": "pnpm --filter file-viewer test",
     "dev:easy-xlsx": "pnpm --filter easy-xlsx dev",
     "dev:easy-docx": "pnpm --filter easy-docx dev",
-    "dev:easy-pptx": "pnpm --filter easy-pptx dev"
+    "dev:easy-pptx": "pnpm --filter easy-pptx dev",
+    "dev:xlsx-editor": "pnpm --filter xlsx dev",
+    "dev:docx-editor": "pnpm --filter docx dev",
+    "dev:pptx-editor": "pnpm --filter pptx dev"
   },
   "devDependencies": {
     "playwright-core": "^1.55.0",
     "adm-zip": "^0.5.16",
-    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "mammoth": "^1.13.0"
   },
   "license": "Apache-2.0"
 }

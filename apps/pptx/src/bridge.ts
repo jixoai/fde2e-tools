@@ -127,6 +127,17 @@ export function mountPPTist(container: HTMLElement, onStatus: StatusSink): Promi
       import: importApi as unknown as ImportApi,
       ready: true,
     };
+    // 初始 deck 落定门：App.vue onMounted 异步载 mock（setSlides），就绪信号
+    // 必须等「deck 非空且长度稳定」——否则 status 先报就绪、写入与 mock 载入
+    // 竞态（add_slide 空画布分支/sample 重置被 mock 覆盖，绿门实证 4≠3）。
+    const settleDeadline = Date.now() + 30000;
+    let lastLen = -1;
+    while (Date.now() < settleDeadline) {
+      const len = slides.slides.length;
+      if (len > 0 && len === lastLen) break;
+      lastLen = len;
+      await new Promise((r) => setTimeout(r, 150));
+    }
     onStatus("幻灯编辑器就绪：画布可直接编辑，AI 可经 WebMCP 驱动 store。", "ok");
     return island;
   })();

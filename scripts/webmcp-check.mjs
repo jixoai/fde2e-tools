@@ -4,10 +4,12 @@
  * 验收（openspec change project-bootstrap / webmcp-tools + office-suite /
  * real-file-assertion 能力）：
  * 1. **原生路径**（headless Chromium + `--enable-blink-features=WebMCP`，
- *    Chrome 156 实测有原生 API）：黄页、三存量工具与办公三站（easy-*）`getTools()` 能
+ *    Chrome 156 实测有原生 API）：黄页、三存量工具与办公三站（easy-*）与
+ *    编辑器三站（xlsx/docx/pptx，office-editorial-upgrade）`getTools()` 能
  *    枚举到全部注册工具；executeTool 返回 DOMString（spec 形态）；export_pdf
  *    走到「导出成功」终态（B3 断言面）；三构建站 create_* 走 executeTool
- *    全链——真下载捕获 + 文件名契约 + ok 终态（真文件断言 ①）。
+ *    全链——真下载捕获 + 文件名契约 + ok 终态（真文件断言 ①）；编辑器三站
+ *    走「写入（未就绪 ok:false 按人话重试）→ 导出真下载」全链。
  * 2. **polyfill 路径**（同浏览器、无 flag）：官方 polyfill 自动兜底，同形
  *    getTools/executeTool 可枚举可调用；**偏差实证**——polyfill 的 executeTool
  *    裸返回对象（不 JSON.stringify，vendor 不能改），消费侧必须过
@@ -35,6 +37,10 @@ const EXPECT = {
   "easy-xlsx": { tools: ["create_xlsx", "add_sheet_sample"] },
   "easy-docx": { tools: ["create_docx", "append_docx_markdown"] },
   "easy-pptx": { tools: ["create_pptx", "add_slide"] },
+  // ---------- 专业编辑器三站（office-editorial-upgrade） ----------
+  xlsx: { tools: ["set_cells", "set_formula", "format_range", "add_sheet", "import_xlsx", "export_xlsx", "get_snapshot"] },
+  docx: { tools: ["set_content", "append_markdown", "insert_heading", "insert_table", "export_docx", "import_docx"] },
+  pptx: { tools: ["add_slide", "set_title", "add_bullets", "export_pptx", "import_pptx"] },
 };
 
 /**
@@ -61,6 +67,38 @@ const FULL_CHAIN = [
     filename: "pptx-export.pptx",
   },
 ];
+
+/**
+ * 编辑器三站 executeTool 全链（office-editorial-upgrade）：写工具先落编辑器内核
+ * （未就绪 ok:false → 按人话错误重试等待，不得误报链路失败），导出工具触发真
+ * 下载 + 文件名契约 + ok 终态。
+ */
+const EDITOR_FULL_CHAIN = [
+  {
+    app: "xlsx",
+    steps: [{ tool: "set_cells", input: { values: [["webmcp-check", 1.5]] } }],
+    exportTool: "export_xlsx",
+    filename: "xlsx-export.xlsx",
+    readyMs: 90000,
+  },
+  {
+    app: "docx",
+    steps: [{ tool: "set_content", input: { content: "# webmcp-check\n\n探针段落", format: "markdown" } }],
+    exportTool: "export_docx",
+    filename: "docx-export.docx",
+    readyMs: 30000,
+  },
+  {
+    app: "pptx",
+    steps: [{ tool: "add_slide", input: { layout: "title", title: "webmcp-check 探针页" } }],
+    exportTool: "export_pptx",
+    filename: "pptx-export.pptx",
+    readyMs: 120000,
+  },
+];
+
+/** 编辑器写工具的就绪重试语义：ok:false 且错误为「未就绪/渲染中」→ 等待重试 */
+const READY_RETRY = /就绪|渲染|加载|启动/;
 
 /** 与 @fde2e-tools/shared/webmcp 的 normalizeExecuteResult 同义（脚本侧独立实现） */
 const normalizeExecuteResult = (r) => (typeof r === "string" ? r : JSON.stringify(r));
@@ -119,38 +157,64 @@ function record(name, ok, extra = "") {
   if (!ok) failed = true;
 }
 
-/** 等页面 modelContext 就绪并枚举全部预期工具（原生或 polyfill 同形 API） */
-async function assertToolsEnumerated(browser, app, expect) {
+/**
+ * 等页面 modelContext 就绪并枚举全部预期工具（原生或 polyfill 同形 API）。
+ * 两处实证修正（2026-10-31 编辑器站扩容）：
+ * 1. 谓词恒返回真值状态对象（null 语义在部分 playwright 版本会被当 resolve 值）；
+ * 2. **每站独立启动浏览器**——Chrome 原生 WebMCP 注册队列在同浏览器连续多页
+ *    枚举后出现「后开页面 getTools() 永久缺工具」的实现怪癖（11 站序列复现：
+ *    xlsx 2/7→重试后 4/7 不收敛；新浏览器即满员），与工具定义本身无关——
+ *    枚举断言一律新开浏览器，全链断言靠 executeTool 就绪重试容忍抖动。
+ * 谓词恒返回真值状态对象，由外层裁决是否齐套。 */
+async function assertToolsEnumerated(app, expect, withFlag) {
+  const browser = await chromium.launch({
+    executablePath: findChrome(),
+    headless: true,
+    args: withFlag ? ["--enable-blink-features=WebMCP"] : [],
+  });
   const server = await serveDir(join(ROOT, "apps", app, "dist"));
   const page = await browser.newPage();
   try {
     await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: "load" });
-    const names = await page
-      .waitForFunction(
-        (expected) =>
-          document.modelContext
-            ? document.modelContext
-                .getTools()
-                .then((ts) => (ts.length >= expected.length ? ts.map((t) => t.name) : null))
-            : null,
-        expect.tools,
-        { timeout: 15000, polling: 250 },
-      )
-      .then((h) => h.jsonValue());
-    const missing = expect.tools.filter((t) => !names.includes(t));
-    if (missing.length) throw new Error(`缺工具: ${missing.join(", ")}（实际: ${names.join(", ")}）`);
-    return names;
+    /* 实证（2026-10-31 编辑器站扩容）：对注册中的页面高频 getTools() 轮询会干扰
+     * Chrome 原生注册队列——250/500ms 轮询下后注册的工具永久丢失（xlsx 2/7、
+     * docx 3/6 不收敛），慢轮询（≥2.5s）或「等页面就绪后低频单次枚举＋重试」
+     * 稳定满员。此处取后者：先等 #status 编辑器/工具站自报就绪，再 3s 间隔
+     * 最多 8 次单次枚举。 */
+    await page
+      .waitForFunction(() => {
+        const el = document.getElementById("status");
+        return el && el.textContent && el.textContent.length > 0 && !/正在|加载/.test(el.textContent);
+      }, undefined, { timeout: 90000, polling: 500 })
+      .catch(() => null);
+    let state = { ready: false, names: [] };
+    for (let attempt = 0; attempt < 8; attempt++) {
+      await page.waitForTimeout(3000);
+      state = await page.evaluate(async (expected) => {
+        if (!document.modelContext) return { ready: false, names: [] };
+        const ts = await document.modelContext.getTools();
+        return { ready: ts.length >= expected.length, names: ts.map((t) => t.name) };
+      }, expect.tools);
+      if (state.ready) break;
+    }
+    if (!state.ready) {
+      throw new Error(`90s+ 未枚举齐（modelContext=${state.names.length} 个工具: ${state.names.join(", ")}）`);
+    }
+    const missing = expect.tools.filter((t) => !state.names.includes(t));
+    if (missing.length) throw new Error(`缺工具: ${missing.join(", ")}（实际: ${state.names.join(", ")}）`);
+    return state.names;
   } finally {
     await page.close();
     server.close();
+    await browser.close();
   }
 }
 
 async function assertNativePath(browser) {
-  // 全部页面枚举（原生：黄页+三存量工具+办公三站）
+  // 全部页面枚举（原生：黄页+三存量工具+办公三站+编辑器三站；每站独立浏览器）
   for (const [app, expect] of Object.entries(EXPECT)) {
     try {
-      const names = await assertToolsEnumerated(browser, app, expect);
+      const names = await assertToolsEnumerated(app, expect, true);
       record(`[原生] ${app}: getTools() → [${names.join(", ")}]`, true);
     } catch (e) {
       record(`[原生] ${app}: getTools()`, false, e.message);
@@ -238,7 +302,7 @@ async function assertNativePath(browser) {
       const server = await serveDir(join(ROOT, "apps", chain.app, "dist"));
       const page = await browser.newPage();
       await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: "load" });
-      const dlPromise = page.waitForEvent("download", { timeout: 30000 });
+      const dlPromise = page.waitForEvent("download", { timeout: 30000 }).catch(() => null);
       const out = await page
         .waitForFunction(
           ([toolName, input]) =>
@@ -255,10 +319,11 @@ async function assertNativePath(browser) {
         )
         .then((h) => h.jsonValue());
       const download = await dlPromise;
-      const suggested = download.suggestedFilename();
+      const suggested = download ? download.suggestedFilename() : null;
       await page.close();
       server.close();
       if (!out.ok) throw new Error(`executeTool 未成功: ${JSON.stringify(out)}`);
+      if (!download) throw new Error("未捕获到 download 事件（30s）");
       if (suggested !== chain.filename) {
         throw new Error(`下载文件名契约不符: got ${suggested}, want ${chain.filename}`);
       }
@@ -270,13 +335,87 @@ async function assertNativePath(browser) {
       record(`[原生] ${chain.app} executeTool(${chain.tool}) 全链`, false, e.message);
     }
   }
+
+  // 编辑器三站 executeTool 全链（office-editorial-upgrade）：写入（就绪重试）
+  // → 导出真下载 + 文件名契约 + ok 终态。写工具 ok:false 且错误为「未就绪/
+  // 渲染中/加载中」= 门禁显式拒绝（预期语义），等待重试而非误报链路失败。
+  for (const chain of EDITOR_FULL_CHAIN) {
+    try {
+      const server = await serveDir(join(ROOT, "apps", chain.app, "dist"));
+      const page = await browser.newPage();
+      await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: "load" });
+      const dlPromise = page.waitForEvent("download", { timeout: chain.readyMs }).catch(() => null);
+      const stepResults = [];
+      for (const step of chain.steps) {
+        const stepOut = await page
+          .waitForFunction(
+            ([toolName, input, maxMs, retryable]) =>
+              document.modelContext
+                ? document.modelContext.getTools().then(async (ts) => {
+                    const tool = ts.find((t) => t.name === toolName);
+                    if (!tool) return null;
+                    const deadline = Date.now() + maxMs;
+                    for (;;) {
+                      const raw = await document.modelContext.executeTool(tool, input);
+                      const parsed = JSON.parse(raw);
+                      if (parsed.ok) return parsed;
+                      if (Date.now() > deadline || !new RegExp(retryable).test(String(parsed.error ?? ""))) return parsed;
+                      await new Promise((r) => setTimeout(r, 1000));
+                    }
+                  })
+                : null,
+            [step.tool, step.input, chain.readyMs, READY_RETRY.source],
+            { timeout: chain.readyMs + 30000, polling: 1000 },
+          )
+          .then((h) => h.jsonValue());
+        stepResults.push({ tool: step.tool, out: stepOut });
+        if (!stepOut.ok) throw new Error(`写入工具 ${step.tool} 未成功: ${JSON.stringify(stepOut)}`);
+      }
+      const exportOutPromise = page
+        .waitForFunction(
+          ([toolName, maxMs, retryable]) =>
+            document.modelContext
+              ? document.modelContext.getTools().then(async (ts) => {
+                  const tool = ts.find((t) => t.name === toolName);
+                  if (!tool) return null;
+                  const deadline = Date.now() + maxMs;
+                  for (;;) {
+                    const raw = await document.modelContext.executeTool(tool, {});
+                    const parsed = JSON.parse(raw);
+                    if (parsed.ok) return parsed;
+                    if (Date.now() > deadline || !new RegExp(retryable).test(String(parsed.error ?? ""))) return parsed;
+                    await new Promise((r) => setTimeout(r, 1000));
+                  }
+                })
+              : null,
+          [chain.exportTool, chain.readyMs, READY_RETRY.source],
+          { timeout: chain.readyMs + 30000, polling: 1000 },
+        )
+        .then((h) => h.jsonValue())
+        .catch((e) => ({ ok: false, error: "导出轮询失败: " + e.message.slice(0, 80) }));
+      const [exportOut, downloadRaw] = await Promise.all([exportOutPromise, dlPromise]);
+      const suggested = downloadRaw ? downloadRaw.suggestedFilename() : null;
+      await page.close();
+      server.close();
+      if (!exportOut.ok) throw new Error(`导出工具 ${chain.exportTool} 未成功: ${JSON.stringify(exportOut)}`);
+      if (suggested !== chain.filename) {
+        throw new Error(`下载文件名契约不符: got ${suggested}, want ${chain.filename}`);
+      }
+      record(
+        `[原生] ${chain.app} 编辑器全链：${chain.steps.map((s) => s.tool).join("+")} + ${chain.exportTool} 真下载 ${suggested} + ok 终态`,
+        true,
+      );
+    } catch (e) {
+      record(`[原生] ${chain.app} 编辑器全链`, false, e.message);
+    }
+  }
 }
 
 async function assertPolyfillPath(browser) {
-  // 全部页面枚举（polyfill 兜底，无 flag）
+  // 全部页面枚举（polyfill 兜底，无 flag；每站独立浏览器——同原生路径）
   for (const [app, expect] of Object.entries(EXPECT)) {
     try {
-      const names = await assertToolsEnumerated(browser, app, expect);
+      const names = await assertToolsEnumerated(app, expect, false);
       record(`[polyfill] ${app}: getTools() → [${names.join(", ")}]`, true);
     } catch (e) {
       record(`[polyfill] ${app}: getTools()`, false, e.message);
@@ -362,7 +501,7 @@ async function main() {
     console.log(`${r.ok ? "✓" : "✗"} ${r.name}${r.ok ? "" : " → " + r.extra}`);
   }
   if (failed) process.exit(1);
-  console.log("全绿：原生/polyfill 双路径枚举齐 + 契约往返 + export_pdf 终态 + 三站 executeTool 真下载全链");
+  console.log("全绿：原生/polyfill 双路径枚举齐 + 契约往返 + export_pdf 终态 + easy-* 三站 executeTool 真下载全链 + 编辑器三站写入/导出全链");
 }
 
 main();
