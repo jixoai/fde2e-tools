@@ -13,12 +13,12 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { AiGuide } from "@fde2e-tools/shared/ai-guide";
+import { normalizeWorkerContainer, openHtml2pdfWorker, withColorGuard } from "@fde2e-tools/shared/export-kit";
 import { statusTextClass, type StatusKind } from "@fde2e-tools/shared/status";
 import { Button } from "@fde2e-tools/shared/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@fde2e-tools/shared/ui/card";
 import { Label } from "@fde2e-tools/shared/ui/label";
 import { CONTENT_CSS } from "./content-css";
-import { installExportColorGuard } from "./export-color-guard";
 import { SAMPLE_MD } from "./sample";
 import { registerAppTools } from "./webmcp";
 
@@ -148,7 +148,7 @@ export default function App() {
     r.readAsText(f);
   }
 
-  function onExport() {
+  async function onExport() {
     if (!exportSourceRef.current && !render()) return;
     const exportArea = exportAreaRef.current;
     if (!exportArea) return;
@@ -163,21 +163,26 @@ export default function App() {
       pagebreak: { mode: ["css", "legacy"] },
     };
     // B1 色守卫：导出前把全文档 oklch 变量钉成 sRGB（html2canvas 1.4.x 不识别
-    // oklch 会直接抛错），导出落定后卸载恢复主题原样
-    const uninstallGuard = installExportColorGuard();
-    window
-      .html2pdf()
-      .set(opt)
-      .from(exportArea)
-      .save()
-      .then(() => setStatus({ msg: "导出成功：文件已由浏览器下载", kind: "ok" }))
-      .catch((err: unknown) => {
-        setStatus({
-          msg: "导出失败：" + (err instanceof Error && err.message ? err.message : String(err)),
-          kind: "error",
-        });
-      })
-      .finally(() => uninstallGuard());
+    // oklch 会直接抛错），导出落定后卸载恢复主题原样。守卫已共享化为
+    // @fde2e-tools/shared/export-kit（export-pdf-png 迁移），行为逐字同源。
+    // 管线改显式分步（export-pdf-png）：toContainer 后做容器归一化——html2pdf
+    // 只把克隆 position 重置为 relative 不重置 left，export-area 的 left:-10000
+    // 会让克隆整体漂出容器，产物近空白（3058 字节空壳——2026-10-31 排障实证；
+    // 归一化后产物含完整正文）。状态行/文件名/调用参数契约逐字不变。
+    try {
+      await withColorGuard(async () => {
+        const worker = openHtml2pdfWorker().set(opt).from(exportArea);
+        await worker.toContainer();
+        normalizeWorkerContainer(worker, 794, exportArea.scrollHeight);
+        await worker.save();
+      }, exportArea);
+      setStatus({ msg: "导出成功：文件已由浏览器下载", kind: "ok" });
+    } catch (err: unknown) {
+      setStatus({
+        msg: "导出失败：" + (err instanceof Error && err.message ? err.message : String(err)),
+        kind: "error",
+      });
+    }
   }
 
   // WebMCP：render_preview / export_pdf（原生或官方 polyfill，均幂等）
