@@ -39,10 +39,11 @@ const EXPECT = {
   "easy-docx": { tools: ["create_docx", "append_docx_markdown"] },
   "easy-pptx": { tools: ["create_pptx", "add_slide"] },
   // ---------- 专业编辑器三站（office-editorial-upgrade） ----------
-  // export-pdf-png 扩容：+export_pdf / export_png（pptx 再 +export_long_png）
+  // export-pdf-png 扩容：+export_pdf / export_png（pptx 再 +export_long_png；
+  // interface-consistency 批：pptx +export_pages_png 别名工具）
   xlsx: { tools: ["set_cells", "set_formula", "format_range", "add_sheet", "import_xlsx", "export_xlsx", "get_snapshot", "export_pdf", "export_png"] },
   docx: { tools: ["set_content", "append_markdown", "insert_heading", "insert_table", "export_docx", "import_docx", "export_pdf", "export_png"] },
-  pptx: { tools: ["add_slide", "set_title", "add_bullets", "export_pptx", "import_pptx", "export_pdf", "export_png", "export_long_png"] },
+  pptx: { tools: ["add_slide", "set_title", "add_bullets", "export_pptx", "import_pptx", "export_pdf", "export_png", "export_pages_png", "export_long_png"] },
 };
 
 /**
@@ -75,6 +76,63 @@ const FULL_CHAIN = [
  * （未就绪 ok:false → 按人话错误重试等待，不得误报链路失败），导出工具触发真
  * 下载 + 文件名契约 + ok 终态。
  */
+/**
+ * 非法入参矩阵（interface-consistency 制度化①）：每工具 2-3 个非法输入必须
+ * resolve {ok:false, error 非空}（word 命中即人话证据）且 execute 不 reject
+ * （F16 类断层：裸 throw 在绿门这里现形）。编辑器站的矩阵挂在
+ * EDITOR_FULL_CHAIN[].illegal（编辑器就绪后执行——选择器互斥等校验在就绪门之后）。
+ */
+const ILLEGAL_MATRIX = [
+  {
+    app: "pdf-tool",
+    cases: [
+      { tool: "render_preview", input: {}, word: "输入为空" },
+      { tool: "render_preview", input: { content: "" }, word: "输入为空" },
+    ],
+  },
+  {
+    app: "img-tool",
+    cases: [
+      { tool: "overlay_text", input: {}, word: "底图" },
+      { tool: "export_png", input: {}, word: "底图" },
+    ],
+  },
+  {
+    app: "url-tool",
+    cases: [
+      { tool: "pack_url", input: {}, word: "base" },
+      { tool: "decode_url", input: { q: "!!!" }, word: "" },
+    ],
+  },
+  {
+    app: "file-viewer",
+    cases: [
+      { tool: "preview_file", input: {}, word: "url 参数必填" },
+    ],
+  },
+  {
+    app: "easy-xlsx",
+    cases: [{ tool: "create_xlsx", input: {}, word: "sheets 结构错误" }],
+  },
+  {
+    app: "easy-docx",
+    cases: [{ tool: "create_docx", input: {}, word: "输入为空" }],
+  },
+  {
+    app: "easy-pptx",
+    cases: [{ tool: "create_pptx", input: {}, word: "slides 结构错误" }],
+  },
+  {
+    app: "directory",
+    // 空 query＝全量列表属合法语义，非法矩阵无例；只做正例（F15：ok:true 面）
+    cases: [],
+    // 正例：判定谓词只在 Node 侧求值（函数不进 waitForFunction 序列化）
+    positive: [
+      { tool: "list_tools", input: {}, check: "list_ok" },
+      { tool: "search_tools", input: { query: "pdf" }, check: "search_ok" },
+    ],
+  },
+];
 const EDITOR_FULL_CHAIN = [
   {
     app: "xlsx",
@@ -82,6 +140,16 @@ const EDITOR_FULL_CHAIN = [
     steps: [{ tool: "set_cells", input: { values: [["webmcp-check", 1.5]] } }],
     exportTool: "export_xlsx",
     filename: "xlsx-export.xlsx",
+    // 非法入参矩阵（编辑器就绪后执行）：选择器互斥/缺关键字段/A1 非法——全部
+    // 必须 resolve {ok:false,error}（execute 不 reject，F16 回归）
+    illegal: [
+      { tool: "set_cells", input: {}, word: "二维数组" },
+      { tool: "set_formula", input: { range: "!!", formula: "=1" }, word: "非法单元格地址" },
+      { tool: "format_range", input: { range: "##", styles: { bold: true } }, word: "非法单元格地址" },
+      { tool: "export_pdf", input: { items: [{ sheet: "周营收" }], sheets: ["房源价格表"] }, word: "只能用一个" },
+      { tool: "export_pdf", input: { items: [{ sheet: "周营收", range: "hello" }] }, word: "非法区域" },
+      { tool: "export_pdf", input: { items: [{ sheet: "周营收", range: "Z50:AB60" }] }, word: "无交集" },
+    ],
     // export-pdf-png 扩容：展示级导出真下载断言（%PDF / PNG 头）
     extraExports: [
       {
@@ -101,6 +169,11 @@ const EDITOR_FULL_CHAIN = [
     steps: [{ tool: "set_content", input: { content: "# webmcp-check\n\n探针段落", format: "markdown" } }],
     exportTool: "export_docx",
     filename: "docx-export.docx",
+    illegal: [
+      { tool: "export_pdf", input: { items: [{ section: "一" }], section: "二" }, word: "只能用一个" },
+      { tool: "export_pdf", input: { items: [{}] }, word: "缺 section" },
+      { tool: "export_pdf", input: { items: [{ section: "不存在的节" }] }, word: "可用标题" },
+    ],
     extraExports: [
       { tool: "export_pdf", filename: "docx-export.pdf", header: "%PDF", keywords: ["青旅", "房型表现"] },
       { tool: "export_png", filename: "docx-long.png", header: "png" },
@@ -113,6 +186,11 @@ const EDITOR_FULL_CHAIN = [
     steps: [{ tool: "add_slide", input: { layout: "title", title: "webmcp-check 探针页" } }],
     exportTool: "export_pptx",
     filename: "pptx-export.pptx",
+    illegal: [
+      { tool: "export_pdf", input: { items: [{ page: 2 }], pages: [3] }, word: "只能用一个" },
+      { tool: "export_pdf", input: { items: [{ page: 99 }] }, word: "越界" },
+      { tool: "export_pages_png", input: { items: [{ page: 0 }] }, word: "越界" },
+    ],
     extraExports: [
       { tool: "export_pdf", filename: "pptx-export.pdf", header: "%PDF", keywords: ["青旅门店周会汇报", "入住间夜"] },
       { tool: "export_png", filename: "pptx-page-01.png", header: "png" },
@@ -323,6 +401,71 @@ async function assertNativePath(browser) {
     record("[原生] pdf-tool executeTool(export_pdf) 终态", false, e.message);
   }
 
+  // 非法入参矩阵（interface-consistency 制度化①）：每工具非法输入必须
+  // resolve {ok:false, error 非空}（word 命中）且 execute 不 reject；
+  // positive 正例断言（F15：directory 查询工具 ok:true）
+  const POSITIVE_PREDICATES = {
+    list_ok: (r) => r.ok === true && r.count >= 10,
+    search_ok: (r) => r.ok === true && r.count >= 1,
+  };
+  for (const matrix of ILLEGAL_MATRIX) {
+    try {
+      const server = await serveDir(join(ROOT, "apps", matrix.app, "dist"));
+      const page = await browser.newPage();
+      await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: "load" });
+      const plain = {
+        cases: (matrix.cases ?? []).map((c) => ({ tool: c.tool, input: c.input, word: c.word })),
+        positive: (matrix.positive ?? []).map((c) => ({ tool: c.tool, input: c.input })),
+      };
+      const out = await page
+        .waitForFunction(
+          async ([matrix]) => {
+            if (!document.modelContext) return null;
+            const ts = await document.modelContext.getTools();
+            const run = async (toolName, input) => {
+              const tool = ts.find((t) => t.name === toolName);
+              if (!tool) return { ok: false, error: "工具未注册: " + toolName };
+              try {
+                const raw = await document.modelContext.executeTool(tool, input);
+                return typeof raw === "string" ? JSON.parse(raw) : raw;
+              } catch (e) {
+                return { ok: false, error: "execute reject（违反不 reject 契约）: " + (e?.message ?? e) };
+              }
+            };
+            const results = [];
+            for (const c of matrix.cases ?? []) results.push({ kind: "illegal", tool: c.tool, r: await run(c.tool, c.input), word: c.word });
+            for (const c of matrix.positive ?? []) results.push({ kind: "positive", tool: c.tool, r: await run(c.tool, c.input) });
+            return results;
+          },
+          [plain],
+          { timeout: 20000, polling: 500 },
+        )
+        .then((h) => h.jsonValue());
+      if (!Array.isArray(out)) throw new Error("矩阵未执行（modelContext 未就绪？）");
+      for (const item of out) {
+        if (item.kind === "positive") {
+          const c = matrix.positive.find((x) => x.tool === item.tool);
+          const pred = POSITIVE_PREDICATES[c.check];
+          if (!pred || !pred(item.r)) throw new Error(`正例断言失败（${item.tool}）: ${JSON.stringify(item.r).slice(0, 120)}`);
+          continue;
+        }
+        if (item.r.ok !== false) throw new Error(`非法入参未被拒绝（${item.tool}）: ${JSON.stringify(item.r).slice(0, 120)}`);
+        if (!String(item.r.error ?? "")) throw new Error(`非法入参拒绝缺 error（${item.tool}）`);
+        if (item.word && !String(item.r.error).includes(item.word)) {
+          throw new Error(`非法入参报错未命中「${item.word}」（${item.tool}）: ${String(item.r.error).slice(0, 120)}`);
+        }
+      }
+      record(
+        `[原生] ${matrix.app} 非法入参矩阵 ${(matrix.cases ?? []).length} 项${matrix.positive ? `＋正例 ${matrix.positive.length} 项` : ""}：ok:false 全带 error 不 reject`,
+        true,
+      );
+      await page.close();
+      server.close();
+    } catch (e) {
+      record(`[原生] ${matrix.app} 非法入参矩阵`, false, e.message);
+    }
+  }
+
   // 三构建站 executeTool 全链（真文件断言 ①）：executeTool 必须触发真实下载
   // （捕获 download 事件 + 文件名契约），返回 ok=true —— 不是只看状态行
   for (const chain of FULL_CHAIN) {
@@ -423,6 +566,30 @@ async function assertNativePath(browser) {
         .catch((e) => ({ ok: false, error: "导出轮询失败: " + e.message.slice(0, 80) }));
       const [exportOut, downloadRaw] = await Promise.all([exportOutPromise, dlPromise]);
       const suggested = downloadRaw ? downloadRaw.suggestedFilename() : null;
+      // 非法入参矩阵（就绪页同款，页面关闭前执行）：全部 resolve {ok:false,error} 且 word 命中
+      for (const bad of chain.illegal ?? []) {
+        const out = await page
+          .evaluate(
+            async ([toolName, input]) => {
+              const ts = await document.modelContext.getTools();
+              const tool = ts.find((t) => t.name === toolName);
+              if (!tool) return { ok: false, error: "工具未注册: " + toolName };
+              try {
+                const raw = await document.modelContext.executeTool(tool, input);
+                const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+                return parsed;
+              } catch (e) {
+                return { ok: false, error: "execute reject（违反不 reject 契约）: " + (e?.message ?? e) };
+              }
+            },
+            [bad.tool, bad.input],
+          );
+        if (out.ok !== false) throw new Error(`非法入参未被拒绝（${bad.tool} ${JSON.stringify(bad.input)}）: ${JSON.stringify(out).slice(0, 120)}`);
+        if (!String(out.error ?? "")) throw new Error(`非法入参拒绝缺 error（${bad.tool}）`);
+        if (bad.word && !String(out.error).includes(bad.word)) {
+          throw new Error(`非法入参报错未命中「${bad.word}」（${bad.tool}）: ${String(out.error).slice(0, 120)}`);
+        }
+      }
       await page.close();
       server.close();
       if (!exportOut.ok) throw new Error(`导出工具 ${chain.exportTool} 未成功: ${JSON.stringify(exportOut)}`);
@@ -606,7 +773,7 @@ async function main() {
     console.log(`${r.ok ? "✓" : "✗"} ${r.name}${r.ok ? "" : " → " + r.extra}`);
   }
   if (failed) process.exit(1);
-  console.log("全绿：原生/polyfill 双路径枚举齐 + 契约往返 + export_pdf 终态 + easy-* 三站 executeTool 真下载全链 + 编辑器三站写入/导出全链");
+  console.log("全绿：原生/polyfill 双路径枚举齐 + 契约往返 + export_pdf 终态 + easy-* 三站 executeTool 真下载全链 + 编辑器三站写入/导出全链 + 非法入参矩阵（ok:false 全带 error 不 reject）");
 }
 
 main();

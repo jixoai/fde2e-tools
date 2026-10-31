@@ -18,7 +18,7 @@ import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { rmSync, writeFileSync } from 'node:fs';
-import { assertPdfText, pdfPageInkRatio } from './pdf-assert.mjs';
+import { assertPdfText, pdfPageInkRatio, pdfWordBoxes } from './pdf-assert.mjs';
 // 真文件反读：xlsx 用 SheetJS 社区版（根 devDeps，与页面同库但走 Node 侧独立
 // 路径反读）；docx/pptx 用 adm-zip 解 zip（MIT）核对 OOXML 关键内容；
 // 编辑器三站（office-editorial-upgrade）另用 mammoth（BSD-2，docx 导出桥的
@@ -850,16 +850,293 @@ async function main() {
         if (bad.ok !== false || !String(bad.error ?? "").includes("可用表")) throw new Error(`缺表未人话报错: ${JSON.stringify(bad)}`);
         console.log("      反读证据：xlsx-export-周营收.pdf（含「入住间夜」不含「房源价格表」）· selected=[周营收] · 缺表报「可用表」");
       });
-      // docx：section 单节 → 含该节不含后续节；缺节列出可用标题
+      // docx：section 单节 → 含该节不含后续节；缺节列出可用标题（F9：选择导出
+      // 文件名带节名 tag——docx-export-<节名>.pdf，与 xlsx-export-表1 同款规则）
       await withPage("docx", "?sample=1", async (page) => {
         await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例文档已载入"), { timeout: 30000 });
         const r = await selectiveExport(page, "export_pdf", { section: "二、本周问题与处理" });
-        if (r.suggested !== "docx-export.pdf") throw new Error(`文件名契约不符: ${r.suggested}`);
+        if (r.suggested !== "docx-export-二、本周问题与处理.pdf") throw new Error(`文件名契约不符: ${r.suggested}`);
         assertPdfText(r.bytes, "docx section", { requireChinese: true, keywords: ["本周问题与处理", "热水压力不足"], forbidden: ["下周重点", "淡季长住套餐"] });
         if (r.out.selected?.[0] !== "二、本周问题与处理") throw new Error(`selected 不符: ${JSON.stringify(r.out.selected)}`);
         const bad = await editorCall(page, `async (call) => call("export_pdf", { section: "不存在的节" })`);
         if (bad.ok !== false || !String(bad.error ?? "").includes("可用标题")) throw new Error(`缺节未人话报错: ${JSON.stringify(bad)}`);
-        console.log("      反读证据：docx-export.pdf 单节（含「热水压力不足」不含「下周重点」）· selected=[二、本周问题与处理] · 缺节报「可用标题」");
+        // F4：items 多节选择（section 单值的断层修复）——两节拼接，顺序按 items
+        const multi = await selectiveExport(page, "export_pdf", { items: [{ section: "一、经营概况" }, { section: "三、下周重点" }] });
+        if (multi.suggested !== "docx-export-一、经营概况-三、下周重点.pdf") throw new Error(`items 多节文件名契约不符: ${multi.suggested}`);
+        assertPdfText(multi.bytes, "docx items 多节", { requireChinese: true, keywords: ["经营概况", "下周重点"], forbidden: ["热水压力不足"] });
+        if (multi.out.selected?.[0]?.section !== "一、经营概况" || multi.out.selected?.[1]?.section !== "三、下周重点") {
+          throw new Error(`items 多节 selected 不符: ${JSON.stringify(multi.out.selected)}`);
+        }
+        // F4：items 与 section 同传＝冲突显式报错（禁静默取舍）
+        const conflict = await editorCall(page, `async (call) => call("export_pdf", { items: [{ section: "一、经营概况" }], section: "三、下周重点" })`);
+        if (conflict.ok !== false || !String(conflict.error ?? "").includes("只能用一个")) throw new Error(`items×section 未互斥报错: ${JSON.stringify(conflict)}`);
+        console.log("      反读证据：docx-export-二、本周问题与处理.pdf 单节（含「热水压力不足」不含「下周重点」）· items 两节拼接（缺节报「可用标题」）· items×section 互斥报错");
+      });
+    });
+
+    // ---------- xlsx 导出能力三层（G1 items 区域 / G2 寻址加固 / G3 trim 契约）----------
+    /** 构造「外部重名表 xlsx」夹具（手工 OOXML zip——book_append_sheet 对重名
+     * throw，正是外部构造文件绕过 Excel UI 限制的威胁模型；两表数据各异） */
+    function buildDupNameXlsxBase64() {
+      const CT = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`;
+      const RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+      const WB = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheets>
+<sheet name="周报" sheetId="1" r:id="rId1"/>
+<sheet name="周报" sheetId="2" r:id="rId2"/>
+</sheets>
+</workbook>`;
+      const WBRELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+</Relationships>`;
+      const sheetXml = (txt, num) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>${txt}</t></is></c><c r="B1"><v>${num}</v></c></row></sheetData>
+</worksheet>`;
+      const zip = new AdmZip();
+      zip.addFile("[Content_Types].xml", Buffer.from(CT));
+      zip.addFile("_rels/.rels", Buffer.from(RELS));
+      zip.addFile("xl/workbook.xml", Buffer.from(WB));
+      zip.addFile("xl/_rels/workbook.xml.rels", Buffer.from(WBRELS));
+      zip.addFile("xl/worksheets/sheet1.xml", Buffer.from(sheetXml("探针甲", 111)));
+      zip.addFile("xl/worksheets/sheet2.xml", Buffer.from(sheetXml("探针乙", 222)));
+      return zip.toBuffer().toString("base64");
+    }
+
+    await check("xlsx G3①＋区域收敛：尾部空区不进产物（页数=usedRange 版式）＋range 超界按内容收敛（文件名即证据）", async () => {
+      await withPage("xlsx", "?sample=1", async (page) => {
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例工作簿已载入"), { timeout: 90000 });
+        // 裁剪探针表：A1:D6 有内容 ＋ 远端 canary 壳键（行 59 / 行 3 列 N）——
+        // 壳键若进 usedRange，59 行 × 13 列必溢出到第 2 页（产物页数即判别器）
+        const w = await editorCall(page, `async (call) => {
+          const mk = await call("add_sheet", { name: "裁剪探针" });
+          const put = await call("set_cells", { sheet: "裁剪探针", values: [
+            ["裁剪头A", "裁剪头B", "裁剪头C", "裁剪头D"],
+            ["R1", 1, 2, 3], ["R2", 4, 5, 6], ["R3", 7, 8, 9], ["R4", 10, 11, 12], ["R5", 13, 14, 15],
+            ["裁剪尾", 16, 17, 18],
+          ] });
+          const shell1 = await call("set_cells", { sheet: "裁剪探针", startRow: 58, startCol: 9, values: [["__canary__"]] });
+          const shell2 = await call("set_cells", { sheet: "裁剪探针", startRow: 2, startCol: 13, values: [["__canary__"]] });
+          return { mk: mk.ok, put: put.ok, s1: shell1.ok, s2: shell2.ok };
+        }`);
+        if (!(w.mk && w.put && w.s1 && w.s2)) throw new Error(`裁剪探针表构造失败: ${JSON.stringify(w)}`);
+        const r = await selectiveExport(page, "export_pdf", { sheets: ["裁剪探针"] });
+        if (r.suggested !== "xlsx-export-裁剪探针.pdf") throw new Error(`文件名契约不符: ${r.suggested}`);
+        const pages = assertPdfHead(r.bytes, "trim①", 1);
+        if (pages !== 1) throw new Error(`尾部空区泄漏：产物 ${pages} 页（远端壳键进了 usedRange？应恰 1 页）`);
+        assertPdfText(r.bytes, "trim①", { requireChinese: true, keywords: ["裁剪头A", "裁剪尾"], forbidden: ["__canary__"] });
+        // G1 区域收敛：A1:Z99 → 按内容收敛为 A1:D7（7 行内容；文件名/返回值按收敛后区域）
+        const r2 = await selectiveExport(page, "export_pdf", { items: [{ sheet: "裁剪探针", range: "A1:Z99" }] });
+        if (r2.suggested !== "xlsx-export-裁剪探针-A1D7.pdf") throw new Error(`收敛文件名契约不符: ${r2.suggested}`);
+        assertPdfText(r2.bytes, "区域收敛", { requireChinese: true, keywords: ["裁剪头A", "裁剪尾"] });
+        const sel0 = r2.out.selected?.[0];
+        if (sel0?.sheet !== "裁剪探针" || sel0?.range !== "A1:D7") throw new Error(`收敛 selected 不符: ${JSON.stringify(r2.out.selected)}`);
+        console.log(`      反读证据：trim① 产物恰 ${pages} 页（59 行壳键未进 usedRange）· A1:Z99 收敛为 A1:D7（xlsx-export-裁剪探针-A1D7.pdf · selected=[{sheet,range:A1:D7}]）`);
+      });
+    });
+
+    await check("xlsx G1/G2：items 三形态（名字/序号/区域）＋多单元＋序号 sheets＋互斥与非法入参矩阵", async () => {
+      await withPage("xlsx", "?sample=1", async (page) => {
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例工作簿已载入"), { timeout: 90000 });
+        // ① 整表（名字）
+        const a = await selectiveExport(page, "export_pdf", { items: [{ sheet: "周营收" }] });
+        if (a.suggested !== "xlsx-export-周营收.pdf") throw new Error(`items 名字形态文件名不符: ${a.suggested}`);
+        assertPdfText(a.bytes, "items 名字", { requireChinese: true, keywords: ["入住间夜"], forbidden: ["房源价格表"] });
+        if (a.out.selected?.[0]?.sheet !== "周营收") throw new Error(`items 名字 selected 不符: ${JSON.stringify(a.out.selected)}`);
+        // ② 整表（1 起序号，与 pptx pages 一致）
+        const b = await selectiveExport(page, "export_pdf", { items: [{ sheet: 2 }] });
+        if (b.suggested !== "xlsx-export-周营收.pdf") throw new Error(`items 序号形态文件名不符: ${b.suggested}`);
+        assertPdfText(b.bytes, "items 序号", { requireChinese: true, keywords: ["入住间夜"], forbidden: ["房源价格表"] });
+        // ③ 表内区域（A1:F5：含表头与前 4 个数据日，不含合计行/备注列）
+        const c = await selectiveExport(page, "export_pdf", { items: [{ sheet: "周营收", range: "A1:F5" }] });
+        if (c.suggested !== "xlsx-export-周营收-A1F5.pdf") throw new Error(`items 区域文件名不符: ${c.suggested}`);
+        assertPdfText(c.bytes, "items 区域", { requireChinese: true, keywords: ["入住间夜", "10-21 周三"], forbidden: ["备注", "本周合计", "房源价格表"] });
+        if (c.out.selected?.[0]?.range !== "A1:F5") throw new Error(`items 区域 selected 不符: ${JSON.stringify(c.out.selected)}`);
+        // ④ 多单元（整表＋区域混合，每单元一个章节、顺序按 items）
+        const d = await selectiveExport(page, "export_pdf", { items: [{ sheet: 1 }, { sheet: "周营收", range: "A2:F4" }] });
+        if (d.suggested !== "xlsx-export-房源价格表-周营收-A2F4.pdf") throw new Error(`多单元文件名不符: ${d.suggested}`);
+        assertPdfText(d.bytes, "多单元", { requireChinese: true, keywords: ["房型", "10-21 周三"], forbidden: ["入住间夜", "本周合计", "10-24 周六"] });
+        // ⑤ F8：自定义 filename 为主、tag 追加其上
+        const e = await selectiveExport(page, "export_pdf", { filename: "周报附件", items: [{ sheet: "周营收", range: "A1:F5" }] });
+        if (e.suggested !== "周报附件-周营收-A1F5.pdf") throw new Error(`filename×tag 优先级不符: ${e.suggested}`);
+        // ⑥ 序号 sheets（兼容糖，v1 表名断言不缩水）
+        const f = await selectiveExport(page, "export_pdf", { sheets: [2] });
+        if (f.suggested !== "xlsx-export-周营收.pdf") throw new Error(`序号 sheets 文件名不符: ${f.suggested}`);
+        if (f.out.selected?.[0] !== "周营收") throw new Error(`序号 sheets selected 不符（应为表名数组）: ${JSON.stringify(f.out.selected)}`);
+        // ⑦ 非法入参矩阵（全部 resolve {ok:false,error} 不 reject）
+        const bads = [
+          [{ items: [{ sheet: "周营收" }], sheets: ["房源价格表"] }, "只能用一个"],
+          [{ sheets: ["周营收", 1] }, "混用"],
+          [{ sheets: [5] }, "越界"],
+          [{ items: [{ range: "A1:F5" }] }, "缺 sheet"],
+          [{ items: [{ sheet: "周营收", range: "hello" }] }, "非法区域"],
+          [{ items: [{ sheet: "周营收", range: "Z50:AB60" }] }, "无交集"],
+          [{ items: [{ sheet: "不存在的表" }] }, "可用表"],
+        ];
+        for (const [input, word] of bads) {
+          const bad = await editorCall(page, `async (call) => call("export_pdf", ${JSON.stringify(input)})`);
+          if (bad.ok !== false || !String(bad.error ?? "").includes(word)) {
+            throw new Error(`非法入参未人话报错（期望含「${word}」）: ${JSON.stringify(bad)}`);
+          }
+        }
+        console.log(`      反读证据：items 名字/序号/区域三形态文件名全对 · 多单元两章节 · filename×tag＝周报附件-周营收-A1F5.pdf · 序号 sheets selected=[周营收] · 7 项非法入参全 ok:false`);
+      });
+    });
+
+    await check("xlsx G3②③：中间空行占位（bbox 行距几何证据）＋不规则右边界（绘制计划单源＋HTML 结构）", async () => {
+      await withPage("xlsx", "?sample=1", async (page) => {
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例工作簿已载入"), { timeout: 90000 });
+        // ② 空行探针：行 3 全空、行 4 有数据——空行占位则 R2→R4 行距 ≈ 2×R1→R2
+        const w = await editorCall(page, `async (call) => {
+          const mk = await call("add_sheet", { name: "空行探针" });
+          const put = await call("set_cells", { sheet: "空行探针", values: [["HA", "HB"], ["R1", "v1"], ["R2", "v2"], [], ["R4", "v4"]] });
+          return { mk: mk.ok, put: put.ok };
+        }`);
+        if (!(w.mk && w.put)) throw new Error(`空行探针表构造失败: ${JSON.stringify(w)}`);
+        const r = await selectiveExport(page, "export_pdf", { sheets: ["空行探针"] });
+        assertPdfText(r.bytes, "trim②", { keywords: ["R1", "R2", "R4"] });
+        const words = pdfWordBoxes(r.bytes, "trim②");
+        const yOf = (t) => {
+          const hit = words.find((x) => x.text === t);
+          if (!hit) throw new Error(`词框缺「${t}」`);
+          return hit.yMin;
+        };
+        const gap12 = yOf("R2") - yOf("R1");
+        const gap24 = yOf("R4") - yOf("R2");
+        const ratio = gap24 / gap12;
+        if (!(ratio > 1.55 && ratio < 2.45)) {
+          throw new Error(`中间空行未占位：R2→R4 行距 / R1→R2 行距 = ${ratio.toFixed(2)}（空行保留应 ≈2.0，被跳过则 ≈1.0）`);
+        }
+        // ③ 边界探针（seam＝绘制计划单源，PDF/PNG 双路径共用）：A 列 10 行、B 列仅 5 行
+        const seam = await page.evaluate(() => {
+          const cellData = {};
+          const put = (rr, cc, v) => { (cellData[rr] ??= {})[cc] = { v }; };
+          put(0, 0, "HA"); put(0, 1, "HB");
+          for (let rr = 1; rr <= 10; rr++) put(rr, 0, `甲${rr}`);
+          for (let rr = 1; rr <= 5; rr++) put(rr, 1, `乙${rr}`);
+          const plan = window.__officeTest.planSheetDrawProbe(cellData);
+          const html = window.__officeTest.tablesHtmlProbe({ sheetOrder: ["s1"], sheets: { s1: { name: "边界探针", cellData } } }, "边界探针簿");
+          const rows = [...html.matchAll(/<tr>(.*?)<\/tr>/g)].map((m) => (m[1].match(/<td/g) ?? []).length);
+          return { plan, rows, htmlHasHeader: /<th>HA<\/th><th>HB<\/th>/.test(html) };
+        });
+        if (!seam.plan || seam.plan.rows.length !== 11) throw new Error(`绘制计划行数不符: ${JSON.stringify(seam.plan?.rows?.length)}（应 11＝表头+10 行，中间无空行）`);
+        for (const row of seam.plan.rows.slice(6)) {
+          if (row.maxC !== 0) throw new Error(`不规则右边界失守：行 ${row.r} maxC=${row.maxC}（应 0——B 列 6-10 行不画格线不渲染空格）`);
+        }
+        for (const row of seam.plan.rows.slice(1, 6)) {
+          if (row.maxC !== 1) throw new Error(`右边界过收：行 ${row.r} maxC=${row.maxC}（应 1——B 列 1-5 行有内容）`);
+        }
+        // HTML（PNG 路径同源）：表头 2 列；有内容行 2 td；右边界行仅 1 td（无空格渲染）
+        if (!seam.htmlHasHeader) throw new Error("PNG 路径表头结构缺失");
+        if (seam.rows[0] !== 0) throw new Error(`thead 行 td 数不符: ${seam.rows[0]}`);
+        for (let i = 1; i <= 5; i++) if (seam.rows[i] !== 2) throw new Error(`HTML 行 ${i} td 数不符: ${seam.rows[i]}（应 2）`);
+        for (let i = 6; i <= 10; i++) if (seam.rows[i] !== 1) throw new Error(`HTML 行 ${i} td 数不符: ${seam.rows[i]}（应 1——不规则右边界不渲染空格）`);
+        console.log(`      反读证据：trim② 行距比 ${ratio.toFixed(2)}（≈2＝空行占位在产）· trim③ 行 6-10 maxC=0（不画格线）· HTML 右边界行 1 td（不渲染空格）`);
+      });
+    });
+
+    await check("xlsx G2 重名防御：外部重名 xlsx 导入 → 去重后缀＋warning＋两表数据各归其位", async () => {
+      const b64 = buildDupNameXlsxBase64();
+      await withPage("xlsx", "", async (page) => {
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("编辑器就绪"), { timeout: 90000 });
+        const out = await editorCall(page, `async (call) => call("import_xlsx", { base64: "${b64}", filename: "重名探针.xlsx" })`);
+        if (!out.ok) throw new Error(`import_xlsx 未成功: ${JSON.stringify(out)}`);
+        if (JSON.stringify(out.sheetNames) !== JSON.stringify(["周报", "周报 (2)"])) {
+          throw new Error(`表名去重不符: ${JSON.stringify(out.sheetNames)}（期望 ["周报","周报 (2)"]）`);
+        }
+        if (!String(out.warning ?? "").includes("周报 (2)")) throw new Error(`warning 未声明重命名: ${JSON.stringify(out.warning)}`);
+        const snap = await editorCall(page, `async (call) => call("get_snapshot", {})`);
+        const s1 = snap.sheets.find((x) => x.name === "周报");
+        const s2 = snap.sheets.find((x) => x.name === "周报 (2)");
+        if (!s1 || !s2) throw new Error(`重命名后两表未俱在: ${JSON.stringify(snap.sheets.map((x) => x.name))}`);
+        if (s1.cellData[0]?.[0]?.v !== "探针甲" || s1.cellData[0]?.[1]?.v !== 111) throw new Error(`第一表数据塌缩: ${JSON.stringify(s1.cellData[0])}`);
+        if (s2.cellData[0]?.[0]?.v !== "探针乙" || s2.cellData[0]?.[1]?.v !== 222) throw new Error(`第二表数据塌缩: ${JSON.stringify(s2.cellData[0])}`);
+        console.log("      反读证据：SheetNames=[周报,周报 (2)] · warning 声明重命名 · 两表 A1=探针甲(111)/探针乙(222) 各归其位（SheetJS 重名塌缩已被 zip 手术修复）");
+      });
+    });
+
+
+    await check("img-tool F23 颜色双重编码：裸 #rrggbb 与 URL 层 %23 两形态各喂一次，底衬色均正确落画布", async () => {
+      await withPage("img-tool", "?src=sample", async (page) => {
+        await page.waitForFunction(() => document.modelContext && document.modelContext.getTools().then((ts) => ts.some((t) => t.name === "overlay_text")), { timeout: 10000 });
+        const countBg = async (bgValue) => {
+          const r = await page.evaluate(async (bg) => {
+            const ts = await document.modelContext.getTools();
+            const tool = ts.find((t) => t.name === "overlay_text");
+            const raw = await document.modelContext.executeTool(tool, { src: "sample", text: "色值探针", bg, pos: "center" });
+            const out = typeof raw === "string" ? JSON.parse(raw) : raw;
+            const canvas = document.getElementById("canvas-result");
+            const ctx = canvas.getContext("2d");
+            const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            let red = 0;
+            for (let i = 0; i < d.length; i += 16) {
+              if (d[i] > 250 && d[i + 1] < 30 && d[i + 2] < 30) red++;
+            }
+            return { ok: out.ok, red };
+          }, bgValue);
+          if (!r.ok) throw new Error(`overlay_text 未成功: ${JSON.stringify(r)}`);
+          return r.red;
+        };
+        const bare = await countBg("#ff0000"); // 工具层解码形态（新文档语汇）
+        const encoded = await countBg("%23ff0000"); // 旧文档/URL 层习惯形态（F23 兜底剥编码）
+        if (bare < 1000) throw new Error(`裸 #ff0000 底衬未落画布（红像素 ${bare}）——bg 解析回归`);
+        if (encoded < 1000) throw new Error(`%23ff0000 双重编码兜底失效（红像素 ${encoded}）——F23 修复面失守`);
+        console.log(`      证据：#ff0000 → 红像素 ${bare} · %23ff0000 → 红像素 ${encoded}（两形态底衬均纯红落画布）`);
+      });
+    });
+
+    await check("pptx filename 契约扩展（F5/F8）：export_pdf 自定义名×tag、export_png 前缀语义、export_pages_png 别名", async () => {
+      await withPage("pptx", "?sample=1", async (page) => {
+        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例演示已载入"), { timeout: 120000 });
+        // F8：自定义 filename 为主、选择 tag 追加其上（汇报-p2.pdf）
+        const f8 = await selectiveExport(page, "export_pdf", { filename: "汇报", pages: [2] });
+        if (f8.suggested !== "汇报-p2.pdf") throw new Error(`F8 filename×tag 不符: ${f8.suggested}`);
+        if (f8.out.selected?.[0] !== 2) throw new Error(`F8 selected 不符: ${JSON.stringify(f8.out.selected)}`);
+        // F5①：export_png filename＝前缀语义（foo-01.png/foo-02.png，序号＝原 deck 页码）
+        const downloads = [];
+        page.on("download", (d) => downloads.push(d));
+        const f5 = await editorCall(page, `async (call) => call("export_png", { filename: "foo", pages: [1, 2] })`);
+        for (let i = 0; i < 60 && downloads.length < 2; i++) await page.waitForTimeout(500);
+        if (!f5.ok) throw new Error(`export_png 前缀导出未成功: ${JSON.stringify(f5)}`);
+        const names = downloads.map((d) => d.suggestedFilename());
+        if (!names.includes("foo-01.png") || !names.includes("foo-02.png")) {
+          throw new Error(`F5 前缀文件名不符: ${names.join(",")}`);
+        }
+        // F5③：export_pages_png 别名工具（同 execute；缺省契约名不变）
+        const aliasDls = [];
+        page.on("download", (d) => aliasDls.push(d));
+        const alias = await editorCall(page, `async (call) => call("export_pages_png", {})`);
+        for (let i = 0; i < 80 && aliasDls.length < 3; i++) await page.waitForTimeout(500);
+        if (!alias.ok) throw new Error(`export_pages_png 未成功: ${JSON.stringify(alias)}`);
+        const aliasNames = aliasDls.map((d) => d.suggestedFilename());
+        for (const must of ["pptx-page-01.png", "pptx-page-02.png", "pptx-page-03.png"]) {
+          if (!aliasNames.includes(must)) throw new Error(`别名工具缺省文件名不符: ${aliasNames.join(",")}`);
+        }
+        // F4：items 页单元 / pages 别名 / 互斥
+        const dlPromise = page.waitForEvent("download", { timeout: 90000 });
+        const viaItems = await editorCall(page, `async (call) => call("export_pdf", { items: [{ page: 2 }] })`);
+        const d2 = await dlPromise;
+        if (!viaItems.ok) throw new Error(`items 页单元未成功: ${JSON.stringify(viaItems)}`);
+        if (d2.suggestedFilename() !== "pptx-export-p2.pdf") throw new Error(`items 页单元文件名不符: ${d2.suggestedFilename()}`);
+        if (viaItems.selected?.[0] !== 2) throw new Error(`items 页单元 selected 不符: ${JSON.stringify(viaItems.selected)}`);
+        const conflict = await editorCall(page, `async (call) => call("export_pdf", { items: [{ page: 2 }], pages: [3] })`);
+        if (conflict.ok !== false || !String(conflict.error ?? "").includes("只能用一个")) {
+          throw new Error(`items×pages 未互斥报错: ${JSON.stringify(conflict)}`);
+        }
+        console.log(`      证据：汇报-p2.pdf（F8）· foo-01/foo-02.png（F5 前缀）· 别名工具缺省 pptx-page-0N.png · items=[{page:2}]≡pages=[2] · 互斥报错`);
       });
     });
 

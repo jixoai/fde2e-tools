@@ -50,6 +50,24 @@ export function pdfTextLayer(bytes, label) {
   });
 }
 
+/**
+ * 逐词外接框（pdftotext -bbox；页内 pt 坐标，y 向下增长）。
+ * 布局几何断言用（trim 契约「空行占位」的行距证据——矢量 PDF 产物级验证）。
+ */
+export function pdfWordBoxes(bytes, label) {
+  return withTempDir((dir) => {
+    const file = join(dir, "in.pdf");
+    writeFileSync(file, bytes);
+    const html = run("pdftotext", ["-bbox", "-enc", "UTF-8", file, "-"], label);
+    const words = [];
+    for (const m of html.matchAll(/<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">([^<]*)<\/word>/g)) {
+      words.push({ xMin: +m[1], yMin: +m[2], xMax: +m[3], yMax: +m[4], text: m[5] });
+    }
+    if (!words.length) throw new Error(`${label} -bbox 无词框（pdftotext 输出形态变化？）`);
+    return words;
+  });
+}
+
 /** 文本层断言：非空＋中文在場＋关键词齐＋（可选）UI 特征词缺席 */
 export function assertPdfText(bytes, label, opts = {}) {
   const text = pdfTextLayer(bytes, label);
