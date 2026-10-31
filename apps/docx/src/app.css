@@ -1,0 +1,144 @@
+/*
+ * 全局样式 —— Tailwind v4 + shadcn（base-nova）+ solid-glass 官方主题。
+ *
+ * 导入顺序＝官方安装顺序（solid-glass.css 文件头约定）：tailwindcss →
+ * tw-animate-css → shadcn/tailwind.css → solid-glass.css（registry 原件，
+ * vendor 于 @fde2e-tools/shared/theme）。
+ *
+ * source() 收窄（omni 同款纪律）：TW4 缺省从 git 仓库根扫全仓——openspec/
+ * README 里的类名字符串会被当源喂进编译；收窄到本 app 目录，再把 shared 包
+ * （官方组件收编层的真实类名消费面）显式加回。
+ */
+@import "tailwindcss" source("../");
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fde2e-tools/shared/theme/solid-glass.css";
+
+@source "../../../packages/shared/src";
+
+/*
+ * 文档页面排版层（ProseMirror 内容显示样式——这是文档内容的排版，非 UI 组件，
+ * 与 PPTist/Univer 自带样式同理）。白色纸面 + 常规 Word 语义字号。
+ */
+.docx-page {
+  background: #ffffff;
+  color: #1f2937;
+}
+
+.docx-editor .ProseMirror {
+  min-height: 560px;
+  outline: none;
+  padding: 2.5rem 3rem;
+  font-size: 15px;
+  line-height: 1.75;
+  font-family: ui-serif, Georgia, "Noto Serif SC", "Songti SC", serif;
+}
+
+.docx-editor .ProseMirror h1 {
+  font-size: 1.9em;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 1.4em 0 0.6em;
+}
+
+.docx-editor .ProseMirror h2 {
+  font-size: 1.5em;
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 1.3em 0 0.5em;
+}
+
+.docx-editor .ProseMirror h3 {
+  font-size: 1.22em;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 1.2em 0 0.45em;
+}
+
+.docx-editor .ProseMirror p {
+  margin: 0.55em 0;
+}
+
+.docx-editor .ProseMirror ul,
+.docx-editor .ProseMirror ol {
+  padding-left: 1.6em;
+  margin: 0.55em 0;
+}
+
+.docx-editor .ProseMirror ul {
+  list-style: disc;
+}
+
+.docx-editor .ProseMirror ol {
+  list-style: decimal;
+}
+
+.docx-editor .ProseMirror li {
+  margin: 0.25em 0;
+}
+
+.docx-editor .ProseMirror li p {
+  margin: 0.15em 0;
+}
+
+.docx-editor .ProseMirror blockquote {
+  border-left: 3px solid #d1d5db;
+  color: #6b7280;
+  padding-left: 0.9em;
+  margin: 0.7em 0;
+}
+
+.docx-editor .ProseMirror pre {
+  background: #f3f4f6;
+  border-radius: 8px;
+  padding: 0.8em 1em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  overflow-x: auto;
+}
+
+.docx-editor .ProseMirror code {
+  background: #f3f4f6;
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+}
+
+.docx-editor .ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 0.9em 0;
+  overflow: hidden;
+}
+
+.docx-editor .ProseMirror table td,
+.docx-editor .ProseMirror table th {
+  border: 1px solid #d1d5db;
+  padding: 0.45em 0.7em;
+  vertical-align: top;
+  position: relative;
+}
+
+.docx-editor .ProseMirror table th {
+  background: #f9fafb;
+  font-weight: 600;
+  text-align: left;
+}
+
+.docx-editor .ProseMirror table .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(59, 130, 246, 0.12);
+  pointer-events: none;
+}
+
+.docx-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: #9ca3af;
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
