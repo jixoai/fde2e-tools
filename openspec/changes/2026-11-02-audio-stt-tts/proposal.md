@@ -22,7 +22,7 @@ Owner 需求（2026-11-01）：在 fde2e-tools-v0 增加两个基础工具——
 2. **许可红线第一**：kokoro-js 默认包（内嵌 espeak-ng GPL-3.0）、Piper 官方
    （已转 GPL-3.0+中文音色数据许可 Unknown）、Moonshine 中文包（NC）、
    F5/Spark/OuteTTS-0.2（NC）等一律禁入（清单见 research.md §许可红线）。TTS
-   中文主力＝**Kokoro v1.1-zh（Apache-2.0，100 中文音色）经 sherpa-ionnx 的
+   中文主力＝**Kokoro v1.1-zh（Apache-2.0，100 中文音色）经 sherpa-onnx 的
    lexicon G2P 干净路线**。
 3. **性能档位按设备能力分层**（能力探测下发，不做身份/UA 枚举）：WebGPU 可用
    → STT 上 `whisper-large-v3-turbo q4f16`（≈0.5GB）；仅 WASM → `whisper-base
@@ -63,8 +63,8 @@ Owner 需求（2026-11-01）：在 fde2e-tools-v0 增加两个基础工具——
   上传（服务器 `/www/tools/models/`，编排者侧 vhost）。
 - 下载内核复用：vendor `fde2e-downloader-core` web bundle（esbuild IIFE，
   `fde2e/packages/downloader-core/src/web.ts` 单源），自建 **模型源池**
-  （CF 边缘 + 阿里云反代 + 服务器直连兜底，见分发路由）替代包内默认 GH 白名
-  单源池；下载进度 UI 用 shadcn 官方组件收编形态。
+  （自托管同源 + ModelScope 直链 + HF 海外可选，见分发路由）替代包内默认
+  GH 白名单源池；下载进度 UI 用 shadcn 官方组件收编形态。
 - dev 端口：stt 5281 / tts 5282（沿用既有 5271-5280 顺延；仅回环，不进 frp
   段）。
 
@@ -124,9 +124,13 @@ Owner 需求（2026-11-01）：在 fde2e-tools-v0 增加两个基础工具——
   - **下载分片冒烟**：downloader-core + 自建源池走一次真实分片下载往返
     （断点续传模拟：中断→恢复→sha256 match）——200MB 级文件用截断假模型
     断言协议，不跑全量下载。
-  - 黄页卡片 +6（两工具卡 +ai-guide 许可段可见断言），存量断言零缩水。
+  - 黄页卡片 +2（两工具卡，含 ai-guide 许可段可见断言），存量断言零缩水。
 
 ## Non-Goals
+- 黄页 **取消 iframe 实况预览**（Owner 裁决 2026-11-02，见 DECISIONS.md）：
+  新站黄页条目按「构建期精心布局截图」语义交付；存量 11 站一并迁移与
+  X-Frame-Options 清理**不在本 change**——另立 change
+  `directory-snapshot-preview` 承接（avoid 跨站公共行为混入本 change）。
 
 - 不做音频编辑（裁剪/混音/降噪——Owner 明示暂不涉及）。
 - 不做音色克隆的增值闭环（Pocket TTS/Chatterbox 克隆能力仅注册为模型档位，
@@ -150,9 +154,11 @@ Owner 需求（2026-11-01）：在 fde2e-tools-v0 增加两个基础工具——
   长音频必须分片 + 定期重建 pipeline。
 - **iOS 独立风险面**：Safari 26 才有 WebGPU + AudioDecoder；单模型 ≳0.75GB
   内存被杀；模型下载用 Range 才可断点续传——iOS 直接降级 q8 小模型。
-- **transformers.js 多线程要 COOP/COEP**：黄页是 iframe 嵌生产域架构，需
-  配套 CORP 协同——实现批次时必须与黄页预览路径一起过一遍（fc worktree
-  冒烟 + 生产域验收真机）。
+- **COOP/COEP v1 不采（Owner 裁决 2026-11-02）**：WebGPU 已基本覆盖
+  主流浏览器（Chrome/Edge/Safari 26），不强兼容 Firefox/SAB 环境；慢档
+  设备由能力探测下发小模型兜住体验底线。两站 v1 不加 COOP/COEP 头；
+  未来某项目真需要 SharedArrayBuffer 时另立 change 专项治理传染面
+  （COEP 会把整页跨域资源拽进 CORP 治理，不是单站可关的小开关）。
 
 ## 落地与验收顺序（实现批次的次序，不由本 change 决定）
 
