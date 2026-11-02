@@ -8,10 +8,12 @@
    不引入任何服务端。「图源无 CORS 头」维持现行为（可见不可导＋提示转存素材库），
    不以此为由加代理。未来动态代理类功能必须**带认证方案**立项（spec:
    static-tools-hosting「静态对外的演进边界」）。
-2. **URL 参数契约保真**：pdf-tool / img-tool / url-tool 已有智能体按 URL 参数
-   调用。参数名、取值语义、默认值、clamp、状态行文案（#status）一字不改；
+2. **URL 参数契约保真**：pdf-tool / url-tool 已有智能体按 URL 参数调用。
+   参数名、取值语义、默认值、clamp、状态行文案（#status）一字不改；
    新参数只许追加。改契约＝改 registry + 改 app + 改 ai-guide 三面同步。
-   办公三站 URL 契约只有 `?sample=`（示例载入，不触发生成）。
+   canvas 的工具契约是 JSON spec（registry 的 tools 面），旧 img-tool URL 参数
+   契约已随站点退役，不做兼容。办公三站 URL 契约只有 `?sample=`（示例载入，
+   不触发生成）。
 3. **DOM id 稳定**：ai-guide 引用的全部可交互元素 id 是行为的一部分，迁移/重构
    不得改名；输入类元素保持**非受控**（智能体程序化 set value 后点按钮必须生效）。
 4. **registry 单源**：工具元数据只活在 `packages/shared/src/registry.ts`——黄页、
@@ -75,4 +77,4 @@
 - **变更管理走 openspec**（本仓 `openspec/`）：先 change（proposal/tasks/specs）
   再实现；交付即归档。
 - **TS 模板字符串生成文本含字面反斜杠时必须双写**（`\\n`），写完对构建产物
-  grep 验证（img-tool ai-guide 是现例）。
+  grep 验证（canvas ai-guide 是现例）。

@@ -3,9 +3,10 @@
 ## 目的
 
 FDE2E 工具集：`tool.fde2e.com`（工具黄页：预览 + 搜索 + 入口）＋ `<tool>.tool.fde2e.com`
-（各工具独立站）。三个存量静态工具（pdf-tool / img-tool / url-tool）规范化迁入，
-办公三件套生成站（xlsx / docx / pptx，change office-suite）扩容，未来工具按
-「registry 加一条」扩容。对外 GitHub 公开仓 `jixoai/fde2e-tools`。
+（各工具独立站）。存量静态工具 pdf-tool / url-tool 规范化迁入，Canvas 画布工具
+（canvas，change canvas-tool-v1）承接图片排版生成，办公三件套生成站
+（xlsx / docx / pptx，change office-suite）扩容，未来工具按「registry 加一条」扩容。
+对外 GitHub 公开仓 `jixoai/fde2e-tools`。
 
 ## 技术栈与约束
 
@@ -16,10 +17,11 @@ FDE2E 工具集：`tool.fde2e.com`（工具黄页：预览 + 搜索 + 入口）�
 - **工具元数据单源**：`packages/shared/src/registry.ts`（id/名称/一句话/子域/标签/
   URL 参数契约/WebMCP 入口点）——黄页、各工具页、WebMCP 注册三面共用；加新工具
   ＝registry 加一条 + 新建 apps/<id>。
-- **URL 参数契约保真**：三个存量工具已有智能体按 URL 参数调用，契约一字不改；
-  各工具页内 `<pre id="ai-guide">` 用法说明保留（id 与文案是行为的一部分）。
-  办公三站 URL 契约只有 `?sample=`（URL 不承载数据通道，生成数据走页内输入区
-  或 WebMCP 传参）。
+- **URL 参数契约保真**：pdf-tool / url-tool 已有智能体按 URL 参数调用，契约
+  一字不改；各工具页内 `<pre id="ai-guide">` 用法说明保留（id 与文案是行为的
+  一部分）。canvas 的工具契约是 JSON spec（WebMCP tools 面），旧 img-tool URL
+  参数契约随站点退役、不做兼容。办公三站 URL 契约只有 `?sample=`（URL 不承载
+  数据通道，生成数据走页内输入区或 WebMCP 传参）。
 - **可交互元素 id 稳定**：ai-guide 引用的全部 DOM id 在迁移后保持不变；输入类
   元素非受控（智能体程序化 set value 后点按钮必须仍然生效）。
 - **办公线红线（office-suite ＋ office-editorial-upgrade）**：轻量生成链依赖全
@@ -35,7 +37,7 @@ FDE2E 工具集：`tool.fde2e.com`（工具黄页：预览 + 搜索 + 入口）�
   见 openspec change office-suite 的 editor-hosting 规格。
 - 部署：`deploy/tools-upload.sh`（tar-over-ssh；目录与 vhost 由编排者管理）；
   本仓禁把密钥/服务器路径硬编码进任何入库文件。
-- 本地 dev 端口：directory 5271 / pdf-tool 5272 / img-tool 5273 / url-tool 5274 /
+- 本地 dev 端口：directory 5271 / pdf-tool 5272 / canvas 5273 / url-tool 5274 /
   easy-xlsx 5275 / easy-docx 5276 / easy-pptx 5277 / xlsx 编辑站 5278 /
   docx 编辑站 5279 / pptx 编辑站 5280（仅绑 IPv4 回环，不进 frp 段、不登记
   PORT.md——非对外端口）。

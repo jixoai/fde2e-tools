@@ -15,7 +15,7 @@
     "smoke:check": "node scripts/smoke-check.mjs",
     "dev:directory": "pnpm --filter directory dev",
     "dev:pdf-tool": "pnpm --filter pdf-tool dev",
-    "dev:img-tool": "pnpm --filter img-tool dev",
+    "dev:canvas": "pnpm --filter canvas dev",
     "dev:url-tool": "pnpm --filter url-tool dev",
     "dev:file-viewer": "pnpm --filter file-viewer dev",
     "test:file-viewer": "pnpm --filter file-viewer test",

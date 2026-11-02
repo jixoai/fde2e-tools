@@ -122,24 +122,6 @@ for (const app of Object.keys(registry)) {
   if (!expect[app]) fail(`[${app}] webmcp-check EXPECT 缺该 app 的工具面断言`);
 }
 
-/* ---------- 文档双层契约：URL 层 %23 ／ 工具层裸 # ---------- */
-
-const imgWebmcp = read("apps/img-tool/src/webmcp.ts");
-const imgNonComment = imgWebmcp
-  .split("\n")
-  .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
-  .join("\n");
-if (/%23rrggbb/.test(imgNonComment)) {
-  fail("[img-tool] 工具层 webmcp.ts 把 %23rrggbb 当入参教法（指南 §6——工具层永远写解码后形态 #rrggbb；%23 只许以「兼容剥离」语汇出现）");
-}
-if (!/#rrggbb/.test(imgNonComment)) {
-  fail("[img-tool] 工具层 description 缺裸 #rrggbb 形态（指南 §6）");
-}
-const registrySrc = read("packages/shared/src/registry.ts");
-if (!/%23rrggbb/.test(registrySrc)) {
-  fail("[img-tool] registry urlParams 缺 URL 层 %23rrggbb 契约（指南 §6——URL 层必须写编码后形态）");
-}
-
 /* ---------- 出口 ---------- */
 
 if (FAILURES.length) {

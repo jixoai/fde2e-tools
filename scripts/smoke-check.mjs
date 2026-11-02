@@ -87,7 +87,7 @@ async function main() {
   });
 
   const servers = {};
-  for (const app of ["pdf-tool", "img-tool", "url-tool", "directory", "easy-xlsx", "easy-docx", "easy-pptx", "file-viewer", "xlsx", "docx", "pptx"]) {
+  for (const app of ["pdf-tool", "url-tool", "directory", "easy-xlsx", "easy-docx", "easy-pptx", "file-viewer", "xlsx", "docx", "pptx"]) {
     servers[app] = { server: await serveDir(join(ROOT, "apps", app, "dist")), get port() { return servers[app].server.address().port; } };
   }
   const base = (app) => `http://127.0.0.1:${servers[app].server.address().port}`;
@@ -1108,35 +1108,6 @@ async function main() {
     });
 
 
-    await check("img-tool F23 颜色双重编码：裸 #rrggbb 与 URL 层 %23 两形态各喂一次，底衬色均正确落画布", async () => {
-      await withPage("img-tool", "?src=sample", async (page) => {
-        await page.waitForFunction(() => document.modelContext && document.modelContext.getTools().then((ts) => ts.some((t) => t.name === "overlay_text")), { timeout: 10000 });
-        const countBg = async (bgValue) => {
-          const r = await page.evaluate(async (bg) => {
-            const ts = await document.modelContext.getTools();
-            const tool = ts.find((t) => t.name === "overlay_text");
-            const raw = await document.modelContext.executeTool(tool, { src: "sample", text: "色值探针", bg, pos: "center" });
-            const out = typeof raw === "string" ? JSON.parse(raw) : raw;
-            const canvas = document.getElementById("canvas-result");
-            const ctx = canvas.getContext("2d");
-            const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-            let red = 0;
-            for (let i = 0; i < d.length; i += 16) {
-              if (d[i] > 250 && d[i + 1] < 30 && d[i + 2] < 30) red++;
-            }
-            return { ok: out.ok, red };
-          }, bgValue);
-          if (!r.ok) throw new Error(`overlay_text 未成功: ${JSON.stringify(r)}`);
-          return r.red;
-        };
-        const bare = await countBg("#ff0000"); // 工具层解码形态（新文档语汇）
-        const encoded = await countBg("%23ff0000"); // 旧文档/URL 层习惯形态（F23 兜底剥编码）
-        if (bare < 1000) throw new Error(`裸 #ff0000 底衬未落画布（红像素 ${bare}）——bg 解析回归`);
-        if (encoded < 1000) throw new Error(`%23ff0000 双重编码兜底失效（红像素 ${encoded}）——F23 修复面失守`);
-        console.log(`      证据：#ff0000 → 红像素 ${bare} · %23ff0000 → 红像素 ${encoded}（两形态底衬均纯红落画布）`);
-      });
-    });
-
     await check("pptx filename 契约扩展（F5/F8）：export_pdf 自定义名×tag、export_png 前缀语义、export_pages_png 别名", async () => {
       await withPage("pptx", "?sample=1", async (page) => {
         await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("示例演示已载入"), { timeout: 120000 });
@@ -1241,19 +1212,19 @@ async function main() {
       }
     });
 
-    // ---------- img-tool ----------
-    await check("directory：registry 渲染 + 纯前端搜索（editor 二期加入后 11 卡全现役、0 建设中占位）", async () => {
+    // ---------- directory ----------
+    await check("directory：registry 渲染 + 纯前端搜索（10 卡全现役、0 建设中占位）", async () => {
       await withPage("directory", "", async (page) => {
-        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length >= 11, { timeout: 30000 });
+        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length >= 10, { timeout: 30000 });
         const total = await page.evaluate(() => document.querySelectorAll('[data-slot="card"]').length);
-        if (total !== 11) throw new Error(`卡片数不符: ${total}（期望 11＝11 现役 + 0 建设中占位）`);
+        if (total !== 10) throw new Error(`卡片数不符: ${total}（期望 10＝10 现役 + 0 建设中占位）`);
         const comingSoon = await page.evaluate(() => document.querySelectorAll('[data-testid="coming-soon-badge"]').length);
         if (comingSoon !== 0) throw new Error(`建设中 Badge 数不符: ${comingSoon}（期望 0——编辑器三站已转现役）`);
-        // 「图片」命中 img-tool + pptx 编辑器（特性描述含「图片表格图表」，2026-10-31 起）
+        // 「图片」命中 pptx 编辑器（img-tool 已退役；特性描述含「图片表格图表」）
         await page.fill('input[aria-label="搜索工具"]', "图片");
-        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 2, { timeout: 30000 });
+        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
         const count = await page.textContent("main, body");
-        if (!count.includes("2 / 11")) throw new Error("搜索计数未显示 2 / 11");
+        if (!count.includes("1 / 10")) throw new Error("搜索计数未显示 1 / 10");
         await page.fill('input[aria-label="搜索工具"]', "表格生成");
         await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
         // 编辑器三站转现役：主域名卡带完整 WebMCP 面投影（抽查 xlsx 卡）
@@ -1275,41 +1246,6 @@ async function main() {
         }
         if (out.tools[0].webmcpTools.length !== 2) throw new Error("registry webmcpTools 投影缺失");
       });
-
-    await check("img-tool URL 直调：sample + cover 裁切 + 文字 + 角标", async () => {
-      await withPage(
-        "img-tool",
-        "?src=sample&w=1080&h=1440&text=%E9%9D%92%E6%97%85%E9%81%BF%E5%9D%91%E6%8C%87%E5%8D%97&pos=center&size=88&color=%23ffffff&bg=%23000000&pad=30&label=%E6%95%88%E6%9E%9C%E5%9B%BE",
-        async (page) => {
-          await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("渲染完成"), { timeout: 10000 });
-          const dims = await page.evaluate(() => {
-            const c = document.getElementById("canvas-result");
-            return { w: c.width, h: c.height };
-          });
-          if (dims.w !== 1080 || dims.h !== 1440) throw new Error(`画布尺寸不符: ${dims.w}x${dims.h}（期望 1080x1440 cover）`);
-          const s = await statusText(page);
-          const want = "渲染完成：1080×1440 px · 已叠加文字 · 已加角标";
-          if (s !== want) throw new Error(`状态行不符:\n  got:  ${s}\n  want: ${want}`);
-        },
-      );
-    });
-
-    await check("img-tool 参数 clamp：w=99999 → 8192", async () => {
-      await withPage("img-tool", "?src=sample&w=99999", async (page) => {
-        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("渲染完成"), { timeout: 10000 });
-        const w = await page.evaluate(() => document.getElementById("canvas-result").width);
-        if (w !== 8192) throw new Error(`clamp 失效: canvas.width=${w}（期望 8192）`);
-      });
-    });
-
-    await check("img-tool 魔法值 sample：离线示例底图", async () => {
-      await withPage("img-tool", "?src=sample", async (page) => {
-        await page.waitForFunction(() => (document.getElementById("status")?.textContent ?? "").includes("渲染完成"), { timeout: 10000 });
-        const s = await statusText(page);
-        const want = "渲染完成：1280×960 px";
-        if (!s.startsWith(want)) throw new Error(`状态行不符: got ${s}`);
-      });
-    });
 
     // ---------- url-tool ----------
     await check("url-tool ?base=&mode=packed：预填即出结果", async () => {

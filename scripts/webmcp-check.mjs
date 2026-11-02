@@ -27,12 +27,19 @@ import { assertPdfText } from "./pdf-assert.mjs";
 import { chromium } from "playwright-core";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
+/** 可选子集（WEBMCP_APPS=canvas 只跑该站枚举 + canvas 全链，便于迭代；缺省全量） */
+const ONLY_APPS = new Set(
+  (process.env.WEBMCP_APPS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+);
 
 /** 各页面的预期工具面（与 packages/shared/src/registry.ts tools 字段一致） */
 const EXPECT = {
   directory: { tools: ["list_tools", "search_tools"] },
   "pdf-tool": { tools: ["render_preview", "export_pdf"] },
-  "img-tool": { tools: ["overlay_text", "export_png"] },
+  canvas: { tools: ["render_card", "inspect_layout", "export_svg", "export_canvas_png", "list_fonts", "list_recipes", "get_recipe", "list_assets", "get_asset", "import_asset", "list_styles", "font_info", "text_to_svg", "font_glyphs"] },
   "url-tool": { tools: ["pack_url", "decode_url"] },
   "file-viewer": { tools: ["preview_file"] },
   "easy-xlsx": { tools: ["create_xlsx", "add_sheet_sample"] },
@@ -93,11 +100,13 @@ const ILLEGAL_MATRIX = [
     ],
   },
   {
-    app: "img-tool",
+    app: "canvas",
     f14: true,
     cases: [
-      { tool: "overlay_text", input: {}, word: "底图" },
-      { tool: "export_png", input: {}, word: "底图" },
+      { tool: "render_card", input: {}, word: "spec" },
+      { tool: "font_info", input: {}, word: "url" },
+      { tool: "import_asset", input: {}, word: "url" },
+      { tool: "export_svg", input: { inlinePaths: true }, word: "inlinePaths" },
     ],
   },
   {
@@ -345,9 +354,90 @@ async function assertToolsEnumerated(app, expect, withFlag) {
   }
 }
 
+/** canvas 全链（canvas-tool-v1）：render_card → inspect_layout → export_svg →
+ *  export_canvas_png；同一页内连续执行，验证 WebMCP 工具状态机与 PNG 尺寸。 */
+async function assertCanvasPath(browser) {
+  const server = await serveDir(join(ROOT, "apps", "canvas", "dist"));
+  const page = await browser.newPage();
+  try {
+    await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: "load" });
+    const out = await page
+      .waitForFunction(
+        () => document.modelContext
+          ? document.modelContext.getTools().then((ts) => ts.some((t) => t.name === "render_card"))
+          : false,
+        undefined,
+        { timeout: 30000, polling: 500 },
+      )
+      .then(() => page.evaluate(async (spec) => {
+        const ts = await document.modelContext.getTools();
+        const call = async (name, input) => {
+          const tool = ts.find((t) => t.name === name);
+          if (!tool) throw new Error(`缺工具 ${name}`);
+          const raw = await document.modelContext.executeTool(tool, input);
+          return typeof raw === "string" ? JSON.parse(raw) : raw;
+        };
+        const render = await call("render_card", { spec });
+        const inspect = await call("inspect_layout", {});
+        const svg = await call("export_svg", {});
+        const png = await call("export_canvas_png", { scale: 2, filename: "gate.png" });
+        const font = await call("get_asset", { id: "font-noto-sans-sc" });
+        let fontStatus = "missing";
+        if (font.ok && font.asset?.fontUrl) {
+          const face = new FontFace("GateNotoSubset", `url(${font.asset.fontUrl})`);
+          await face.load();
+          document.fonts.add(face);
+          fontStatus = face.status;
+        }
+        return { render, inspect, svg, png, font, fontStatus };
+      }, {
+        width: 600,
+        height: 400,
+        background: "#0b1020",
+        root: {
+          type: "div",
+          props: {
+            id: "gate-root",
+            style: {
+              width: "100%", height: "100%", display: "flex", alignItems: "center",
+              justifyContent: "center", backgroundColor: "#0b1020", color: "#ffffff",
+              fontSize: 40,
+            },
+            children: "CANVAS GATE",
+          },
+        },
+      }));
+    if (out.render.ok !== true || out.render.width !== 600 || out.render.height !== 400) {
+      throw new Error(`render_card 失败: ${JSON.stringify(out.render).slice(0, 200)}`);
+    }
+    if (out.inspect.ok !== true || !Array.isArray(out.inspect.nodes)) {
+      throw new Error(`inspect_layout 失败: ${JSON.stringify(out.inspect).slice(0, 200)}`);
+    }
+    if (out.svg.ok !== true || !String(out.svg.svg).startsWith("<svg")) {
+      throw new Error(`export_svg 失败: ${JSON.stringify(out.svg).slice(0, 160)}`);
+    }
+    if (out.png.ok !== true || out.png.width !== 1200 || out.png.height !== 800) {
+      throw new Error(`export_canvas_png 失败: ${JSON.stringify(out.png).slice(0, 200)}`);
+    }
+    if (out.font.ok !== true || out.fontStatus !== "loaded") {
+      throw new Error(`内置 WOFF2 字体加载失败: ${JSON.stringify({ font: out.font, status: out.fontStatus }).slice(0, 200)}`);
+    }
+    record(
+      `[原生] canvas 全链：render_card(600×400) → inspect_layout(${out.inspect.nodes.length} 节点) → export_svg → export_canvas_png(1200×800) → 内置 WOFF2 字体 ${out.fontStatus}`,
+      true,
+    );
+  } catch (e) {
+    record("[原生] canvas 全链 render/inspect/export", false, e.message);
+  } finally {
+    await page.close();
+    server.close();
+  }
+}
+
 async function assertNativePath(browser) {
-  // 全部页面枚举（原生：黄页+三存量工具+办公三站+编辑器三站；每站独立浏览器）
-  for (const [app, expect] of Object.entries(EXPECT)) {
+  // 全部页面枚举（原生：黄页+存量工具+办公三站+编辑器三站；每站独立浏览器）
+  const selected = Object.entries(EXPECT).filter(([app]) => ONLY_APPS.size === 0 || ONLY_APPS.has(app));
+  for (const [app, expect] of selected) {
     try {
       const names = await assertToolsEnumerated(app, expect, true);
       record(`[原生] ${app}: getTools() → [${names.join(", ")}]`, true);
@@ -355,6 +445,12 @@ async function assertNativePath(browser) {
       record(`[原生] ${app}: getTools()`, false, e.message);
     }
   }
+
+  // canvas 全链（选中 canvas 或全量时都跑）
+  if (ONLY_APPS.size === 0 || ONLY_APPS.has("canvas")) await assertCanvasPath(browser);
+
+  // 子集模式只跑选中站枚举 + canvas 全链（不跑其余站的 execute 深链）
+  if (ONLY_APPS.size > 0) return;
 
   // executeTool 返回形态＝string（spec：Promise<DOMString>）
   try {
@@ -809,11 +905,13 @@ async function main() {
     await withFlag.close();
   }
 
-  const noFlag = await chromium.launch({ executablePath, headless: true });
-  try {
-    await assertPolyfillPath(noFlag);
-  } finally {
-    await noFlag.close();
+  const noFlag = ONLY_APPS.size > 0 ? null : await chromium.launch({ executablePath, headless: true });
+  if (noFlag !== null) {
+    try {
+      await assertPolyfillPath(noFlag);
+    } finally {
+      await noFlag.close();
+    }
   }
 
   console.log("\n=== webmcp-check 结果 ===");

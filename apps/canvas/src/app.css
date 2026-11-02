@@ -1,0 +1,6 @@
+@import "tailwindcss" source("../");
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fde2e-tools/shared/theme/solid-glass.css";
+
+@source "../../../packages/shared/src";

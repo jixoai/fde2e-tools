@@ -13,7 +13,7 @@
   `export_png` 语义位，长图只能叫 `export_long_png`，并补别名工具
   `export_pages_png` 作为归一路径起点）。
 - 参数名一律 camelCase（`startRow`/`filename`/`urlParams`）；与页面 URL 契约
-  同名参数（如 img-tool 的 `src/text/pos`）保持逐字一致。
+  同名参数（如 url-tool 的 `base/mode/params`）保持逐字一致。
 - 别名工具与本体 execute 同源（同一函数，仅 name/description 不同），禁复制逻辑。
 
 ## 2. 寻址与选择器（items 统一选择器）
@@ -76,9 +76,9 @@
   消费；**加新工具＝registry 加一条 + app buildTools 加一个 + webmcp-check
   EXPECT 加一个**，三面不一致＝lint 失败。
 - **URL 层契约与工具层契约是两层，描述语汇必须区分**：
-  - URL 参数（地址栏）写**编码后形态**（如 img-tool 颜色 `%23rrggbb`——`#`
-    在 URL 里是 hash 保留字）；
-  - 工具层 schema/description 写**解码后形态**（同例 `#rrggbb`）。
+  - URL 参数（地址栏）写**编码后形态**（如 url-tool 的 packed `?q=` 是
+    base64url，不是原始 JSON）；
+  - 工具层 schema/description 写**解码后形态**（`params` 对象）。
   - 工具 execute 对已发布调用方按旧文档传入的编码形态做**一层剥离兜底**
     （实测教训 F23：`%23` 经 URLSearchParams 再编码成 `%2523`，painter 正则
     不认 → 静默回退默认色还 ok:true）。

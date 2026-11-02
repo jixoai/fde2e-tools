@@ -5,7 +5,7 @@ FDE2E 工具集——**全静态、零后端**的公共工具仓库。
 - **工具黄页**：`tool.fde2e.com`（apps/directory）——工具卡片 + 搜索 + 实况预览 + 入口
 - **各工具独立站**：`<tool>.tool.fde2e.com`
   - `pdf-tool` — PDF 工具站：粘贴 Markdown/HTML → 预览 → 导出 PDF
-  - `img-tool` — 图片处理工具站：URL 参数即绘制指令（「网页链接＝函数调用」）
+  - `canvas` — Canvas 画布工具：JSON 排版 → Satori → SVG/PNG（内置字体/背景/形状/配方，可导入外部素材）
   - `url-tool` — URL 拼接器：query / packed（JSON→base64url）双模式 + 反向解码
   - `easy-xlsx` — 简易表格生成站：JSON（sheets）或粘贴表格 → 生成 .xlsx 下载（SheetJS 社区版；开箱即用快速档）
   - `easy-docx` — 简易文档生成站：Markdown 子集 → 生成 .docx 下载（docx 库，解析单源；开箱即用快速档）
@@ -22,7 +22,7 @@ FDE2E 工具集——**全静态、零后端**的公共工具仓库。
 apps/
   directory/   工具黄页（卡片 + 纯前端搜索 + 生产域 iframe 实况预览）
   pdf-tool/    HTML/MD → PDF（vendored marked + html2pdf，UMD 直引）
-  img-tool/    canvas 绘制管线（src/text/pos/size/color/bg/pad/w/h/label）
+  canvas/      JSON spec → Satori → SVG/PNG（字体/素材/配方 + fontkit 文本转 path）
   url-tool/    URL 拼接器（query/packed 双模式 + ?decode= 反向解码）
   easy-xlsx/   数据 → .xlsx（SheetJS 社区版动态 import 独立分包；JSON/TSV 双输入）
   easy-docx/   md 子集 → .docx（docx 库独立分包；AST 单源驱动预览与产物）
@@ -67,7 +67,7 @@ WebMCP inputSchema 派生（schemaFromUrlParams）三面共用。**加新工具 
 pnpm install
 pnpm dev:directory   # http://127.0.0.1:5271（黄页）
 pnpm dev:pdf-tool    # http://127.0.0.1:5272
-pnpm dev:img-tool    # http://127.0.0.1:5273
+pnpm dev:canvas      # http://127.0.0.1:5273（Satori 画布）
 pnpm dev:url-tool    # http://127.0.0.1:5274
 pnpm dev:easy-xlsx   # http://127.0.0.1:5275（轻量快速档）
 pnpm dev:easy-docx   # http://127.0.0.1:5276（轻量快速档）
@@ -84,7 +84,7 @@ dev server 仅绑 IPv4 回环，不对外暴露。黄页的 iframe 实况预览�
 
 ## 许可分区
 
-- **仓库主体＝Apache-2.0**（LICENSE）：apps/directory、pdf-tool、img-tool、
+- **仓库主体＝Apache-2.0**（LICENSE）：apps/directory、pdf-tool、canvas、
   url-tool、file-viewer、easy-* 三站、packages/shared、scripts、openspec。
 - **apps/pptx 目录＝AGPL-3.0**：PPTist（上游 AGPL-3.0）整库嵌入——vendored 副本
   逐字零改动（仅排除其入口），本目录胶水层与 PPTist 状态强耦合同按 AGPL 对外；
@@ -120,7 +120,7 @@ TOOLS_DEST=/www/tools bash deploy/tools-upload.sh pdf-tool   # 逐 app 上传（
 | --- | --- |
 | tool.fde2e.com（黄页） | `list_tools` / `search_tools`（agent 到黄页一次枚举全部工具） |
 | pdf-tool | `render_preview` / `export_pdf` |
-| img-tool | `overlay_text` / `export_png` |
+| canvas | `render_card` / `inspect_layout` / `export_svg` / `export_canvas_png` + 字体/素材/配方工具 |
 | url-tool | `pack_url` / `decode_url`（纯函数） |
 | easy-xlsx | `create_xlsx` / `add_sheet_sample` |
 | easy-docx | `create_docx` / `append_docx_markdown` |

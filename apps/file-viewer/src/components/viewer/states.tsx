@@ -35,7 +35,7 @@ function StateIcon({ children }: { children: React.ReactNode }) {
 }
 
 /* ---- #ai-guide（页内智能体用法说明）------------------------------------
- * 示例链接升级为绝对地址（img-tool 同款），示例文件＝同源 /demo 夹具（public/
+ * 示例链接升级为绝对地址（canvas 同款），示例文件＝同源 /demo 夹具（public/
  * demo 随构建迁出，零 CORS 依赖即可体验各解码器）；解码器 id 清单从解码器
  * 注册表单源枚举（ai-guide 不手抄第二份）。 */
 const ABS_BASE =
