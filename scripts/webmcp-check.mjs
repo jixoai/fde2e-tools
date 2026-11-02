@@ -356,15 +356,22 @@ async function assertToolsEnumerated(app, expect, withFlag) {
 
 /** canvas 全链（canvas-tool-v1）：render_card → inspect_layout → export_svg →
  *  export_canvas_png；同一页内连续执行，验证 WebMCP 工具状态机与 PNG 尺寸。 */
-async function assertCanvasPath(browser) {
+async function assertCanvasPath() {
+  // 独立浏览器（Chrome 原生 WebMCP 在同浏览器多页后注册队列会缺工具——见
+  // assertToolsEnumerated 头注；canvas 全链必须在干净浏览器里跑）。
+  const canvasBrowser = await chromium.launch({
+    executablePath: findChrome(),
+    headless: true,
+    args: ["--enable-blink-features=WebMCP"],
+  });
   const server = await serveDir(join(ROOT, "apps", "canvas", "dist"));
-  const page = await browser.newPage();
+  const page = await canvasBrowser.newPage();
   try {
     await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: "load" });
     const out = await page
       .waitForFunction(
         () => document.modelContext
-          ? document.modelContext.getTools().then((ts) => ts.some((t) => t.name === "render_card"))
+          ? document.modelContext.getTools().then((ts) => ts.some((t) => t.name === "render_card") && ts.some((t) => t.name === "get_asset"))
           : false,
         undefined,
         { timeout: 30000, polling: 500 },
@@ -431,6 +438,7 @@ async function assertCanvasPath(browser) {
   } finally {
     await page.close();
     server.close();
+    await canvasBrowser.close();
   }
 }
 
@@ -447,7 +455,7 @@ async function assertNativePath(browser) {
   }
 
   // canvas 全链（选中 canvas 或全量时都跑）
-  if (ONLY_APPS.size === 0 || ONLY_APPS.has("canvas")) await assertCanvasPath(browser);
+  if (ONLY_APPS.size === 0 || ONLY_APPS.has("canvas")) await assertCanvasPath();
 
   // 子集模式只跑选中站枚举 + canvas 全链（不跑其余站的 execute 深链）
   if (ONLY_APPS.size > 0) return;
@@ -534,9 +542,18 @@ async function assertNativePath(browser) {
     search_ok: (r) => r.ok === true && r.count >= 1,
   };
   for (const matrix of ILLEGAL_MATRIX) {
+    let matrixBrowser = browser;
     try {
+      // canvas 用干净浏览器（原生 WebMCP 多页后注册队列会缺工具）
+      if (matrix.app === "canvas") {
+        matrixBrowser = await chromium.launch({
+          executablePath: findChrome(),
+          headless: true,
+          args: ["--enable-blink-features=WebMCP"],
+        });
+      }
       const server = await serveDir(join(ROOT, "apps", matrix.app, "dist"));
-      const page = await browser.newPage();
+      const page = await matrixBrowser.newPage();
       await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: "load" });
       const plain = {
         cases: (matrix.cases ?? []).map((c) => ({ tool: c.tool, input: c.input, word: c.word })),
@@ -592,6 +609,8 @@ async function assertNativePath(browser) {
       server.close();
     } catch (e) {
       record(`[原生] ${matrix.app} 非法入参矩阵`, false, e.message);
+    } finally {
+      if (matrixBrowser !== browser) await matrixBrowser.close().catch(() => {});
     }
   }
 
