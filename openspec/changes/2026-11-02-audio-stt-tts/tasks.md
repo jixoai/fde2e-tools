@@ -40,7 +40,7 @@
       ≈157MB）经 deploy/models-fetch 钉定；`create_speech` 后端接 sherpa
       offline-tts（句切分流式 5/20 词基准）；文本框 + 音色选择（100 音色
       数字 ID，分组 UI 用 shadcn 官方 combobox）+ 语速/试听/下载。
-- [ ] 2.3 **长文流式与播放调度（句切已落/时钟链播放待）**：切句（缩写/小数安全，稳定 ID，v1.1-zh
+- [x] 2.3 **长文流式与播放调度**：切句（缩写/小数安全，稳定 ID，v1.1-zh
       ≤80–100 音素/句）+ 边生成边播（sherpa 增量回调 samples 复制出
       worker → AudioBuffer 时钟链：prime 0.4s/lookahead 2/underrun 观测）
       + requestId 可取消 + 句级 hash 缓存；单句 pad 30-80ms 可调常量。
@@ -55,7 +55,7 @@
       数）+ 只读 `get_capabilities`（整份 supports 对象，schema 由它派生
       ——enum/min/max/default 单源）；untrustedContentHint；ok:false 全带
       error。
-- [ ] 2.7 **试音对比/生成历史（一步到位）**：segment take chips（同句多
+- [x] 2.7 **试音对比/生成历史（一步到位）**：segment take chips（同句多
       take，点击试听）+ 历史（IndexedDB：blob+参数元数据，replay/download/
       delete）+ **A/B 并排对比**（同 take 两条并排、参数 diff、点哪条播哪
       条——Inflect compare 形态）。
