@@ -278,7 +278,7 @@ export function totalBytes(m: ModelManifest): number {
   return m.files.reduce((a, f) => a + f.bytes, 0);
 }
 
-/** 运行时源池（过滤空 repo 的占位条目） */
+/** 运行时源池（过滤空 repo 占位：modelscopeRepo="" 时 urlTemplate 带双斜杠） */
 export function sourcePoolOf(m: ModelManifest): ModelSource[] {
-  return m.sources.filter((s) => !s.urlTemplate.includes("/repo?FilePath") || !s.urlTemplate.startsWith("https://modelscope.cn/api/v1/models//"));
+  return m.sources.filter((s) => !s.urlTemplate.includes("models//"));
 }
