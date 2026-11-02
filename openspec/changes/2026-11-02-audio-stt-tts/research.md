@@ -168,3 +168,74 @@ pad 30–80ms 可调；decodeAudioData 会重采样且不处理 encoder-delay—
   （DownloadOptions.sources / noRange 降级 / WebDownload.autoLand）、
   site/scripts/build-downloader-core.mjs（IIFE 单源构建+漂移门）、
   fde2e-center-v0/openspec/specs/download-transport/spec.md（语义基线）。
+
+## 8. 产品对标（Owner 方法论裁决 2026-11-02：先找真实世界产品再动手）
+
+两路并查（STT/TTS 各一份产品盘点，结论摘要于此；完整矩阵与逐项 Sources
+见会话子代理原始报告）。
+
+### 8.1 STT 产品结论
+
+- **whisper-web（3344★）命中度 ~47%，不 fork**：SRT/VTT 导出 0（issue #11
+  挂两年）、段级播放同步 0、词级时间戳 0（issue #43 open）、栈落后两代
+  （React18/Vite4/transformers v2.7 私有 `_decode_asr`）、默认分支无
+  LICENSE、实质停更两年。可偷的只有 ~300 行（双声道降混/worker 消息协议
+  概念/下载进度 UI）。
+- **抄写参照（许可干净）**：
+  - **Subtitler（BSD-3，活跃）**——词级时间戳、段编辑（LCS+时间插值：改
+    文字不掉时间轴）、当前段高亮/自动滚动/聚焦跳段、SRT/VTT、PWA、视频
+    烧字幕。注意其 subtitleExport 的 VTT_SLUG 模块级累加 bug 抄逻辑时修。
+  - **Verbatim（MIT，2026-10 新）**——导出面板天花板（TXT/带时 TXT/SRT/
+    VTT/MD/JSON/CSV/zip/复制）+ 词/段双高亮 + click-to-seek；`export.rs`
+    的 SRT/VTT 边界处理（≥0.2s、空段、`-->` 转义、end null 回退）直接
+    翻成 TS。
+  - parakeet.js（MIT）adapter 接口形态。
+- **禁抄码只看交互**：Whishper（AGPL-3.0，自托管后端；翻译/CPS 警告/拆分
+  插入段交互好）、vtt-editor-pro（CC BY-NC-4.0；波形拖段/吸附/split-merge
+  UX 参照）。
+- **工程决策**：导出自写 ≤120 行 formatter 不引库；段同步＝原生 audio +
+  RAF + 二分 + DOM class（禁 60fps React state）；TranscriptDoc canonical
+  单源（spec 已入）。
+
+### 8.2 TTS 产品结论
+
+- **Kokoro 全系无情绪/语气标签**（已核实 v1.0 config vocab 114 tokens、
+  v1.1-zh 178 tokens、misaki en/zh 源码——无 LINK_REGEX 类 tag 面）；风格
+  本质是 voice pack 的 256 维 style vector。**`[laugh]`/<laugh> 记忆来自
+  ChatTTS/Orpheus/Supertonic，不是 Kokoro**。supports 面按此如实声明，
+  界面禁假控件（spec「假控件禁令」Scenario 的出处）。
+- **kokoro-web（3344★ Cos？无：是 Xenova 官方 demo，Apache-2.0）是两小时
+  单日 demo，不 fork**：硬编码 v1.0-ONNX、无引擎抽象、无取消、无历史、
+  逐句 `<audio>` ended 链（gapless 坑）。可抄 ~300 行：App 布局 +
+  AudioChunk 交互 + SpeedControl 形态 + worker 消息协议（加
+  requestId/cancel 后用）。
+- **抄写参照**：
+  - **sherpa 官方 wasm demo（Apache-2.0）**——`ttsInstanceInfo` +
+    `updateUiForModelType()` 的「能力驱动显隐」先例；engine 的
+    `GenerationConfig` 还暴露 phoneme/tokens 直插（v1.1-zh 的「发音修正」
+    高级面）。
+  - **pocket-tts-js（MIT）StreamingPlayer**——prime 0.4s/lead 0.05s/
+    nextStartTime 串接/underrun 计数，无缝调度抄这个。
+  - **Inknarrate（GPL-3.0，禁抄码只抄思路）**——CAPS/META/SPECS 三层能力
+    对象、句级 takes（每句≤6 个 take＋per-sentence override）、hash 缓存
+    键、稳定 segment ID、Transport lookahead=2。
+  - Inflect zh-en（Apache-2.0）——models.json 驱动模型选择 + `/compare/`
+    同句多版本并排试听；VocoLoco——generation library（replay/reuse/
+    delete/download）。
+- **sherpa 增量回调关键坑**：官方 wasm worker 丢弃了 samples（只传
+  progress 数字）——我们必须在 callback 里 `slice()` 复制 Float32 再
+  transferable postMessage；返回 0 即取消。
+
+### 8.3 支持 → UI 的设计模式（落 spec 的 supports Requirement）
+
+四投影单源：UI 显隐（有则亮无则藏；禁 Supertonic 式「引擎支持 UI 不
+暴露」反例）、WebMCP schema（enum/min/max/default 从 supports 派生 +
+只读 `get_capabilities`；WebMCP 标准无 capabilities 字段，须自加）、
+URL 参数（不支持的人话报错）、运行时 reconcile（sherpa 实测 numSpeakers/
+lang ≠ 声明即 degraded）。
+
+> 溯源：本节两份原始盘点报告（STT 盘点含 whisper-web 深度解剖 2,286 行
+> 逐文件审计；TTS 盘点含 kokoro-web 67KB 全量解剖 + supports schema
+> 提案）由 2026-11-02 会话子代理产出，段落摘录为授权摘要，完整 Sources
+> 以子代理报告为准（whisper-web/Subtitler/Verbatim/kokoro-web/sherpa
+> wasm demo/pocket-tts-js/Inknarrate/Inflect/VocoLoco 等 60+ URL）。

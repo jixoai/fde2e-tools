@@ -154,3 +154,82 @@ zf_001…zm_100、24kHz、中英混说），Kokoro v1.0 ONNX（英文 54 音色�
 
 - **WHEN** WebGPU 档初始化失败（设备丢失/显存不足）
 - **THEN** 自动回落 WASM 小档并提示「已切换兼容模式」
+
+### Requirement: 转写产物＝带时间轴的 TranscriptDoc（单源投影）
+
+转写产物 SHALL 是规范化 **TranscriptDoc**（canonical 单源，秒制浮点，
+含 segments/words/language/engine/model 字段），UI 段列表、导出面、
+WebMCP 返回值 SHALL 全部从它投影。导出 SHALL 支持 TXT/SRT/VTT/JSON/复制
+全文，SRT/VTT 生成 SHALL 过边界处理规范（细节与实现参照见产品对标
+research.md §8：Verbatim/Subtitler 形态，不 fork whisper-web）。
+
+> 许可注：抄写形态的参照（Verbatim MIT / Subtitler BSD-3 / parakeet.js
+> MIT）保留 attribution；vtt-editor-pro（CC BY-NC）与 Whishper（AGPL）
+> 禁抄码只看交互。
+
+#### Scenario: 时间轴导出
+
+- **WHEN** 用户点击导出 SRT/VTT/JSON/TXT 任一格式
+- **THEN** 下载文件名符合 `<站id>-<格式>。<ext>` 契约，SRT 用逗号毫秒、
+  VTT 以 `WEBVTT` 头开始且 cue 文本内 `-->` 已转义，JSON 可回放还原段表
+
+#### Scenario: 段级播放同步
+
+- **WHEN** 音频播放中/用户点击任一段
+- **THEN** 当前段高亮＋自动滚动（悬停列表暂停跟随），点击段跳播对应时刻；
+  实现形态＝原生 `audio.currentTime`＋RAF＋二分查找＋DOM class
+  （禁把 60fps 走 React state）
+
+#### Scenario: 词级时间戳（能力可开）
+
+- **WHEN** 该模型 `supports.wordTimestamps` 为真且用户开启词级
+- **THEN** TranscriptDoc.words 由 `return_timestamps: "word"`（Whisper 系）
+  或 token timestamps（SenseVoice/sherpa 系）填充，JSON 含词级；
+  SRT/VTT 仍用段级 cue
+
+### Requirement: 模型能力面 supports（单源多投影，同 Provider can(x) 语义）
+
+manifest 每模型 SHALL 登记类型化 **`supports` 能力对象**，四个投影
+（UI 显隐与范围 / WebMCP schema / URL 参数 / 运行时 reconcile 校验）
+SHALL 全部由它单源驱动，有则亮、无则藏，禁假控件与静默忽略。
+
+> 具体字段面（speed 范围对象/inlineTags 句法枚举/emotionScalar 中性点/
+> voices 元数据……）与先例（sherpa ttsInstanceInfo/Inknarrate CAPS）见
+> research.md §8；WebMCP 能力查询落地形态与 shared/webmcp 的
+> schemaFromUrlParams 同思路。
+
+#### Scenario: 假控件禁令
+
+- **WHEN** 某 TTS 模型不支持 inlineTags（如 Kokoro 全系——已核实 v1.0/
+  v1.1-zh 均无情绪标签）而用户在看该模型档
+- **THEN** 语气词/风格面板不渲染（不是 disabled 灰置——能力未命中即不占
+  位）；该模型的 WebMCP schema 与 URL 契约同样不接受 style 类参数
+
+#### Scenario: 声明与实测不符
+
+- **WHEN** 引擎加载后实测音色数/语言集与 manifest 声明不一致
+- **THEN** UI 按实测降级（隐藏不存在项）并标注 degraded，日志里留
+  mismatch（禁让用户见过期声明直接裸奔）
+
+### Requirement: TTS 长文本流式与播放调度
+
+TTS 长文本 SHALL 按「切句（稳定 ID＋长度安全）→ 引擎增量回调 →
+AudioBuffer 时钟链无缝调度」管线**边生成边播**；生成任务 SHALL 可取消
+（requestId＋abort）；句级结果 SHALL 按 hash(text+voice+speed+model 版本)
+缓存以支持逐句重生成。调度参数形态（prime/lookahead/underrun）与引擎
+约束（Kokoro 510 音素上限、rushing 特性）见 research.md §8。
+
+> 实现参照：pocket-tts-js（MIT）StreamingPlayer；Inknarrate（GPL-3.0）
+> 只抄思路不抄码。
+
+#### Scenario: 边生成边播
+
+- **WHEN** 用户对 2000 字长文点开始合成
+- **THEN** 首句生成完即开始播放，后续句无逢衔接（prime 缓冲），全程
+  可暂停/可取消；生成与播放状态分离展示
+
+#### Scenario: 逐句重生成
+
+- **WHEN** 用户仅修改文中一句后点重新合成
+- **THEN** 未变化的句子命中缓存不重推，仅变更句重推并按稳定 ID 回填
+  （音频与文本状态不漂移）

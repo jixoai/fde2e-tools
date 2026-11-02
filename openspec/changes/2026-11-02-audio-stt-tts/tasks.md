@@ -40,17 +40,24 @@
       ≈157MB）经 deploy/models-fetch 钉定；`create_speech` 后端接 sherpa
       offline-tts（句切分流式 5/20 词基准）；文本框 + 音色选择（100 音色
       数字 ID，分组 UI 用 shadcn 官方 combobox）+ 语速/试听/下载。
-- [ ] 2.3 **gapless 播放**：AudioBufferSourceNode.start(when) 音频时钟链
-      （禁 setTimeout 串联/禁 performance.now 混钟）；句间 pad 30-80ms 可调
-      常量；长文本进度与试听中断可恢复。
+- [ ] 2.3 **长文流式与播放调度**：切句（缩写/小数安全，稳定 ID，v1.1-zh
+      ≤80–100 音素/句）+ 边生成边播（sherpa 增量回调 samples 复制出
+      worker → AudioBuffer 时钟链：prime 0.4s/lookahead 2/underrun 观测）
+      + requestId 可取消 + 句级 hash 缓存；单句 pad 30-80ms 可调常量。
+      参照 pocket-tts-js StreamingPlayer（MIT）。
 - [ ] 2.4 **英文档**：Kokoro v1.0 ONNX（'onnx-community' q8，transformers.js
       引擎路线）作为英文多语接入 v1.0 档位；Pocket TTS 为可勾选「轻量克隆
       英文」附加档（CC-BY-4.0 署名 NOTICE），仅当 POC 声音质量过关才勾选。
 - [ ] 2.5 **ai-guide + 许可段**：`<pre id="ai-guide">` 载用法、模型档位、
       首载体积、许可声明（与 NOTICE 单源）；音色/模型选择值域文档化。
-- [ ] 2.6 **WebMCP**：`list_voices`（枚举音色+默认配置）+
-      `create_speech`（text/voice/speed/filename? → 下载 wav 落 stub）；
-      untrustedContentHint 标注（text 含用户可控内容）；ok:false 全带 error。
+- [ ] 2.6 **WebMCP**：`list_voices`（带 voices 元数据：lang/gender/分组）+
+      `create_speech`（text/voice/speed/filename? → 下载 wav；返回时长/句
+      数）+ 只读 `get_capabilities`（整份 supports 对象，schema 由它派生
+      ——enum/min/max/default 单源）；untrustedContentHint；ok:false 全带
+      error。
+- [ ] 2.7 **试音对比/生成历史（v1 最小面）**：segment take chips（同句多
+      take，点击试听）+ 历史（IndexedDB：blob+参数元数据，replay/download/
+      delete）；A/B 并排形态可后置。
 
 ## 3. STT 站（apps/audio-stt）
 
@@ -66,9 +73,17 @@
 - [ ] 3.3 **麦克风实时（v2 排程锚点）**：本 change 只落 AudioWorklet 取流
       管线 + Silero VAD 接入（0.64MB MIT）；Zipformer 流式真转写挂 v2
       （ duiding 明示「实验」或干脆 v2 前不展示麦克风入口）。
-- [ ] 3.4 **ai-guide + WebMCP**：`list_models` + `transcribe_audio`
-      （audio?/language?/model?/filename? → 转写文本作为返回值；
-      untrustedContentHint 标注 DOM 桥输入）；品名/档位/体积与 manifest 同源。
+- [ ] 3.4 **TranscriptDoc 与导出面**：canonical 单源（秒制浮点
+      segments/words/language/engine/model）驱动段列表+导出+WebMCP；
+      导出 TXT/SRT/VTT/JSON/复制（自写 formatter ≤120 行：0.2s 最短 cue/
+      空段过滤/--＞转义/end 回退——参照 Verbatim export.rs；不引三方库）
+      + 单测边界矩阵（null end/空段/重叠/跨小时/连导两次不累加）。
+- [ ] 3.5 **段级同步**：RAF+二分+DOM class（禁 60fps setState）+点段跳播
+      +自动滚动（hover 暂停跟随）；词级高亮挂 supports.wordTimestamps 门
+      （Whisper return_timestamps:"word" / SenseVoice token timestamps）。
+- [ ] 3.6 **ai-guide + WebMCP**：`list_models` + `transcribe_audio`
+      （返回 TranscriptDoc JSON：segments+words，非裸文本）+
+      只读 `get_capabilities`；品名/档位/体积与 manifest 同源。
 
 ## 4. 黄页与 registry
 
