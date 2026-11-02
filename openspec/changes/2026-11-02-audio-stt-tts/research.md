@@ -145,8 +145,22 @@ pad 30–80ms 可调；decodeAudioData 会重采样且不处理 encoder-delay—
    （120MB 整包预载）废弃。注意：emcc 6 非 MODULARIZE 形态在 Node import()
    下静默 abort——测试须 vm 沙箱（`__dirname`/`module` stub）或浏览器 worker
    （`importScripts` 共享词法，`self.Module` 正常生效）。
-2. 浏览器侧 RTF 实测（三设备：M 系桌面 / 中低端 Win / 一台手机）——STT
-   whisper-base/turbo + SenseVoice；TTS Kokoro v1.1-zh int8。
+2. **浏览器侧 RTF 实测——✅ 本机段完成（2026-11-02，M 系 headless/WASM
+   单线程）；中低端 Win 与手机待实体设备批次**：
+   - **TTS Kokoro v1.1-zh int8**：RTF ≈ 2.91/3.02（两句中文，5.6s/9.9s 生成
+     1.94s/3.28s 音频）——纯合成档（非实时档），与桌面 RPi4 口径（3.19-7.64）
+     同级偏优；长文流式场景首句延迟 ≈6s，边生成边播可行但句间等待明显，
+     **句切分流式（tasks 2.3）是体验刚需**。
+   - **STT whisper-base q8**：推理 2.9s / 5.6s 中文样例 ≈ 0.52 实时（比实时
+     快一倍），够文件转写档；WebGPU 同水平（见 §6.3）。
+   - **STT SenseVoice-Small int8**：RTF 0.22-0.23（zh 5.59s 音频/1.26s；
+     en 7.15s/1.54s）——**快过实时 4 倍**，中文优先档性能富余；质量侧
+     zh.wav 出「开饭时间早上9点至下午5点。」（对照 whisper-base 同音频出
+     「開放時間早上9點…」——SenseVoice 明显更准，itn 数字规整也生效）。
+   - 工程注：sherpa wasm demo 的 ASR 导出面只含流式族——offline 识别
+     （SenseVoice）需在 CMakeLists exported_functions 补 9 个
+     SherpaOnnx*Offline* 符号（POC 已验证可行，纳入 build-sherpa-wasm.sh
+     的补丁清单）。POC 脚本 scripts/poc-sherpa-sensevoice.cjs。
 3. **transformers.js v4 WebGPU vs WASM——✅ 已实测（2026-11-02，本机 M 系
    headless Chromium + whisper-base q8）**：3 轮推理延迟 WebGPU 2982/2899/2921/
    2858ms ≈ WASM 2909/2945/2913/2932ms——**whisper-base q8 小模型上两者无实质
