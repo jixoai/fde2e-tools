@@ -165,6 +165,36 @@ export const KOKORO_V1_1_ZH_INT8: ModelManifest = {
   },
 };
 
+/* ── TTS 英文档：Kokoro v1.0 q8f16（transformers.js 路线；54 音色） ── */
+export const KOKORO_V1_0_EN_Q8F16: ModelManifest = {
+  modelId: "kokoro-v1_0-en-q8f16",
+  use: "tts",
+  engine: "transformers",
+  name: "Kokoro v1.0 英文（q8f16）",
+  description: "英文 54 音色，24kHz，约 86MB；transformers.js TTS 路线",
+  upstreamId: "onnx-community/kokoro-82M-v1.0-ONNX",
+  licenseTag: "apache-2.0",
+  notice: "Kokoro-82M v1.0，Apache-2.0（onnx-community 量化镜像；voices 为 256 维 style vector，无情绪标签）",
+  minDeviceTier: "mid",
+  root: "kokoro-v1_0-en-q8f16",
+  files: [
+    { path: "onnx/model_q8f16.onnx", bytes: 86033585, sha256: "04c658aec1b6008857c2ad10f8c589d4180d0ec427e7e6118ceb487e215c3cd0" },
+    { path: "config.json", bytes: 44, sha256: "df34b4f930b23447cd4dc410fabfb42eb3f24e803e6c3f97d618fb359380a36f" },
+    { path: "tokenizer.json", bytes: 3497, sha256: "77a02c8e164413299b4b4c403b14f8e0e1c1b727db4d46a09d6327b861060a34" },
+    { path: "tokenizer_config.json", bytes: 113, sha256: "be1cb066d6ef6b074b3f15e6a6dd21ac88ff3cdaedf325f0aaed686c70f75d20" },
+  ],
+  sources: sourcesFor("kokoro-v1_0-en-q8f16", {
+    modelscopeRepo: "onnx-community/kokoro-82M-v1.0-ONNX",
+    hfRepo: "onnx-community/kokoro-82M-v1.0-ONNX",
+  }),
+  supports: {
+    speed: { min: 0.5, max: 2.0, default: 1.0 },
+    numSpeakers: 54,
+    languages: ["en"],
+    // 无 inlineTags / emotionTags（Kokoro 全系无情绪标签）
+  },
+};
+
 /* ── STT：whisper-base q8（transformers.js 默认档，WASM 兜底） ── */
 export const WHISPER_BASE_Q8: ModelManifest = {
   modelId: "whisper-base-q8",
@@ -260,6 +290,7 @@ export const ZIPFORMER_BILINGUAL_STREAMING: ModelManifest = {
 /** 全量清单（两站按 use 过滤） */
 export const AUDIO_MODELS: ModelManifest[] = [
   KOKORO_V1_1_ZH_INT8,
+  KOKORO_V1_0_EN_Q8F16,
   WHISPER_BASE_Q8,
   SENSEVOICE_SMALL_INT8,
   ZIPFORMER_BILINGUAL_STREAMING,

@@ -217,7 +217,9 @@ for (const m of targets) {
     let lastErr = null;
     for (const s of pool) {
       const url = urlFor(m, s, f);
-      // 源可用性探针（Range 0-0）：404/5xx 直接跳过该源（不烧 6 次块级重试）
+      // 源可用性探针（Range 0-0）：404/5xx 直接跳过该源；206/200 都算可用
+      // （200＝全量源——ModelScope resolve 实测，见 research §6.2——大件也走直取）
+      let rangeOk = false;
       try {
         const probe = await fetch(url, { headers: { range: "bytes=0-0" }, signal: AbortSignal.timeout(15000) });
         if (!probe.ok && probe.status !== 206) {
@@ -225,15 +227,16 @@ for (const m of targets) {
           console.warn(`  · 源 ${s.id} 不可用: ${lastErr.message}`);
           continue;
         }
+        rangeOk = probe.status === 206;
       } catch (e) {
         lastErr = e;
         console.warn(`  · 源 ${s.id} 探针失败: ${e.message}`);
         continue;
       }
-      // 小文件（<4MiB＝单 chunk 阈值）直接 fetch＋sha 门（Range-less 源也工作；
-      // downloader 的多源分片价值在大文件，小文件走它反被 200-instead-of-206
-      // 的源卡死——ModelScope resolve 对 Range 回 200 全量实测 2026-11-02）
-      if (f.bytes < 4 * 1024 * 1024) {
+      // 直取路径：小文件，或源不支持 Range（206 判定失败＝200-全量源）。
+      // downloader 的多源分片只在 206-Range 源上工作（ModelScope resolve 对
+      // Range 回 200 全量实测 2026-11-02——Range 语义乱套会卡死分片重试）
+      if (f.bytes < 4 * 1024 * 1024 || !rangeOk) {
         try {
           const resp = await fetch(url, { signal: AbortSignal.timeout(120000) });
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -241,16 +244,17 @@ for (const m of targets) {
           const actual = sha256(bytes);
           if (actual !== f.sha256) throw new Error(`sha mismatch ${actual.slice(0, 12)}…`);
           writeFileSync(p, bytes);
-          console.log(`  ✓ ${f.path}（${(f.bytes / 1048576).toFixed(2)}MB via ${s.id} 小件直取）`);
+          console.log(`  ✓ ${f.path}（${(f.bytes / 1048576).toFixed(1)}MB via ${s.id} 直取${rangeOk ? "" : "·200源"}）`);
           done = true;
         } catch (e) {
           lastErr = e;
-          console.warn(`  · 源 ${s.id} 小件直取失败: ${e.message}`);
+          console.warn(`  · 源 ${s.id} 直取失败: ${e.message}`);
         }
         if (done) break;
         continue;
       }
       try {
+        mkdirSync(join(CACHE_DIR, ".chunks"), { recursive: true }); // FsChunkStore 原子写前置
         const dl = new core.Download(
           {
             ghUrl: url,
@@ -271,7 +275,8 @@ for (const m of targets) {
             random: Math.random,
           },
         );
-        const r = await dl.run();
+        dl.onProgress?.(() => {});
+        const r = await dl.run().catch((e) => { console.warn(`  · run 异常: ${e.message}`); throw e; });
         if (r !== "done") throw new Error(`run=${r}`);
         const v = await dl.verifySha256();
         if (v.status !== "match") throw new Error(`sha ${v.status}`);
