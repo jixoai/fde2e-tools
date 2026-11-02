@@ -30,7 +30,7 @@
 
 ## 2. TTS 站（apps/audio-tts）
 
-- [ ] 2.1 **sherpa-onnx wasm 产物**：仓内构建脚本
+- [x] 2.1 **sherpa-onnx wasm 产物**：仓内构建脚本
       `apps/audio-tts/scripts/build-sherpa-wasm.sh`（钉 sherpa-onnx tag ≥
       2026-10-20 版），产物 vendor 进 `apps/audio-tts/src/vendor/sherpa/`
       （wasm+js，禁带 espeak-ng-data/piper-phonemize）；构建脚本入库、产物
