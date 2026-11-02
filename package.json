@@ -13,6 +13,7 @@
     "build": "pnpm -r run build",
     "webmcp:check": "node scripts/webmcp-check.mjs",
     "smoke:check": "node scripts/smoke-check.mjs",
+    "test:canvas-shaders": "node --experimental-strip-types --test scripts/canvas-shader-test.mjs",
     "dev:directory": "pnpm --filter directory dev",
     "dev:pdf-tool": "pnpm --filter pdf-tool dev",
     "dev:canvas": "pnpm --filter canvas dev",

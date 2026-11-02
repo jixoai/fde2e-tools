@@ -14,8 +14,18 @@ import { downloadBlob, safeFilename } from "@fde2e-tools/shared/download";
 import { renderCanvas, svgToPng, type RenderResult } from "./render";
 import { inspectCanvas, inspectToText } from "./inspect";
 import { fontGlyphs, fontInfo, textToSvg } from "./font-client";
-import { assetSummary, getAsset, importAsset, listAssets, type AssetType } from "./assets";
+import { assetSummary, getAsset, importAsset, listAssets, registerGeneratedAsset, type AssetType } from "./assets";
 import { getRecipe, listRecipes, STYLES } from "./recipes";
+import {
+  ShaderError,
+  getShaderPreset,
+  listShaderPresets,
+  presetSummary,
+  validPresetIds,
+  type ShaderFormat,
+} from "./shaders/presets";
+import { runShaderJob, resolveShaderSource, type ShaderOp, type ShaderStepResult } from "./shaders/chain";
+import { loadImage } from "./shaders/render";
 
 interface CanvasState {
   renderId: string;
@@ -68,9 +78,13 @@ function current(renderId?: string): RenderResult {
   return state.result;
 }
 
-function fail(e: unknown): { ok: false; error: string; message: string } {
+function fail(e: unknown): { ok: false; error: string; message: string; code?: string } {
   const msg = e instanceof Error && e.message ? e.message : String(e);
-  return { ok: false, error: msg, message: msg };
+  const code =
+    e && typeof e === "object" && "code" in e && typeof (e as { code?: unknown }).code === "string"
+      ? (e as { code: string }).code
+      : undefined;
+  return { ok: false, error: msg, message: msg, ...(code ? { code } : {}) };
 }
 
 function err(message: string): { ok: false; error: string; message: string } {
@@ -92,6 +106,201 @@ function withinBudget<T extends Record<string, unknown>>(
 const FONTS = [
   { family: "Noto Sans SC", weights: [400, 700], source: "builtin", license: "OFL-1.1" },
 ];
+
+/* ---------------- Paper Shaders 工具实现（工具与人类 UI 共用） ---------------- */
+
+export interface ShaderAssetResult {
+  assetId: string;
+  width: number;
+  height: number;
+  format: ShaderFormat;
+  bytes: number;
+  steps: ShaderStepResult[];
+  warnings: string[];
+}
+
+function requireShaderPreset(id: string) {
+  const preset = getShaderPreset(id);
+  if (!preset) {
+    throw new ShaderError(
+      "E_SHADER_UNKNOWN_PRESET",
+      `未知预设：${id || "(空)"}；可用预设：${validPresetIds().join(", ")}`,
+    );
+  }
+  return preset;
+}
+
+function shaderTags(tags: unknown): string[] | undefined {
+  return Array.isArray(tags) ? tags.map(String) : undefined;
+}
+
+function shaderParams(params: unknown): Record<string, unknown> | undefined {
+  if (params === undefined || params === null) return undefined;
+  if (typeof params !== "object" || Array.isArray(params)) {
+    throw new ShaderError("E_SHADER_BAD_PARAM", "params 必须是对象");
+  }
+  return params as Record<string, unknown>;
+}
+
+export async function generateBackgroundAsset(input: {
+  preset: string;
+  width?: number;
+  height?: number;
+  params?: unknown;
+  format?: ShaderFormat;
+  quality?: number;
+  name?: string;
+  tags?: unknown;
+}): Promise<ShaderAssetResult> {
+  const preset = requireShaderPreset(input.preset);
+  if (preset.needsImage) {
+    throw new ShaderError(
+      "E_SHADER_SOURCE_REQUIRED",
+      `预设 ${preset.id} 需要图片输入，请改用 apply_shader（sourceAssetId/sourceDataUrl）`,
+    );
+  }
+  const result = await runShaderJob({
+    width: input.width ?? preset.recommendedSize.width,
+    height: input.height ?? preset.recommendedSize.height,
+    chain: [{ preset: preset.id, params: shaderParams(input.params) }],
+    format: input.format,
+    quality: input.quality,
+  });
+  const asset = registerGeneratedAsset({
+    dataUrl: result.dataUrl,
+    width: result.width,
+    height: result.height,
+    name: input.name,
+    tags: shaderTags(input.tags),
+    chain: [preset.id],
+  });
+  return {
+    assetId: asset.id,
+    width: result.width,
+    height: result.height,
+    format: result.format,
+    bytes: result.bytes,
+    steps: result.steps,
+    warnings: result.warnings,
+  };
+}
+
+export async function applyShaderAsset(input: {
+  preset: string;
+  sourceAssetId?: string;
+  sourceDataUrl?: string;
+  width?: number;
+  height?: number;
+  params?: unknown;
+  format?: ShaderFormat;
+  quality?: number;
+  name?: string;
+  tags?: unknown;
+}): Promise<ShaderAssetResult> {
+  const preset = requireShaderPreset(input.preset);
+  if (!preset.needsImage) {
+    throw new ShaderError(
+      "E_SHADER_BAD_PARAM",
+      `预设 ${preset.id} 不消费图片，请改用 generate_background`,
+    );
+  }
+  const hasAsset = typeof input.sourceAssetId === "string" && input.sourceAssetId.length > 0;
+  const hasData = typeof input.sourceDataUrl === "string" && input.sourceDataUrl.length > 0;
+  if (hasAsset && hasData) {
+    throw new ShaderError("E_SHADER_BAD_PARAM", "sourceAssetId 与 sourceDataUrl 只能用一个");
+  }
+  if (!hasAsset && !hasData) {
+    throw new ShaderError(
+      "E_SHADER_SOURCE_REQUIRED",
+      `预设 ${preset.id} 需要图片输入：sourceAssetId 或 sourceDataUrl 必填`,
+    );
+  }
+
+  let source: string;
+  let defaultWidth = preset.recommendedSize.width;
+  let defaultHeight = preset.recommendedSize.height;
+  if (hasAsset) {
+    const asset = getAsset(input.sourceAssetId!);
+    if (!asset?.dataUrl) {
+      throw new ShaderError(
+        "E_SHADER_SOURCE_REQUIRED",
+        `source 素材不存在或不是图片：asset:${input.sourceAssetId}（先用 list_assets/get_asset 确认）`,
+      );
+    }
+    source = `asset:${asset.id}`;
+    defaultWidth = asset.width ?? defaultWidth;
+    defaultHeight = asset.height ?? defaultHeight;
+  } else {
+    source = input.sourceDataUrl!;
+    // data URL 未给尺寸时按源图真实尺寸；先校验 scheme 再 decode（禁止外部 URL）
+    if (input.width === undefined || input.height === undefined) {
+      const image = await loadImage(resolveShaderSource(source));
+      defaultWidth = image.naturalWidth || defaultWidth;
+      defaultHeight = image.naturalHeight || defaultHeight;
+    }
+  }
+
+  const result = await runShaderJob({
+    width: input.width ?? defaultWidth,
+    height: input.height ?? defaultHeight,
+    chain: [{ preset: preset.id, params: shaderParams(input.params), source }],
+    format: input.format,
+    quality: input.quality,
+  });
+  const asset = registerGeneratedAsset({
+    dataUrl: result.dataUrl,
+    width: result.width,
+    height: result.height,
+    name: input.name,
+    tags: shaderTags(input.tags),
+    chain: [preset.id],
+  });
+  return {
+    assetId: asset.id,
+    width: result.width,
+    height: result.height,
+    format: result.format,
+    bytes: result.bytes,
+    steps: result.steps,
+    warnings: result.warnings,
+  };
+}
+
+export async function shaderToAsset(input: {
+  width: number;
+  height: number;
+  chain: ShaderOp[];
+  format?: ShaderFormat;
+  quality?: number;
+  name?: string;
+  tags?: unknown;
+}): Promise<ShaderAssetResult> {
+  const result = await runShaderJob({
+    width: input.width,
+    height: input.height,
+    chain: input.chain,
+    format: input.format,
+    quality: input.quality,
+  });
+  const chainIds = Array.isArray(input.chain) ? input.chain.map((op) => String(op?.preset ?? "")) : [];
+  const asset = registerGeneratedAsset({
+    dataUrl: result.dataUrl,
+    width: result.width,
+    height: result.height,
+    name: input.name,
+    tags: shaderTags(input.tags),
+    chain: chainIds,
+  });
+  return {
+    assetId: asset.id,
+    width: result.width,
+    height: result.height,
+    format: result.format,
+    bytes: result.bytes,
+    steps: result.steps,
+    warnings: result.warnings,
+  };
+}
 
 function buildTools(): WebMCPToolDef[] {
   return [
@@ -494,6 +703,162 @@ function buildTools(): WebMCPToolDef[] {
           const chars = String(input.chars ?? "");
           if (!url || !chars) return err("url 与 chars 必填");
           const result = await fontGlyphs(url, Array.from(chars).slice(0, 64).join(""));
+          return withinBudget({ ok: true, ...result });
+        } catch (e) {
+          return fail(e);
+        }
+      },
+    },
+    {
+      name: "list_shader_presets",
+      title: "列出 Shader 预设",
+      description:
+        "返回内置 Paper Shaders 预设摘要（id/name/tags/needsImage/recommendedSize/overridable），不回全量默认参数。" +
+        "mesh-sunset/mesh-aurora 为渐变生成器；glass-prism/paper-default 为图片处理器（needsImage=true）。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          tag: { type: "string", description: "可选：按标签/名称/kind 过滤（如 mesh/glass/paper/warm）" },
+          needsImage: { type: "boolean", description: "可选：只返回需要/不需要图片输入的预设" },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true },
+      async execute(input) {
+        const presets = listShaderPresets({
+          tag: typeof input.tag === "string" ? input.tag : undefined,
+          needsImage: typeof input.needsImage === "boolean" ? input.needsImage : undefined,
+        }).map(presetSummary);
+        return withinBudget({ ok: true, presets, total: presets.length });
+      },
+    },
+    {
+      name: "generate_background",
+      title: "生成 Shader 背景",
+      description:
+        "用生成型预设（mesh-sunset/mesh-aurora）在页面内 WebGL2 光栅化一张背景并注册为 Canvas 资产。" +
+        "params 只允许预设 overridable 键（colors/positions/waveX/waveY/mixing/grain*），颜色严格校验。" +
+        "返回 assetId/尺寸/格式/字节，不返回 data URL；spec 里用 img.src=\"asset:<id>\"。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          preset: { type: "string", description: "预设 id（见 list_shader_presets；生成型）" },
+          width: { type: "number", description: "可选：16–4096，缺省预设推荐宽" },
+          height: { type: "number", description: "可选：16–4096，缺省预设推荐高" },
+          params: { type: "object", description: "可选：覆盖预设参数（白名单/clamp/严格颜色）" },
+          format: { type: "string", enum: ["png", "jpeg", "webp"], description: "可选：缺省 jpeg" },
+          quality: { type: "number", description: "可选：0.1–1，缺省 0.92（png 忽略）" },
+          name: { type: "string", description: "可选：资产显示名" },
+          tags: { type: "array", items: { type: "string" }, description: "可选：额外资产标签" },
+        },
+        required: ["preset"],
+        additionalProperties: false,
+      },
+      async execute(input) {
+        try {
+          const result = await generateBackgroundAsset({
+            preset: String(input.preset ?? ""),
+            width: typeof input.width === "number" ? input.width : undefined,
+            height: typeof input.height === "number" ? input.height : undefined,
+            params: input.params,
+            format: input.format as ShaderFormat | undefined,
+            quality: typeof input.quality === "number" ? input.quality : undefined,
+            name: typeof input.name === "string" ? input.name : undefined,
+            tags: input.tags,
+          });
+          return withinBudget({ ok: true, ...result });
+        } catch (e) {
+          return fail(e);
+        }
+      },
+    },
+    {
+      name: "apply_shader",
+      title: "加工已有图片",
+      description:
+        "用处理型预设（glass-prism/paper-default）对已有图片做 shader 加工并注册为新资产；源资产不被修改。" +
+        "sourceAssetId 与 sourceDataUrl 二选一；只接受 asset:<id> 或 data:image/(png|jpeg|webp)。" +
+        "返回新 assetId/尺寸/格式/字节，不返回 data URL。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          preset: { type: "string", description: "预设 id（needsImage=true，见 list_shader_presets）" },
+          sourceAssetId: { type: "string", description: "可选：源素材 id（asset:<id> 的 <id> 部分）" },
+          sourceDataUrl: { type: "string", description: "可选：源图片 data:image/(png|jpeg|webp)" },
+          width: { type: "number", description: "可选：16–4096，缺省源图/预设推荐尺寸" },
+          height: { type: "number", description: "可选：16–4096，缺省源图/预设推荐尺寸" },
+          params: { type: "object", description: "可选：覆盖预设参数（白名单/clamp/严格颜色）" },
+          format: { type: "string", enum: ["png", "jpeg", "webp"], description: "可选：缺省 jpeg" },
+          quality: { type: "number", description: "可选：0.1–1，缺省 0.92" },
+          name: { type: "string", description: "可选：资产显示名" },
+        },
+        required: ["preset"],
+        additionalProperties: false,
+      },
+      async execute(input) {
+        try {
+          const result = await applyShaderAsset({
+            preset: String(input.preset ?? ""),
+            sourceAssetId: typeof input.sourceAssetId === "string" ? input.sourceAssetId : undefined,
+            sourceDataUrl: typeof input.sourceDataUrl === "string" ? input.sourceDataUrl : undefined,
+            width: typeof input.width === "number" ? input.width : undefined,
+            height: typeof input.height === "number" ? input.height : undefined,
+            params: input.params,
+            format: input.format as ShaderFormat | undefined,
+            quality: typeof input.quality === "number" ? input.quality : undefined,
+            name: typeof input.name === "string" ? input.name : undefined,
+          });
+          return withinBudget({ ok: true, ...result });
+        } catch (e) {
+          return fail(e);
+        }
+      },
+    },
+    {
+      name: "shader_to_asset",
+      title: "链式 Shader 生成",
+      description:
+        "1–4 步链式生成/处理：每步 {preset, params?, source?}；缺省 source 用上一步输出，每步按目标尺寸重绘。" +
+        "中间步骤 PNG，最终默认 JPEG q0.92；返回 assetId/尺寸/格式/字节/每步耗时，不返回 data URL。" +
+        "示例：mesh-sunset → glass-prism；mesh-sunset → paper-default。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          width: { type: "number", description: "16–4096：每步输出尺寸" },
+          height: { type: "number", description: "16–4096：每步输出尺寸" },
+          chain: {
+            type: "array",
+            description: "1–4 步；每步 {preset, params?, source?}",
+            items: {
+              type: "object",
+              properties: {
+                preset: { type: "string", description: "预设 id" },
+                params: { type: "object", description: "可选：覆盖该步预设参数" },
+                source: { type: "string", description: "可选：asset:<id> 或 data:image/...；缺省上一步输出" },
+              },
+              required: ["preset"],
+              additionalProperties: false,
+            },
+          },
+          format: { type: "string", enum: ["png", "jpeg", "webp"], description: "可选：最终格式，缺省 jpeg" },
+          quality: { type: "number", description: "可选：0.1–1，缺省 0.92" },
+          name: { type: "string", description: "可选：资产显示名" },
+          tags: { type: "array", items: { type: "string" }, description: "可选：额外资产标签" },
+        },
+        required: ["width", "height", "chain"],
+        additionalProperties: false,
+      },
+      async execute(input) {
+        try {
+          const result = await shaderToAsset({
+            width: typeof input.width === "number" ? input.width : Number.NaN,
+            height: typeof input.height === "number" ? input.height : Number.NaN,
+            chain: input.chain as ShaderOp[],
+            format: input.format as ShaderFormat | undefined,
+            quality: typeof input.quality === "number" ? input.quality : undefined,
+            name: typeof input.name === "string" ? input.name : undefined,
+            tags: input.tags,
+          });
           return withinBudget({ ok: true, ...result });
         } catch (e) {
           return fail(e);

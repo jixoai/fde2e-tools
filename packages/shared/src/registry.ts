@@ -115,11 +115,11 @@ export const TOOLS: ToolMeta[] = [
     name: "Canvas 画布工具",
     tagline: "用 JSON 排版，导出 SVG/PNG",
     description:
-      "Satori 确定性出图：JSON spec/配方 → SVG/PNG；内置字体、背景、形状与配方，支持 fontkit 文本转 path、外部素材导入。纯前端零后端，同输入同输出。",
-    tags: ["画布", "海报", "封面", "SVG", "PNG", "排版", "设计", "字体", "素材", "satori"],
+      "Satori 确定性出图：JSON spec/配方 → SVG/PNG；内置字体、背景、形状与配方，支持 fontkit 文本转 path、外部素材导入。Paper Shaders 内置背景生成/处理（mesh 渐变 / glass 棱镜 / paper 纸纹，WebGL2 页面内光栅化，可链式）。纯前端零后端，同输入同输出。",
+    tags: ["画布", "海报", "封面", "SVG", "PNG", "排版", "设计", "字体", "素材", "satori", "shader", "背景生成"],
     subdomain: "canvas.tool.fde2e.com",
     aiGuideSummary:
-      "WebMCP：render_card({spec}) → inspect_layout → export_svg / export_canvas_png；list_fonts / text_to_svg / font_info / font_glyphs；list_assets / get_asset / import_asset（spec 里 img.src=\"asset:<id>\"）；list_recipes / get_recipe / list_styles。spec={width,height,root}，children 在 props.children。",
+      "WebMCP：render_card({spec}) → inspect_layout → export_svg / export_canvas_png；list_fonts / text_to_svg / font_info / font_glyphs；list_assets / get_asset / import_asset（spec 里 img.src=\"asset:<id>\"）；list_recipes / get_recipe / list_styles；Paper Shaders：list_shader_presets / generate_background / apply_shader / shader_to_asset（1–4 步链式，返回 assetId）。spec={width,height,root}，children 在 props.children。",
     urlParams: [],
     tools: [
       { name: "render_card", description: "JSON spec → Satori 渲染；返回 renderId/尺寸/摘要/警告" },
@@ -136,6 +136,10 @@ export const TOOLS: ToolMeta[] = [
       { name: "font_info", description: "解析字体 URL，返回 family/weight/glyph 数/axes/字符集" },
       { name: "text_to_svg", description: "用指定字体把文本转成 SVG path（含换行/对齐/行盒）" },
       { name: "font_glyphs", description: "返回指定字符的单字形 path/advance/bbox" },
+      { name: "list_shader_presets", description: "Paper Shaders 预设摘要（mesh/glass/paper；不回全量默认参数）" },
+      { name: "generate_background", description: "生成型预设（mesh）页面内 WebGL2 光栅化为背景资产" },
+      { name: "apply_shader", description: "处理型预设（glass/paper）加工已有图片为新资产" },
+      { name: "shader_to_asset", description: "1–4 步链式生成/处理（缺省上一步输出，返回 assetId/每步耗时）" },
     ],
     repoPath: "apps/canvas",
   },

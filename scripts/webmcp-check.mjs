@@ -39,7 +39,7 @@ const ONLY_APPS = new Set(
 const EXPECT = {
   directory: { tools: ["list_tools", "search_tools"] },
   "pdf-tool": { tools: ["render_preview", "export_pdf"] },
-  canvas: { tools: ["render_card", "inspect_layout", "export_svg", "export_canvas_png", "list_fonts", "list_recipes", "get_recipe", "list_assets", "get_asset", "import_asset", "list_styles", "font_info", "text_to_svg", "font_glyphs"] },
+  canvas: { tools: ["render_card", "inspect_layout", "export_svg", "export_canvas_png", "list_fonts", "list_recipes", "get_recipe", "list_assets", "get_asset", "import_asset", "list_styles", "font_info", "text_to_svg", "font_glyphs", "list_shader_presets", "generate_background", "apply_shader", "shader_to_asset"] },
   "url-tool": { tools: ["pack_url", "decode_url"] },
   "file-viewer": { tools: ["preview_file"] },
   "easy-xlsx": { tools: ["create_xlsx", "add_sheet_sample"] },
@@ -107,6 +107,27 @@ const ILLEGAL_MATRIX = [
       { tool: "font_info", input: {}, word: "url" },
       { tool: "import_asset", input: {}, word: "url" },
       { tool: "export_svg", input: { inlinePaths: true }, word: "inlinePaths" },
+      // Paper Shaders 非法矩阵（canvas-shaders-v1）：校验必须在渲染前完成
+      { tool: "generate_background", input: { preset: "no-such-preset" }, word: "未知预设" },
+      { tool: "generate_background", input: { preset: "mesh-sunset", params: { colors: ["not-a-color"] } }, word: "颜色" },
+      { tool: "generate_background", input: { preset: "mesh-sunset", width: 99999, height: 100 }, word: "4096" },
+      { tool: "generate_background", input: { preset: "glass-prism" }, word: "需要图片" },
+      { tool: "apply_shader", input: { preset: "glass-prism" }, word: "需要图片" },
+      {
+        tool: "apply_shader",
+        input: { preset: "glass-prism", sourceDataUrl: "https://evil.example/x.png" },
+        word: "只允许",
+      },
+      { tool: "shader_to_asset", input: { width: 100, height: 100, chain: [] }, word: "1–4" },
+      {
+        tool: "shader_to_asset",
+        input: {
+          width: 100,
+          height: 100,
+          chain: [{ preset: "mesh-sunset" }, { preset: "mesh-aurora" }, { preset: "mesh-sunset" }, { preset: "mesh-aurora" }, { preset: "mesh-sunset" }],
+        },
+        word: "1–4",
+      },
       // 安全负例（B1）：SVG 子节点 props 顶层外部 url() 必须拒绝，不得静默出外链 SVG
       {
         tool: "render_card",
@@ -386,7 +407,8 @@ async function assertCanvasPath() {
   const canvasBrowser = await chromium.launch({
     executablePath: findChrome(),
     headless: true,
-    args: ["--enable-blink-features=WebMCP"],
+    // SwiftShader 固定软件渲染：跨机器可复现（shader 确定性断言的前提）
+    args: ["--enable-blink-features=WebMCP", "--use-angle=swiftshader"],
   });
   const server = await serveDir(join(ROOT, "apps", "canvas", "dist"));
   const page = await canvasBrowser.newPage();
@@ -394,14 +416,39 @@ async function assertCanvasPath() {
     await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: "load" });
     const out = await page
       .waitForFunction(
-        () => document.modelContext
-          ? document.modelContext.getTools().then((ts) => ts.some((t) => t.name === "render_card") && ts.some((t) => t.name === "get_asset"))
-          : false,
+        () =>
+          document.modelContext
+            ? document.modelContext.getTools().then((ts) => {
+                const names = new Set(ts.map((t) => t.name));
+                return [
+                  "render_card",
+                  "get_asset",
+                  "list_shader_presets",
+                  "generate_background",
+                  "apply_shader",
+                  "shader_to_asset",
+                ].every((n) => names.has(n));
+              })
+            : false,
         undefined,
-        { timeout: 30000, polling: 500 },
+        { timeout: 60000, polling: 500 },
       )
       .then(() => page.evaluate(async (spec) => {
-        const ts = await document.modelContext.getTools();
+        // Chrome 原生 WebMCP 注册队列会偶发丢工具（见文件头注记）：低频重试到齐
+        const required = [
+          "render_card",
+          "get_asset",
+          "list_shader_presets",
+          "generate_background",
+          "apply_shader",
+          "shader_to_asset",
+        ];
+        let ts = [];
+        for (let i = 0; i < 12; i++) {
+          ts = await document.modelContext.getTools();
+          if (required.every((n) => ts.some((t) => t.name === n))) break;
+          await new Promise((r) => setTimeout(r, 500));
+        }
         const call = async (name, input) => {
           const tool = ts.find((t) => t.name === name);
           if (!tool) throw new Error(`缺工具 ${name}`);
@@ -412,6 +459,14 @@ async function assertCanvasPath() {
         const inspect = await call("inspect_layout", {});
         const svg = await call("export_svg", {});
         const png = await call("export_canvas_png", { scale: 2, filename: "gate.png" });
+        const presets = await call("list_shader_presets", {});
+        const bg = await call("generate_background", {
+          preset: "mesh-sunset",
+          width: 240,
+          height: 160,
+          format: "jpeg",
+        });
+        const bgAsset = bg.ok ? await call("get_asset", { id: bg.assetId }) : null;
         const font = await call("get_asset", { id: "font-noto-sans-sc" });
         let fontStatus = "missing";
         if (font.ok && font.asset?.fontUrl) {
@@ -420,7 +475,7 @@ async function assertCanvasPath() {
           document.fonts.add(face);
           fontStatus = face.status;
         }
-        return { render, inspect, svg, png, font, fontStatus };
+        return { render, inspect, svg, png, presets, bg, bgAsset, font, fontStatus };
       }, {
         width: 600,
         height: 400,
@@ -450,11 +505,31 @@ async function assertCanvasPath() {
     if (out.png.ok !== true || out.png.width !== 1200 || out.png.height !== 800) {
       throw new Error(`export_canvas_png 失败: ${JSON.stringify(out.png).slice(0, 200)}`);
     }
+    if (out.presets.ok !== true || out.presets.total < 4 || !Array.isArray(out.presets.presets)) {
+      throw new Error(`list_shader_presets 失败: ${JSON.stringify(out.presets).slice(0, 200)}`);
+    }
+    if ("defaults" in (out.presets.presets[0] ?? {})) {
+      throw new Error("list_shader_presets 泄露了全量默认参数（应只回摘要）");
+    }
+    if (out.bg.ok !== true || out.bg.width !== 240 || out.bg.height !== 160) {
+      throw new Error(`generate_background 失败: ${JSON.stringify(out.bg).slice(0, 200)}`);
+    }
+    if (
+      out.bgAsset?.ok !== true ||
+      out.bgAsset.asset.width !== 240 ||
+      out.bgAsset.asset.height !== 160 ||
+      out.bgAsset.asset.type !== "background" ||
+      out.bgAsset.asset.license !== "generated" ||
+      !String(out.bgAsset.asset.source).startsWith("shader:mesh-sunset") ||
+      !String(out.bgAsset.asset.dataUrl).startsWith("data:image/jpeg")
+    ) {
+      throw new Error(`生成资产不可检索/元数据不符: ${JSON.stringify(out.bgAsset).slice(0, 240)}`);
+    }
     if (out.font.ok !== true || out.fontStatus !== "loaded") {
       throw new Error(`内置 WOFF2 字体加载失败: ${JSON.stringify({ font: out.font, status: out.fontStatus }).slice(0, 200)}`);
     }
     record(
-      `[原生] canvas 全链：render_card(600×400) → inspect_layout(${out.inspect.nodes.length} 节点) → export_svg → export_canvas_png(1200×800) → 内置 WOFF2 字体 ${out.fontStatus}`,
+      `[原生] canvas 全链：render_card(600×400) → inspect_layout(${out.inspect.nodes.length} 节点) → export_svg → export_canvas_png(1200×800) → 内置 WOFF2 字体 ${out.fontStatus} → shader 预设 ${out.presets.total} 个 + generate_background(240×160, ${out.bg.bytes}B)`,
       true,
     );
   } catch (e) {
@@ -573,7 +648,7 @@ async function assertNativePath(browser) {
         matrixBrowser = await chromium.launch({
           executablePath: findChrome(),
           headless: true,
-          args: ["--enable-blink-features=WebMCP"],
+          args: ["--enable-blink-features=WebMCP", "--use-angle=swiftshader"],
         });
       }
       const server = await serveDir(join(ROOT, "apps", matrix.app, "dist"));
@@ -598,16 +673,27 @@ async function assertNativePath(browser) {
         .waitForFunction(
           async ([matrix]) => {
             if (!document.modelContext) return null;
-            const ts = await document.modelContext.getTools();
             const run = async (toolName, input) => {
-              const tool = ts.find((t) => t.name === toolName);
-              if (!tool) return { ok: false, error: "工具未注册: " + toolName };
-              try {
-                const raw = await document.modelContext.executeTool(tool, input);
-                return typeof raw === "string" ? JSON.parse(raw) : raw;
-              } catch (e) {
-                return { ok: false, error: "execute reject（违反不 reject 契约）: " + (e?.message ?? e) };
+              // 原生注册队列偶发丢工具/给 stale RegisteredTool：重新 getTools 重试
+              for (let attempt = 0; attempt < 10; attempt++) {
+                const tools = await document.modelContext.getTools();
+                const tool = tools.find((t) => t.name === toolName);
+                if (tool) {
+                  try {
+                    const raw = await document.modelContext.executeTool(tool, input);
+                    return typeof raw === "string" ? JSON.parse(raw) : raw;
+                  } catch (e) {
+                    const msg = String(e?.message ?? e);
+                    if (/RegisteredTool|not registered|未注册/i.test(msg) && attempt < 9) {
+                      await new Promise((r) => setTimeout(r, 500));
+                      continue;
+                    }
+                    return { ok: false, error: "execute reject（违反不 reject 契约）: " + msg };
+                  }
+                }
+                await new Promise((r) => setTimeout(r, 500));
               }
+              return { ok: false, error: "工具未注册: " + toolName };
             };
             const results = [];
             for (const c of matrix.cases ?? []) results.push({ kind: "illegal", tool: c.tool, r: await run(c.tool, c.input), word: c.word });

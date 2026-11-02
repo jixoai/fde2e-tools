@@ -10,11 +10,21 @@ import { AiGuide } from "@fde2e-tools/shared/ai-guide";
 import { statusTextClass, type StatusKind } from "@fde2e-tools/shared/status";
 import { Button } from "@fde2e-tools/shared/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@fde2e-tools/shared/ui/card";
+import { Input } from "@fde2e-tools/shared/ui/input";
 import { Label } from "@fde2e-tools/shared/ui/label";
 import { Textarea } from "@fde2e-tools/shared/ui/textarea";
 import { downloadBlob } from "@fde2e-tools/shared/download";
-import { renderSpec, registerAppTools, subscribeRender, subscribeInspect } from "./webmcp";
+import {
+  renderSpec,
+  registerAppTools,
+  subscribeRender,
+  subscribeInspect,
+  generateBackgroundAsset,
+  applyShaderAsset,
+} from "./webmcp";
 import { svgToPng, svgDataUrl, type RenderResult } from "./render";
+import { getAsset, listAssets, listGeneratedAssets, subscribeAssets, type Asset } from "./assets";
+import { getShaderPreset, SHADER_PRESETS } from "./shaders/presets";
 
 const SAMPLE_SPEC = {
   width: 1080,
@@ -147,7 +157,20 @@ WebMCP 工具：
 - inspect_layout({renderId?, ids?, format?}) → rect/type/text + blocking/advisory 警告
 - export_svg({renderId?, inlinePaths?}) → 自包含 SVG
 - export_canvas_png({renderId?, scale?, background?, filename?}) → 下载单张 PNG
-- list_fonts / list_recipes / list_styles → 摘要列表`;
+- list_fonts / list_recipes / list_styles → 摘要列表
+
+Paper Shaders 背景（内置、WebGL2 页面内光栅化；不开放 GLSL/React 创作）：
+- list_shader_presets({tag?, needsImage?}) → 预设摘要（mesh/glass/paper），不含全量默认参数
+- generate_background({preset,width?,height?,params?,format?,quality?,name?,tags?}) → 生成型预设（mesh-sunset/mesh-aurora）出背景资产
+- apply_shader({preset,sourceAssetId|sourceDataUrl,width?,height?,params?,format?,quality?,name?}) → 处理型预设（glass-prism/paper-default）加工已有图片；源资产不变
+- shader_to_asset({width,height,chain:[{preset,params?,source?}],format?,quality?,name?,tags?}) → 1–4 步链式；缺省 source=上一步输出；每步按目标尺寸重绘
+- 返回 {ok,assetId,width,height,format,bytes,steps}，不返回 data URL；spec 里用 img.src="asset:<id>"
+- 全幅背景写法：img 节点 style={position:"absolute",left:0,top:0,width:"100%",height:"100%"}，父节点 position:"relative"
+- 参数：mesh = colors(≤10)/positions/waveX/waveXShift/waveY/waveYShift/mixing/grainMixer/grainOverlay；
+  glass = colorBack/colorShadow/colorHighlight/shadows/size/angle/distortionShape(prism|lens|contour|cascade|flat)/highlights/shape(lines|linesIrregular|wave|zigzag|pattern)/distortion/shift/blur/edges/stretch/margin*/grain*；
+  paper = colorBack/colorPaper/colorShadow/blending/distortion/clip/angle/seed/roughness*/fiber*/folds*/wrinkles/wrinkleSize/crumples/crumpleCount(2–15)/drops
+- 尺寸 16–4096；链长 1–4；输入只接受 asset:<id> 或 data:image/(png|jpeg|webp)；WebGL2 缺失返回 E_SHADER_NO_WEBGL2
+- 典型链路：mesh-sunset → glass-prism（渐变上玻璃棱镜）；mesh-sunset → paper-default（纸纹压印）；import_asset 图片 → paper-default`;
 
 interface Status {
   msg: string;
@@ -161,6 +184,12 @@ export default function App() {
   const [result, setResult] = useState<RenderResult | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [inspectWarnings, setInspectWarnings] = useState<string[]>([]);
+  const [shaderPresetId, setShaderPresetId] = useState("mesh-sunset");
+  const [shaderStatus, setShaderStatus] = useState<Status>({ msg: "选择预设后点「生成背景」…", kind: "ok" });
+  const [shaderPreview, setShaderPreview] = useState<string | null>(null);
+  const [generatedAssets, setGeneratedAssets] = useState<Asset[]>([]);
+  const shaderWidthRef = useRef<HTMLInputElement>(null);
+  const shaderHeightRef = useRef<HTMLInputElement>(null);
 
   function setKind(msg: string, kind: StatusKind = "ok") {
     setStatus({ msg, kind });
@@ -218,6 +247,83 @@ export default function App() {
     void doRender();
   }
 
+  async function onGenerateShader() {
+    const preset = getShaderPreset(shaderPresetId);
+    if (!preset) {
+      setShaderStatus({ msg: `未知预设：${shaderPresetId}`, kind: "error" });
+      return;
+    }
+    const width = Number(shaderWidthRef.current?.value || preset.recommendedSize.width);
+    const height = Number(shaderHeightRef.current?.value || preset.recommendedSize.height);
+    setShaderStatus({ msg: `正在生成 ${preset.name}…`, kind: "ok" });
+    try {
+      let result;
+      if (preset.needsImage) {
+        // 处理型预设：默认取最近生成的 shader 资产，其次取已导入图片
+        const newestGenerated = [...generatedAssets].reverse().find((a) => a.dataUrl);
+        const source =
+          newestGenerated ??
+          listAssets({ type: "background" }).find((a) => a.dataUrl && a.style === "imported");
+        if (!source) {
+          setShaderStatus({
+            msg: `${preset.name} 需要图片输入：先用 mesh 预设生成背景，或 import_asset 导入图片`,
+            kind: "error",
+          });
+          return;
+        }
+        result = await applyShaderAsset({ preset: preset.id, sourceAssetId: source.id, width, height });
+      } else {
+        result = await generateBackgroundAsset({ preset: preset.id, width, height });
+      }
+      const asset = getAsset(result.assetId);
+      setShaderPreview(asset?.dataUrl ?? null);
+      setShaderStatus({
+        msg:
+          `已生成 ${result.assetId} · ${result.width}×${result.height} · ${result.format} · ${result.bytes} bytes` +
+          (result.steps.length > 1 ? ` · ${result.steps.length} 步` : ""),
+        kind: "ok",
+      });
+    } catch (e) {
+      setShaderStatus({ msg: "生成失败：" + (e instanceof Error ? e.message : String(e)), kind: "error" });
+    }
+  }
+
+  /** 把生成资产以 asset:<id> 全幅背景插入当前 spec 并重新渲染。 */
+  function useAssetInSpec(assetId: string) {
+    const raw = specRef.current?.value ?? "";
+    let spec: Record<string, unknown>;
+    try {
+      spec = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      setShaderStatus({ msg: "当前 spec 不是合法 JSON，无法插入资产", kind: "error" });
+      return;
+    }
+    const root = spec.root as { props?: Record<string, unknown> } | undefined;
+    if (!root || typeof root !== "object") {
+      setShaderStatus({ msg: "当前 spec 缺 root 节点，无法插入资产", kind: "error" });
+      return;
+    }
+    const props = root.props ?? {};
+    const style = (props.style && typeof props.style === "object" ? props.style : {}) as Record<string, unknown>;
+    style.position = style.position ?? "relative";
+    props.style = style;
+    const children = Array.isArray(props.children) ? props.children : [];
+    children.unshift({
+      type: "img",
+      props: {
+        id: `bg-${assetId}`,
+        src: `asset:${assetId}`,
+        style: { position: "absolute", left: 0, top: 0, width: "100%", height: "100%" },
+      },
+    });
+    props.children = children;
+    root.props = props;
+    spec.root = root;
+    if (specRef.current) specRef.current.value = JSON.stringify(spec, null, 2);
+    setShaderStatus({ msg: `已把 asset:${assetId} 作为全幅背景插入 spec，正在渲染…`, kind: "ok" });
+    void doRender();
+  }
+
   useEffect(() => {
     void registerAppTools();
     if (specRef.current) specRef.current.value = JSON.stringify(SAMPLE_SPEC, null, 2);
@@ -239,6 +345,24 @@ export default function App() {
   useEffect(() => subscribeInspect((ws) => {
     setInspectWarnings(ws.map((w) => `[${w.code}] ${w.message}`));
   }), []);
+
+  // shader 生成资产订阅：AI 经 WebMCP 生成的资产立即出现在人类 UI，并自动预览最新一张
+  useEffect(() => {
+    let lastId: string | null = null;
+    return subscribeAssets(() => {
+      const list = listGeneratedAssets();
+      setGeneratedAssets(list);
+      const newest = list[list.length - 1];
+      if (newest?.dataUrl) setShaderPreview(newest.dataUrl);
+      if (newest && newest.id !== lastId) {
+        lastId = newest.id;
+        setShaderStatus({
+          msg: `已生成 ${newest.id} · ${newest.width}×${newest.height} · ${newest.bytes ?? 0} bytes`,
+          kind: "ok",
+        });
+      }
+    });
+  }, []);
 
   return (
     <div className="mx-auto max-w-[1240px] px-5 pb-14">
@@ -322,8 +446,122 @@ export default function App() {
         </Card>
       </div>
 
+      <Card className="mt-4">
+        <CardHeader>
+          <CardTitle>3 · Shader 背景</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <div className="flex flex-wrap gap-2">
+            {SHADER_PRESETS.map((p) => (
+              <Button
+                key={p.id}
+                id={`shader-preset-${p.id}`}
+                size="sm"
+                variant={shaderPresetId === p.id ? "default" : "outline"}
+                onClick={() => setShaderPresetId(p.id)}
+              >
+                {p.name}
+                {p.needsImage ? " · 需图片" : ""}
+              </Button>
+            ))}
+          </div>
+          <p className="text-[13px] text-muted-foreground">
+            {getShaderPreset(shaderPresetId)?.needsImage
+              ? "处理型预设：默认用最近生成的 shader 资产或已导入图片作为输入，源资产不变。"
+              : "生成型预设：页面内 WebGL2 光栅化，返回 asset:<id>，可直接用于 spec 全幅背景。"}
+          </p>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="shader-width">宽</Label>
+              <Input
+                id="shader-width"
+                ref={shaderWidthRef}
+                type="number"
+                min={16}
+                max={4096}
+                defaultValue={1080}
+                className="w-[110px]"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="shader-height">高</Label>
+              <Input
+                id="shader-height"
+                ref={shaderHeightRef}
+                type="number"
+                min={16}
+                max={4096}
+                defaultValue={1440}
+                className="w-[110px]"
+              />
+            </div>
+            <Button id="shader-generate-btn" onClick={() => void onGenerateShader()}>
+              生成背景
+            </Button>
+          </div>
+          <div className="overflow-auto rounded-lg border border-input bg-muted/30 p-2">
+            {shaderPreview ? (
+              <img
+                id="shader-preview"
+                src={shaderPreview}
+                alt="Shader 生成预览"
+                className="mx-auto block h-auto max-h-[360px] w-auto max-w-full"
+              />
+            ) : (
+              <div className="flex h-[160px] items-center justify-center text-sm text-muted-foreground">
+                还没有生成结果…
+              </div>
+            )}
+          </div>
+          <p id="shader-status" className={"min-h-[26px] text-base font-semibold " + statusTextClass(shaderStatus.kind)}>
+            {shaderStatus.msg}
+          </p>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-muted-foreground">生成资产（{generatedAssets.length}）</Label>
+            {generatedAssets.length === 0 ? (
+              <p className="text-[13px] text-muted-foreground">
+                还没有生成的 shader 资产；AI 生成后会自动出现在这里。
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-1.5">
+                {generatedAssets.map((a) => (
+                  <li
+                    key={a.id}
+                    className="flex flex-wrap items-center gap-2 rounded-md border border-input bg-muted/30 px-2 py-1.5 text-[12px]"
+                  >
+                    <span className="font-mono font-semibold">{a.id}</span>
+                    <span className="text-muted-foreground">
+                      {a.name} · {a.width}×{a.height} · {a.bytes ?? 0} bytes
+                    </span>
+                    <Button size="xs" variant="outline" onClick={() => setShaderPreview(a.dataUrl ?? null)}>
+                      预览
+                    </Button>
+                    <Button
+                      id={`shader-use-${a.id}`}
+                      size="xs"
+                      variant="outline"
+                      onClick={() => useAssetInSpec(a.id)}
+                    >
+                      用于 spec
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       <footer className="mt-6 text-[13px] text-muted-foreground">
-        canvas · Satori 确定性出图 · JSON spec → SVG / PNG · 纯静态零后端
+        canvas · Satori 确定性出图 · JSON spec → SVG / PNG · 纯静态零后端 · Powered by{" "}
+        <a
+          className="font-semibold text-link"
+          href="https://shaders.paper.design"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Paper Shaders
+        </a>
       </footer>
     </div>
   );

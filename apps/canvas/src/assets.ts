@@ -262,6 +262,61 @@ BUILTIN.push(...EXTRA_BACKGROUNDS, ...EXTRA_SHAPES, ...EXTRA_FONTS);
 const imported = new Map<string, Asset>();
 let seq = 0;
 
+/* ---------------- 生成资产（Paper Shaders）与订阅 ----------------
+ * 生成资产与导入资产同池（imported Map），list_assets/get_asset/assetSummary
+ * 自动可见；subscribeAssets 在导入/生成变化时通知 UI（AI 生成 → 人类立即看到）。 */
+const assetListeners = new Set<() => void>();
+
+function notifyAssets(): void {
+  for (const fn of assetListeners) fn();
+}
+
+/** 订阅素材库变化（导入/生成）；立即回调一次当前状态，返回取消订阅函数。 */
+export function subscribeAssets(listener: () => void): () => void {
+  assetListeners.add(listener);
+  listener();
+  return () => {
+    assetListeners.delete(listener);
+  };
+}
+
+/** 列出全部 shader 生成资产（source 以 shader: 开头），按生成顺序。 */
+export function listGeneratedAssets(): Asset[] {
+  return [...imported.values()].filter((a) => a.source.startsWith("shader:"));
+}
+
+export interface RegisterGeneratedAssetInput {
+  dataUrl: string;
+  width: number;
+  height: number;
+  name?: string;
+  tags?: string[];
+  /** 预设链（如 ["mesh-sunset", "glass-prism"]） */
+  chain: string[];
+}
+
+/** 注册 shader 生成资产：type=background / license=generated / source=shader:<chain>。 */
+export function registerGeneratedAsset(input: RegisterGeneratedAssetInput): Asset {
+  const chain = input.chain.length > 0 ? input.chain : ["unknown"];
+  const id = `shader-${++seq}`;
+  const asset: Asset = {
+    id,
+    type: "background",
+    name: input.name?.trim() || `Shader ${chain.join(" > ")}`,
+    tags: ["generated", "shader", ...chain, ...(input.tags ?? [])],
+    style: "shader",
+    license: "generated",
+    source: `shader:${chain.join(">")}`,
+    width: input.width,
+    height: input.height,
+    dataUrl: input.dataUrl,
+    bytes: bytesOfDataUrl(input.dataUrl),
+  };
+  imported.set(id, asset);
+  notifyAssets();
+  return asset;
+}
+
 export function listAssets(opts: { type?: AssetType; style?: string; q?: string } = {}): Asset[] {
   const q = opts.q?.trim().toLowerCase();
   const all = [...BUILTIN, ...imported.values()];
@@ -285,8 +340,13 @@ export function assetSummary(a: Asset): Omit<Asset, "dataUrl" | "fontUrl"> {
 function bytesOfDataUrl(dataUrl: string): number {
   const comma = dataUrl.indexOf(",");
   if (comma < 0) return 0;
-  const b64 = dataUrl.slice(comma + 1);
-  return Math.round((b64.length * 3) / 4);
+  const meta = dataUrl.slice(0, comma);
+  const payload = dataUrl.slice(comma + 1);
+  if (/;base64/i.test(meta)) {
+    const padding = payload.endsWith("==") ? 2 : payload.endsWith("=") ? 1 : 0;
+    return Math.max(0, Math.floor((payload.length * 3) / 4) - padding);
+  }
+  return new TextEncoder().encode(decodeURIComponent(payload)).length;
 }
 
 function assertSafeSvg(text: string): void {
@@ -382,6 +442,7 @@ export async function importAsset(req: {
       weights: [400, 700],
     };
     imported.set(id, asset);
+    notifyAssets();
     return asset;
   }
   const asset =
@@ -397,5 +458,6 @@ export async function importAsset(req: {
   asset.license = req.license ?? asset.license;
   if (req.author !== undefined) asset.author = req.author;
   imported.set(asset.id, asset);
+  notifyAssets();
   return asset;
 }
