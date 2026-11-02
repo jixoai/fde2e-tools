@@ -15,6 +15,7 @@
  */
 import type { ModelManifest, ModelFile, ModelSource } from "./manifest";
 import { cachedGet, cachedPut } from "./cache";
+export { cachedGet };
 
 /* vendored IIFE 的结构化最小面（与主仓冻结 API 对齐；只取本层用到的） */
 interface SmartDLSource {

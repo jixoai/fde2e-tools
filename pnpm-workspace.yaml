@@ -5,6 +5,7 @@ packages:
 # protobufjs 的安装脚本均不必要（纯 JS 可用），不允许跑（防供应链面扩大）
 allowBuilds:
   '@parcel/watcher': false
+  onnxruntime-node: set this to true or false
   protobufjs: false
 minimumReleaseAgeExclude:
   - lucide-react@1.65.0

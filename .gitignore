@@ -6,3 +6,4 @@ dist/
 !.env.example
 models/
 .models-cache/
+apps/audio-stt/src/vendor/transformers/
