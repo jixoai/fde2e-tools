@@ -35,7 +35,7 @@ const FONTSOURCE = (pkg: string, file: string) =>
   `https://cdn.jsdelivr.net/npm/@fontsource/${pkg}@5.1.0/files/${file}`;
 
 const GOOGLE_CSS = (family: string) =>
-  `https://fonts.googleapis.com/css2?family=${family.replace(/ /g, "+")}&display=swap`;
+  `https://fonts.googleapis.cn/css2?family=${family.replace(/ /g, "+")}&display=swap`;
 
 export const FONT_CATALOG: FontCatalogEntry[] = [
   /* ---------------- 中文 ---------------- */
