@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Canvas E2E（canvas-shaders-v1）：真 Chromium + WebMCP 原生工具面 + Paper Shaders。
- * 产出：.agents/reports/fde2e-tools/canvas-shaders-v1/{steps.json,img/*.png}
+ * Canvas E2E（canvas-preprocess-v2）：真 Chromium + WebMCP 原生工具面 + Paper Shaders
+ * + 字体目录/六族图标/demo/preprocess 多素材组合。
+ * 产出：.agents/reports/fde2e-tools/canvas-preprocess-v2/{steps.json,img/*.png}
  * 可用 E2E_REPORT_DIR 覆盖报告目录（避免写主仓工作树时用 /tmp）。
  * 运行：node scripts/canvas-e2e.mjs（需先 pnpm --filter canvas build）
  */
@@ -14,7 +15,7 @@ const ROOT = resolve(new URL("..", import.meta.url).pathname);
 const DIST = join(ROOT, "apps", "canvas", "dist");
 const REPORT = process.env.E2E_REPORT_DIR
   ? resolve(process.env.E2E_REPORT_DIR)
-  : resolve(ROOT, "..", "..", ".agents", "reports", "fde2e-tools", "canvas-shaders-v1");
+  : resolve(ROOT, "..", "..", ".agents", "reports", "fde2e-tools", "canvas-preprocess-v2");
 const IMG = join(REPORT, "img");
 mkdirSync(IMG, { recursive: true });
 
@@ -58,6 +59,10 @@ function findChrome() {
 
 const steps = [];
 function step(section, data) { steps.push({ section, ...data }); }
+
+/** 与 font-catalog 同源的 Inter 直链（@fontsource jsDelivr，CORS `*`）。 */
+const INTER_FONT_URL =
+  "https://cdn.jsdelivr.net/npm/@fontsource/inter@5.1.0/files/inter-latin-400-normal.woff2";
 
 async function main() {
   const executablePath = findChrome();
@@ -117,34 +122,64 @@ async function main() {
     await page.screenshot({ path });
   };
 
+  const shotTop = async (path) => {
+    await page.evaluate(() => window.scrollTo({ top: 0 }));
+    await page.waitForTimeout(300);
+    await page.screenshot({ path });
+  };
+
+  const shotDemo = async (path) => {
+    await page.evaluate(() => document.getElementById("demo-load-btn")?.scrollIntoView({ block: "center" }));
+    await page.waitForTimeout(350);
+    await page.screenshot({ path });
+  };
+
+  /** 导出当前渲染为 PNG 并读取真实文件头/尺寸（真产物断言）。 */
+  async function exportPng(filename) {
+    const before = downloads.length;
+    const out = await call("export_canvas_png", { scale: 1, filename });
+    for (let i = 0; i < 80 && downloads.length === before; i++) await page.waitForTimeout(250);
+    if (downloads.length === before) throw new Error(`PNG 下载未触发（${filename}）`);
+    const dl = downloads[downloads.length - 1];
+    const buf = readFileSync(dl.path);
+    if (buf.subarray(0, 8).toString("latin1") !== "\x89PNG\r\n\x1a\n") throw new Error(`${dl.name} 不是 PNG`);
+    return { out, name: dl.name, width: buf.readUInt32BE(16), height: buf.readUInt32BE(20), bytes: buf.length };
+  }
+
   try {
     await page.goto(base, { waitUntil: "load" });
     await page.waitForFunction(() => document.modelContext && document.modelContext.getTools().then((ts) => ts.some((t) => t.name === "render_card")), { timeout: 30000 });
-    // shader 工具最后注册：等齐 4 个再枚举（Chrome 原生注册是异步的）
+    // 新增工具与 shader 工具最后注册：等齐再枚举（Chrome 原生注册是异步的）
+    const REQUIRED_TOOLS = [
+      "list_font_catalog",
+      "search_icons",
+      "get_icon",
+      "list_demos",
+      "get_demo",
+      "list_shader_presets",
+      "generate_background",
+      "apply_shader",
+      "shader_to_asset",
+    ];
     await page.waitForFunction(
-      () =>
+      (required) =>
         document.modelContext &&
-        document.modelContext
-          .getTools()
-          .then((ts) =>
-            ["list_shader_presets", "generate_background", "apply_shader", "shader_to_asset"].every((n) =>
-              ts.some((t) => t.name === n),
-            ),
-          ),
-      { timeout: 60000, polling: 500 },
+        document.modelContext.getTools().then((ts) => required.every((n) => ts.some((t) => t.name === n))),
+      REQUIRED_TOOLS,
+      { timeout: 90000, polling: 500 },
     );
     const toolNames = await page.evaluate(async () => (await document.modelContext.getTools()).map((t) => t.name));
-    for (const must of ["list_shader_presets", "generate_background", "apply_shader", "shader_to_asset"]) {
+    for (const must of REQUIRED_TOOLS) {
       if (!toolNames.includes(must)) throw new Error(`工具面缺 ${must}（实际 ${toolNames.join(",")}）`);
     }
     await page.waitForTimeout(800);
     await page.screenshot({ path: join(IMG, "s1-initial.png") });
     step("1 · Canvas 工具面与开箱素材", {
       intent: "打开 canvas.tool.fde2e.com（本地构建），确认 WebMCP 原生工具面与开箱素材可见。",
-      expect: "18 个工具枚举齐全（14 存量 + 4 Paper Shaders）；素材库含背景/形状/字体；页面无外部 CDN 请求。",
+      expect: "23 个工具枚举齐全（18 存量 + 字体目录/图标/demo 5 个）；素材库含背景/形状/字体；页面无外部 CDN 请求（除非显式导入）。",
       image: "img/s1-initial.png",
       imageMeta: "1440×960 · Canvas 初始界面实拍",
-      assertion: "getTools 返回 render_card/inspect_layout/export_svg/export_canvas_png + 字体/素材/配方 + list_shader_presets/generate_background/apply_shader/shader_to_asset；list_assets 返回 12 背景 + 10 形状 + 1 字体。",
+      assertion: "getTools 返回 render_card/inspect_layout/export_svg/export_canvas_png + 字体/素材/配方 + Paper Shaders 4 个 + list_font_catalog/search_icons/get_icon/list_demos/get_demo；list_assets 返回 12 背景 + 10 形状 + 1 字体。",
       ok: true,
     });
 
@@ -655,6 +690,409 @@ async function main() {
       assertion: `状态行「${humanStatus.trim()}」· ${useButtonId} 已插入 · spec 含 asset:shader-* · render 完成。`,
       ok: true,
     });
+
+    // ---------- canvas-preprocess-v2：字体目录 / 图标 / demo / 预处理 ----------
+    const fontCatalog = await call("list_font_catalog", {});
+    if (!fontCatalog.ok || !Array.isArray(fontCatalog.fonts) || fontCatalog.total < 15) {
+      throw new Error(`list_font_catalog 失败: ${JSON.stringify(fontCatalog).slice(0, 240)}`);
+    }
+    const notoEntry = fontCatalog.fonts.find((f) => f.id === "noto-sans-sc");
+    if (!notoEntry || notoEntry.usage !== "satori" || notoEntry.builtin !== true) {
+      throw new Error(`内置 Noto 条目不符: ${JSON.stringify(notoEntry)}`);
+    }
+    const externalFonts = fontCatalog.fonts.filter((f) => !f.builtin);
+    if (externalFonts.length < 14 || externalFonts.some((f) => f.usage !== "text_to_svg")) {
+      throw new Error(`外部字体 usage 不符（${externalFonts.length} 条）`);
+    }
+    const zhFonts = await call("list_font_catalog", { language: "zh" });
+    if (!zhFonts.ok || zhFonts.total < 9) throw new Error(`中文目录不足: ${zhFonts.total}`);
+    await shotTop(join(IMG, "s16-font-catalog.png"));
+    step("16 · 字体目录：内置 Satori vs 外部 text_to_svg", {
+      intent: "list_font_catalog 取中英文字体目录（不托管字体字节），核对内置/外部 usage 与语言过滤。",
+      expect: "≥15 条；内置 Noto Sans SC usage=satori/builtin=true；其余全部 text_to_svg；中文过滤 ≥9。",
+      image: "img/s16-font-catalog.png",
+      imageMeta: "1440×960 · 字体目录查询后页面实拍",
+      assertion: `字体 ${fontCatalog.total} 条（中文 ${zhFonts.total}）· 内置 ${notoEntry.id}=${notoEntry.usage} · 外部 ${externalFonts.length} 条全部 text_to_svg。`,
+      ok: true,
+    });
+
+    const interText = await call("text_to_svg", { url: INTER_FONT_URL, text: "Canvas", fontSize: 72, fill: "#111827" });
+    if (!interText.ok || !interText.node || !String(interText.svg).startsWith("<svg")) {
+      throw new Error(`外部字体 text_to_svg 失败: ${JSON.stringify(interText).slice(0, 240)}`);
+    }
+    const fontRender = await call("render_card", {
+      spec: {
+        width: 600,
+        height: 240,
+        background: "#f7f4ee",
+        root: {
+          type: "div",
+          props: {
+            id: "root",
+            style: {
+              width: "100%", height: "100%", display: "flex", alignItems: "center",
+              justifyContent: "center", backgroundColor: "#f7f4ee",
+            },
+            children: [interText.node],
+          },
+        },
+      },
+    });
+    if (!fontRender.ok) throw new Error(`外部字体渲染失败: ${JSON.stringify(fontRender).slice(0, 200)}`);
+    await page.waitForTimeout(400);
+    await shotPreview(join(IMG, "s17-external-font.png"));
+    step("17 · 外部字体：font_info/text_to_svg（Inter）", {
+      intent: "用字体目录的 Inter 直链（@fontsource jsDelivr，CORS *）把文本转成 SVG path 并嵌入 spec 渲染。",
+      expect: "text_to_svg ok，返回 node.type=svg；render_card 成功；内置 Noto 仍走 Satori（步骤 1/5 已证）。",
+      image: "img/s17-external-font.png",
+      imageMeta: "1440×960 · Inter 文本 path 渲染实拍",
+      assertion: `Inter text_to_svg lines=${interText.lines?.length ?? "?"} · node=${interText.node.type} · render ok=${fontRender.ok}（${fontRender.width}×${fontRender.height}）。`,
+      ok: true,
+    });
+
+    const iconSearch = await call("search_icons", { limit: 100 });
+    if (!iconSearch.ok || iconSearch.total < 80) {
+      throw new Error(`search_icons 失败: ${JSON.stringify(iconSearch).slice(0, 240)}`);
+    }
+    const iconLibs = new Set(iconSearch.icons.map((i) => i.library));
+    if (iconLibs.size < 6) throw new Error(`图标库不足 6 族: ${[...iconLibs].join(",")}`);
+    const starIcon = await call("get_icon", { library: "lucide", name: "star", color: "#f5b301", size: 96 });
+    if (!starIcon.ok || starIcon.width !== 96 || starIcon.height !== 96) {
+      throw new Error(`get_icon 失败: ${JSON.stringify(starIcon).slice(0, 200)}`);
+    }
+    const starAsset = await call("get_asset", { id: starIcon.assetId });
+    if (starAsset.ok !== true || starAsset.asset.type !== "shape") {
+      throw new Error(`图标资产 type 不符: ${JSON.stringify(starAsset).slice(0, 200)}`);
+    }
+    const starSvg = decodeURIComponent(String(starAsset.asset.dataUrl));
+    if (!starSvg.includes("#f5b301")) throw new Error("图标换色未生效（dataUrl 不含 #f5b301）");
+    const iconRender = await call("render_card", {
+      spec: {
+        width: 600,
+        height: 300,
+        background: "#ffffff",
+        root: {
+          type: "div",
+          props: {
+            id: "root",
+            style: { width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 24, backgroundColor: "#ffffff" },
+            children: [
+              { type: "img", props: { id: "icon", src: `asset:${starIcon.assetId}`, style: { width: 96, height: 96 } } },
+              { type: "div", props: { id: "label", style: { fontSize: 34, fontWeight: 700, color: "#111827" }, children: "lucide:star #f5b301" } },
+            ],
+          },
+        },
+      },
+    });
+    if (!iconRender.ok) throw new Error(`图标渲染失败: ${JSON.stringify(iconRender).slice(0, 200)}`);
+    await page.waitForTimeout(400);
+    await shotPreview(join(IMG, "s18-icons.png"));
+    step("18 · 图标目录：六族搜索 + 取图换色/尺寸", {
+      intent: "search_icons 枚举六族（≥80）；get_icon 取 lucide:star，换 #f5b301、96px，注册为 shape 资产并渲染。",
+      expect: "六族齐全；get_icon 返回 assetId 且 width/height=96；get_asset 为 type=shape；dataUrl 含请求颜色。",
+      image: "img/s18-icons.png",
+      imageMeta: "1440×960 · 图标资产渲染实拍",
+      assertion: `图标 ${iconSearch.total} 个 / ${iconLibs.size} 族 · ${starIcon.assetId} ${starIcon.width}×${starIcon.height} · type=shape · 颜色命中。`,
+      ok: true,
+    });
+
+    const threeSpec = {
+      width: 600,
+      height: 400,
+      background: "#0b1020",
+      preprocess: {
+        bg: { type: "shader", preset: "mesh-sunset", width: 600, height: 400 },
+        logo: { type: "icon", library: "lucide", name: "sparkles", color: "#ffffff", size: 64 },
+      },
+      root: {
+        type: "div",
+        props: {
+          id: "root",
+          style: { width: "100%", height: "100%", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Noto Sans SC" },
+          children: [
+            { type: "img", props: { id: "bg", src: "pre:bg", style: { position: "absolute", left: 0, top: 0, width: "100%", height: "100%" } } },
+            {
+              type: "div",
+              props: {
+                id: "content",
+                style: { position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 },
+                children: [
+                  { type: "img", props: { id: "logo", src: "pre:logo", style: { width: 64, height: 64 } } },
+                  { type: "div", props: { id: "title", style: { fontSize: 44, fontWeight: 700, color: "#ffffff" }, children: "三素材同图" } },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    };
+    const three = await call("render_card", { spec: threeSpec });
+    if (!three.ok || three.width !== 600 || three.height !== 400) {
+      throw new Error(`三素材渲染失败: ${JSON.stringify(three).slice(0, 240)}`);
+    }
+    if (three.preprocess?.count !== 2 || !three.preprocess.keys.includes("bg") || !three.preprocess.keys.includes("logo")) {
+      throw new Error(`三素材 preprocess 摘要不符: ${JSON.stringify(three.preprocess)}`);
+    }
+    const threeInspect = await call("inspect_layout", {});
+    const threePng = await exportPng("three-assets.png");
+    if (threePng.width !== 600 || threePng.height !== 400 || threePng.bytes < 1000) {
+      throw new Error(`三素材 PNG 不符: ${JSON.stringify(threePng)}`);
+    }
+    await shotPreview(join(IMG, "s19-three-assets.png"));
+    step("19 · 三素材同图：Shader + 图标 + 文字", {
+      intent: "同一 spec 里 pre:bg（shader 全幅背景）+ pre:logo（图标）+ Satori 文字；render_card → inspect_layout → export_canvas_png。",
+      expect: "render ok 600×400；preprocess count=2（bg/logo）；inspect 节点齐全；PNG 600×400 非空。",
+      image: "img/s19-three-assets.png",
+      imageMeta: "1440×960 · 三素材合成预览实拍",
+      assertion: `preprocess ${three.preprocess.count} 项（${three.preprocess.keys.join(",")}）· 节点 ${threeInspect.nodes?.length ?? 0} · PNG ${threePng.width}×${threePng.height} ${threePng.bytes}B。`,
+      ok: true,
+    });
+
+    const twoSpec = {
+      width: 600,
+      height: 400,
+      background: "#0b1020",
+      preprocess: {
+        bg: { type: "shader", preset: "mesh-aurora", width: 600, height: 400 },
+        photo: { type: "image", assetId: "bg-warm-sunset" },
+      },
+      root: {
+        type: "div",
+        props: {
+          id: "root",
+          style: { width: "100%", height: "100%", position: "relative", display: "flex", alignItems: "flex-end", padding: 24 },
+          children: [
+            { type: "img", props: { id: "bg", src: "pre:bg", style: { position: "absolute", left: 0, top: 0, width: "100%", height: "100%" } } },
+            { type: "img", props: { id: "photo", src: "pre:photo", style: { width: 260, height: 180, borderRadius: 18, border: "4px solid #ffffff66" } } },
+          ],
+        },
+      },
+    };
+    const two = await call("render_card", { spec: twoSpec });
+    if (!two.ok || two.preprocess?.count !== 2) throw new Error(`双素材渲染失败: ${JSON.stringify(two).slice(0, 240)}`);
+    const twoPng = await exportPng("two-assets.png");
+    if (twoPng.width !== 600 || twoPng.height !== 400 || twoPng.bytes < 1000) {
+      throw new Error(`双素材 PNG 不符: ${JSON.stringify(twoPng)}`);
+    }
+    await shotPreview(join(IMG, "s20-two-assets.png"));
+    step("20 · 双素材：Shader 背景 + 图片前景", {
+      intent: "pre:bg（mesh 背景）+ pre:photo（image.assetId 内置图片）同时可见；导出 PNG 验证两张素材都在。",
+      expect: "render ok；preprocess count=2（bg/photo）；PNG 600×400 非空（两张素材未被互相替换）。",
+      image: "img/s20-two-assets.png",
+      imageMeta: "1440×960 · 双素材合成预览实拍",
+      assertion: `preprocess keys=${two.preprocess.keys.join(",")} · PNG ${twoPng.width}×${twoPng.height} ${twoPng.bytes}B（背景 + 前景）。`,
+      ok: true,
+    });
+
+    const demoList = await call("list_demos", {});
+    if (!demoList.ok || demoList.total < 12) throw new Error(`list_demos 失败: ${JSON.stringify(demoList).slice(0, 200)}`);
+    if (demoList.demos.some((d) => "spec" in d)) throw new Error("list_demos 泄露了完整 spec");
+    const preDemoList = await call("list_demos", { level: "preprocess" });
+    if (!preDemoList.ok || preDemoList.total < 4) throw new Error(`preprocess demo 不足: ${preDemoList.total}`);
+    const fourDemo = await call("get_demo", { id: "preprocess-four-assets" });
+    const fourKeys = fourDemo.ok ? Object.keys(fourDemo.spec?.preprocess ?? {}) : [];
+    if (!fourDemo.ok || fourKeys.length !== 4) throw new Error(`get_demo 失败: ${JSON.stringify(fourDemo).slice(0, 240)}`);
+    await shotDemo(join(IMG, "s21-demos.png"));
+    step("21 · Demo 目录：list_demos / get_demo", {
+      intent: "list_demos 拿摘要（不回 spec），get_demo 取完整 preprocess 四资产 demo。",
+      expect: "≥12 个 demo、≥4 个 preprocess；摘要无 spec；get_demo 返回 4 个 preprocess 条目。",
+      image: "img/s21-demos.png",
+      imageMeta: "1440×960 · Demo 卡实拍",
+      assertion: `demo ${demoList.total} 个（preprocess ${preDemoList.total}）· 摘要无 spec · preprocess-four-assets keys=${fourKeys.join(",")}。`,
+      ok: true,
+    });
+
+    const four = await call("render_card", { spec: fourDemo.spec });
+    if (!four.ok || four.width !== 1080 || four.height !== 1440) {
+      throw new Error(`四资产 demo 渲染失败: ${JSON.stringify(four).slice(0, 240)}`);
+    }
+    const fourPre = four.preprocess ?? {};
+    if (fourPre.count !== 4 || !["bg", "logo", "title", "photo"].every((k) => fourPre.keys?.includes(k))) {
+      throw new Error(`四资产 preprocess 摘要不符: ${JSON.stringify(fourPre)}`);
+    }
+    const fourPng = await exportPng("preprocess-four-assets.png");
+    if (fourPng.width !== 1080 || fourPng.height !== 1440 || fourPng.bytes < 2000) {
+      throw new Error(`四资产 PNG 不符: ${JSON.stringify(fourPng)}`);
+    }
+    await shotPreview(join(IMG, "s22-four-assets.png"));
+    step("22 · 预处理四资产组合渲染", {
+      intent: "直接渲染 preprocess-four-assets demo：bg（shader）+ logo（icon）+ title（外部字体 text）+ photo（image）。",
+      expect: "render ok 1080×1440；preprocess count=4 且 keys=bg/logo/title/photo；PNG 非空。",
+      image: "img/s22-four-assets.png",
+      imageMeta: "1440×960 · 四资产 demo 预览实拍",
+      assertion: `preprocess ${fourPre.count} 项（${fourPre.keys.join(",")}）· assetIds=${Object.keys(fourPre.assetIds ?? {}).join(",")} · PNG ${fourPng.width}×${fourPng.height} ${fourPng.bytes}B。`,
+      ok: true,
+    });
+
+    const chainPreSpec = {
+      width: 480,
+      height: 320,
+      background: "#0b1020",
+      preprocess: {
+        bg: { type: "shader", preset: "mesh-sunset", width: 480, height: 320 },
+        glass: { type: "shader", preset: "glass-prism", source: "bg", width: 480, height: 320 },
+      },
+      root: {
+        type: "div",
+        props: {
+          id: "root",
+          style: { width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", backgroundImage: "url(pre:glass)", fontFamily: "Noto Sans SC" },
+          children: [{ type: "div", props: { id: "title", style: { fontSize: 34, fontWeight: 700, color: "#ffffff" }, children: "bg → glass" } }],
+        },
+      },
+    };
+    const chainPre = await call("render_card", { spec: chainPreSpec });
+    if (!chainPre.ok || chainPre.preprocess?.count !== 2 || !chainPre.preprocess.assetIds?.glass) {
+      throw new Error(`链式预处理失败: ${JSON.stringify(chainPre).slice(0, 240)}`);
+    }
+    const chainPng = await exportPng("preprocess-chain.png");
+    if (chainPng.width !== 480 || chainPng.height !== 320) throw new Error(`链式 PNG 尺寸不符: ${chainPng.width}×${chainPng.height}`);
+    const glassAsset = await call("get_asset", { id: chainPre.preprocess.assetIds.glass, summaryOnly: true });
+    if (!glassAsset.ok || !String(glassAsset.asset.source).includes("glass-prism")) {
+      throw new Error(`链式资产 provenance 不符: ${JSON.stringify(glassAsset).slice(0, 200)}`);
+    }
+    await shotPreview(join(IMG, "s23-preprocess-chain.png"));
+    step("23 · 预处理链式：bg → glass（source 引用前序 key）", {
+      intent: "preprocess 两条 shader：glass.source=\"bg\" 消费前一条产物；root 用 style.backgroundImage=url(pre:glass) 铺底。",
+      expect: "preprocess count=2；glass 资产 source 含 glass-prism；backgroundImage 的 url(pre:) 解析成功；PNG 480×320。",
+      image: "img/s23-preprocess-chain.png",
+      imageMeta: "1440×960 · 链式预处理预览实拍",
+      assertion: `keys=${chainPre.preprocess.keys.join(",")} · glass=${chainPre.preprocess.assetIds.glass} · source=${glassAsset.asset.source} · PNG ${chainPng.width}×${chainPng.height}。`,
+      ok: true,
+    });
+
+    const iconPreSpec = {
+      width: 400,
+      height: 400,
+      background: "#0b1020",
+      preprocess: {
+        logo: { type: "icon", library: "tabler", name: "rocket", color: "#f5b301", size: 160 },
+      },
+      root: {
+        type: "div",
+        props: {
+          id: "root",
+          style: { width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, backgroundColor: "#0b1020" },
+          children: [
+            { type: "img", props: { id: "logo", src: "pre:logo", style: { width: 160, height: 160 } } },
+            { type: "div", props: { id: "label", style: { fontSize: 28, color: "#f5b301" }, children: "tabler:rocket #f5b301 160px" } },
+          ],
+        },
+      },
+    };
+    const iconPre = await call("render_card", { spec: iconPreSpec });
+    if (!iconPre.ok || iconPre.preprocess?.count !== 1) throw new Error(`图标预处理失败: ${JSON.stringify(iconPre).slice(0, 240)}`);
+    const rocketAsset = await call("get_asset", { id: iconPre.preprocess.assetIds.logo, summaryOnly: true });
+    if (!rocketAsset.ok || rocketAsset.asset.type !== "shape" || rocketAsset.asset.width !== 160 || !String(rocketAsset.asset.source).startsWith("icon:tabler/rocket")) {
+      throw new Error(`图标预处理资产不符: ${JSON.stringify(rocketAsset).slice(0, 240)}`);
+    }
+    const iconPng = await exportPng("preprocess-icon.png");
+    if (iconPng.width !== 400 || iconPng.height !== 400) throw new Error(`图标 PNG 尺寸不符: ${iconPng.width}×${iconPng.height}`);
+    await shotPreview(join(IMG, "s24-preprocess-icon.png"));
+    step("24 · 预处理图标：换色 + 尺寸 + provenance", {
+      intent: "preprocess.icon 直接声明 library/name/color/size；核对资产 type=shape、宽 160、source=icon:tabler/rocket。",
+      expect: "render ok；preprocess count=1；资产 shape/160/source 命中；PNG 400×400。",
+      image: "img/s24-preprocess-icon.png",
+      imageMeta: "1440×960 · 预处理图标预览实拍",
+      assertion: `${iconPre.preprocess.assetIds.logo} · type=shape · ${rocketAsset.asset.width}×${rocketAsset.asset.height} · source=${rocketAsset.asset.source} · PNG ${iconPng.width}×${iconPng.height}。`,
+      ok: true,
+    });
+
+    const nineEntries = Object.fromEntries(
+      Array.from({ length: 9 }, (_, i) => [`k${i}`, { type: "icon", library: "lucide", name: "star" }]),
+    );
+    const preErrorCases = [
+      ["未知 key", {
+        spec: {
+          width: 100, height: 100,
+          root: { type: "div", props: { id: "root", children: [{ type: "img", props: { id: "i", src: "pre:nope" } }] } },
+        },
+      }, "E_PREPROCESS_ORDER", "nope"],
+      ["source 顺序", {
+        spec: {
+          width: 100, height: 100,
+          preprocess: { glass: { type: "shader", preset: "glass-prism", source: "bg" }, bg: { type: "shader", preset: "mesh-sunset" } },
+          root: { type: "div", props: { id: "root", children: "x" } },
+        },
+      }, "E_PREPROCESS_ORDER", "glass"],
+      ["外部 URL", {
+        spec: {
+          width: 100, height: 100,
+          preprocess: { img: { type: "image", url: "http://example.com/a.png" } },
+          root: { type: "div", props: { id: "root", children: "x" } },
+        },
+      }, "E_PREPROCESS_URL", "img"],
+      ["超条目", {
+        spec: { width: 100, height: 100, preprocess: nineEntries, root: { type: "div", props: { id: "root", children: "x" } } },
+      }, "E_PREPROCESS_LIMIT", undefined],
+      ["超文本", {
+        spec: { width: 100, height: 100, preprocess: { t: { type: "text", text: "x".repeat(2001) } }, root: { type: "div", props: { id: "root", children: "x" } } },
+      }, "E_PREPROCESS_LIMIT", "t"],
+      ["图标不存在", {
+        spec: {
+          width: 100, height: 100,
+          preprocess: { logo: { type: "icon", library: "lucide", name: "definitely-not-an-icon" } },
+          root: { type: "div", props: { id: "root", children: [{ type: "img", props: { id: "i", src: "pre:logo" } }] } },
+        },
+      }, "E_PREPROCESS_ICON", "logo"],
+      ["Shader 源缺失", {
+        spec: { width: 100, height: 100, preprocess: { g: { type: "shader", preset: "glass-prism" } }, root: { type: "div", props: { id: "root", children: "x" } } },
+      }, "E_PREPROCESS_SHADER", "g"],
+      ["字体不存在", {
+        spec: { width: 100, height: 100, preprocess: { t: { type: "text", text: "hi", font: "no-such-font" } }, root: { type: "div", props: { id: "root", children: "x" } } },
+      }, "E_PREPROCESS_TEXT", "t"],
+    ];
+    const preErrorResults = [];
+    for (const [label, payload, expectedCode, expectedKey] of preErrorCases) {
+      const r = await call("render_card", payload);
+      if (r.ok !== false || r.code !== expectedCode || (expectedKey && r.key !== expectedKey)) {
+        throw new Error(`预处理错误未结构化（${label}）: ${JSON.stringify(r).slice(0, 240)}`);
+      }
+      preErrorResults.push(`${label}:${r.code}${r.key ? `(${r.key})` : ""}`);
+    }
+    await shotTop(join(IMG, "s25-preprocess-errors.png"));
+    step("25 · 预处理错误矩阵（8 项结构化拒绝）", {
+      intent: "逐个提交非法 preprocess：未知 key、source 顺序、外部 URL、超条目、超文本、图标不存在、Shader 源缺失、字体不存在。",
+      expect: "全部 ok:false，code 为 E_PREPROCESS_* 且带 key（除超条目为 spec 级限制）；不产生半张图。",
+      image: "img/s25-preprocess-errors.png",
+      imageMeta: "1440×960 · 错误矩阵执行后页面实拍",
+      assertion: preErrorResults.join(" · "),
+      ok: true,
+    });
+
+    await page.evaluate(() => document.getElementById("demo-load-btn")?.scrollIntoView({ block: "center" }));
+    await page.click("#demo-load-btn");
+    await page.waitForFunction(
+      () => (document.getElementById("demo-status")?.textContent ?? "").includes("已载入"),
+      { timeout: 60000 },
+    );
+    const demoSpecText = await page.inputValue("#spec-input");
+    if (!demoSpecText.includes('"preprocess"')) throw new Error("UI 载入 demo 后 spec 文本缺 preprocess");
+    await page.click("#preprocess-demo-btn");
+    await page.waitForFunction(
+      () =>
+        (document.getElementById("demo-status")?.textContent ?? "").includes("preprocess-four-assets") ||
+        (document.getElementById("demo-status")?.textContent ?? "").includes("四资产"),
+      { timeout: 60000 },
+    );
+    await page.waitForFunction(
+      () => (document.getElementById("status")?.textContent ?? "").includes("渲染完成"),
+      { timeout: 60000 },
+    );
+    const preDemoText = await page.inputValue("#spec-input");
+    if (!preDemoText.includes("pre:bg") || !preDemoText.includes('"preprocess"')) {
+      throw new Error("UI 载入预处理示例后 spec 文本不符");
+    }
+    await page.waitForTimeout(500);
+    await shotDemo(join(IMG, "s26-ui-demo.png"));
+    step("26 · 人类 UI：Demo 下拉/载入/预处理示例", {
+      intent: "人类点「载入 Demo」载入默认 demo 并渲染；再点「载入预处理示例」载入 preprocess-four-assets。",
+      expect: "spec 输入框出现 preprocess 与 pre:bg；状态行渲染完成；预览更新。",
+      image: "img/s26-ui-demo.png",
+      imageMeta: "1440×960 · Demo 卡与 spec 输入框实拍",
+      assertion: `默认 demo spec 含 preprocess ✓；预处理示例 spec 含 pre:bg ✓；status=渲染完成。`,
+      ok: true,
+    });
   } finally {
     await page.close();
     await browser.close();
@@ -662,18 +1100,22 @@ async function main() {
   }
 
   const report = {
-    title: "Canvas 工具 v2：Satori 确定性出图 + Paper Shaders 背景生成",
+    title: "Canvas 工具 v3：可组合素材编译器（字体/图标/demo/preprocess）",
     brand: "FDE2E™ fde2e-tools · 端到端交付报告",
-    subtitle: "JSON spec → Satori → 自包含 SVG / 像素 PNG；Paper Shaders（mesh/glass/paper）页面内 WebGL2 光栅化；链式 asset 管线",
-    meta: `2026-11-03 · change canvas-shaders-v1（fde2e-tools-v0）· 真 Chromium WebMCP 原生路径 · SwiftShader · ${steps.length} 步全绿`,
+    subtitle:
+      "JSON spec → Satori → 自包含 SVG / 像素 PNG；字体目录（内置 Satori vs 外部 text_to_svg）、六族图标、12+ demo、preprocess 声明式多素材组合；Paper Shaders WebGL2 光栅化",
+    meta: `2026-11-03 · change canvas-preprocess-v2（fde2e-tools-v0）· 真 Chromium WebMCP 原生路径 · SwiftShader · ${steps.length} 步全绿`,
     thesis:
-      "Canvas 不再只有内置 SVG 渐变：Paper Shaders 以配置式预设接入（不开放 GLSL/React 创作），mesh 渐变做背景、glass/paper 加工已有图片，并可 1–4 步链式混搭。产物只回 assetId，spec 用 asset:<id> 引用；speed=0/frame=0/pixelRatio=1 锁定确定性，同机同参数与 dsf=1/2 字节一致。",
+      "Canvas 从「单图生成器」推进到「可组合素材编译器」：字体目录告诉你哪些字体能走 Satori、哪些必须 text_to_svg；图标目录覆盖六族常用图标并可换色/缩放；preprocess 让你在 spec 里声明式生成/加载 shader/icon/image/text 素材，用 pre:<key> 组装多素材画面。所有产物只回 assetId，错误统一 E_PREPROCESS_* + key，不产生半张图。",
     env: [
-      ["交付仓", "fde2e-tools-v0 · apps/canvas（Satori 0.63.x + resvg-wasm + @paper-design/shaders 0.0.82）"],
-      ["验证方式", "Playwright Chromium 156 + --enable-blink-features=WebMCP + --use-angle=swiftshader；真下载 PNG"],
+      ["交付仓", "fde2e-tools-v0 · apps/canvas（Satori 0.63.x + resvg-wasm + @paper-design/shaders 0.0.82 + react-icons 5.7 dev-only）"],
+      ["验证方式", "Playwright Chromium 156 + --enable-blink-features=WebMCP + --use-angle=swiftshader；真下载 PNG 尺寸/颜色断言"],
       ["开箱素材", "12 背景 + 10 形状 + 1 内置 CJK WOFF2 子集 + 10 配方 + 4 个 Paper Shaders 预设"],
-      ["Shader 预设", "mesh-sunset / mesh-aurora（StaticMeshGradient）· glass-prism（FlutedGlass）· paper-default（PaperTexture）"],
-      ["许可", "Paper Shaders Apache-2.0（LICENSE/NOTICE 随包；页脚 Powered by Paper Shaders）"],
+      ["字体目录", "19 条（中文 9 / 英文 10）；内置 Noto Sans SC = Satori，其余 = text_to_svg；不托管字体字节"],
+      ["图标目录", "6 族 225 个常用图标（Lucide/Tabler/Heroicons/Bootstrap/Font Awesome/Material）；构建期 JSON，运行时不打包 react-icons"],
+      ["Demo", "14 个（basic/advanced/preprocess），list_demos/get_demo 可检索、可读完整 spec"],
+      ["Preprocess", "shader/icon/image/text；pre:<key> 引用；条目 ≤8、text ≤2000、icon 16–512、总产物 ≤24MB"],
+      ["许可", "Paper Shaders Apache-2.0 · 图标六族 MIT/ISC/Apache-2.0/CC BY 4.0 · react-icons MIT · 字体只记录来源"],
       ["报告纪律", "e2e-report-gen.mjs 生成（禁手写 HTML）· 截图实拍 · 零密钥"],
     ],
     sections: (() => {
@@ -690,6 +1132,10 @@ async function main() {
         { title: "8 · 背景渲染与导出", note: "asset:<id> 全幅背景 → Satori → PNG 导出。", steps: pick(12) },
         { title: "9 · 确定性与降级", note: "同请求两次/dsf=1/2 字节一致；非法矩阵；WebGL2 缺失显式降级。", steps: pick(13, 14) },
         { title: "10 · 人类 UI", note: "预设/尺寸/生成/预览/用于 spec 的完整人类路径。", steps: pick(15) },
+        { title: "11 · 字体目录与图标库", note: "字体 usage 边界（Satori vs text_to_svg）；六族图标搜索/取图/换色。", steps: pick(16, 17, 18) },
+        { title: "12 · 多素材组合", note: "Shader+图标+文字三素材；Shader+图片双素材；真 PNG 断言。", steps: pick(19, 20) },
+        { title: "13 · Demo 与预处理", note: "demo 摘要/完整 spec；四资产组合；链式 source；图标换色 provenance。", steps: pick(21, 22, 23, 24) },
+        { title: "14 · 错误矩阵与人类 UI", note: "8 项 preprocess 结构化拒绝；Demo 下拉/载入/预处理示例。", steps: pick(25, 26) },
       ];
     })(),
   };

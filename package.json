@@ -14,6 +14,8 @@
     "webmcp:check": "node scripts/webmcp-check.mjs",
     "smoke:check": "node scripts/smoke-check.mjs",
     "test:canvas-shaders": "node --experimental-strip-types --test scripts/canvas-shader-test.mjs",
+    "test:canvas-preprocess": "node --experimental-strip-types --test scripts/canvas-preprocess-test.mjs",
+    "gen:icons": "node scripts/gen-icon-catalog.mjs",
     "dev:directory": "pnpm --filter directory dev",
     "dev:pdf-tool": "pnpm --filter pdf-tool dev",
     "dev:canvas": "pnpm --filter canvas dev",

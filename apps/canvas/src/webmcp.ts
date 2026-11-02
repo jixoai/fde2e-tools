@@ -16,6 +16,9 @@ import { inspectCanvas, inspectToText } from "./inspect";
 import { fontGlyphs, fontInfo, textToSvg } from "./font-client";
 import { assetSummary, getAsset, importAsset, listAssets, registerGeneratedAsset, type AssetType } from "./assets";
 import { getRecipe, listRecipes, STYLES } from "./recipes";
+import { listFontCatalog } from "./font-catalog";
+import { ICON_LIBRARIES, getIcon, iconCount, searchIcons } from "./icons/catalog";
+import { demoSummary, getDemo, listDemos } from "./demos";
 import {
   ShaderError,
   getShaderPreset,
@@ -78,13 +81,17 @@ function current(renderId?: string): RenderResult {
   return state.result;
 }
 
-function fail(e: unknown): { ok: false; error: string; message: string; code?: string } {
+function fail(e: unknown): { ok: false; error: string; message: string; code?: string; key?: string } {
   const msg = e instanceof Error && e.message ? e.message : String(e);
   const code =
     e && typeof e === "object" && "code" in e && typeof (e as { code?: unknown }).code === "string"
       ? (e as { code: string }).code
       : undefined;
-  return { ok: false, error: msg, message: msg, ...(code ? { code } : {}) };
+  const key =
+    e && typeof e === "object" && "key" in e && typeof (e as { key?: unknown }).key === "string"
+      ? (e as { key: string }).key
+      : undefined;
+  return { ok: false, error: msg, message: msg, ...(code ? { code } : {}), ...(key ? { key } : {}) };
 }
 
 function err(message: string): { ok: false; error: string; message: string } {
@@ -308,7 +315,8 @@ function buildTools(): WebMCPToolDef[] {
       name: "render_card",
       title: "渲染画布",
       description:
-        "按 JSON spec 用 Satori 渲染固定尺寸画布。spec={width,height,background?,root}；root 是 React element 形状，children 必须在 props.children。" +
+        "按 JSON spec 用 Satori 渲染固定尺寸画布。spec={width,height,background?,preprocess?,root}；root 是 React element 形状，children 必须在 props.children。" +
+        "preprocess 可声明 shader/icon/image/text 素材并在节点里用 pre:<key> 引用（渲染前异步生成，返回 preprocess 摘要）。" +
         "返回 renderId/尺寸/摘要/警告，不返回整段 SVG；需要 SVG 用 export_svg。",
       inputSchema: {
         type: "object",
@@ -333,6 +341,7 @@ function buildTools(): WebMCPToolDef[] {
               warnings: result.warnings.length,
               bytes: new TextEncoder().encode(result.svg).length,
             },
+            preprocess: result.preprocess,
             warnings,
             ...(result.warnings.length > warnings.length
               ? { warningsTruncated: result.warnings.length - warnings.length }
@@ -863,6 +872,143 @@ function buildTools(): WebMCPToolDef[] {
         } catch (e) {
           return fail(e);
         }
+      },
+    },
+    {
+      name: "list_font_catalog",
+      title: "列出字体目录",
+      description:
+        "返回常用中英文字体目录（≥15 条）：id/family/languages/styles/weights/license/source/url/cssUrl/usage/builtin/notes。" +
+        "usage=\"satori\" 只有内置 Noto Sans SC（spec 里 fontFamily 直接用）；外部字体 usage=\"text_to_svg\"，先 font_info({url}) 再 text_to_svg，" +
+        "或写进 preprocess.text（font 或 fontUrl）。只给来源/URL，不托管字体字节。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          language: { type: "string", enum: ["zh", "en"], description: "可选：按语言过滤" },
+          style: { type: "string", description: "可选：sans/serif/display/hand/mono" },
+          q: { type: "string", description: "可选：关键词（id/family/license/source）" },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true },
+      async execute(input) {
+        const fonts = listFontCatalog({
+          language: input.language === "zh" || input.language === "en" ? input.language : undefined,
+          style: typeof input.style === "string" ? input.style : undefined,
+          q: typeof input.q === "string" ? input.q : undefined,
+        });
+        return withinBudget({ ok: true, fonts, total: fonts.length });
+      },
+    },
+    {
+      name: "search_icons",
+      title: "搜索图标",
+      description:
+        "在内置图标目录（Lucide/Tabler/Heroicons/Bootstrap/Font Awesome/Material 六族，≥80 个常用图标）里搜索。" +
+        "返回 id/library/name/tags/viewBox/license；拿到 library+name（或 id）后用 get_icon 生成 shape 资产。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          q: { type: "string", description: "可选：关键词（名称/标签/库名）" },
+          library: {
+            type: "string",
+            enum: ICON_LIBRARIES.map((l) => l.id),
+            description: "可选：限定图标库",
+          },
+          limit: { type: "number", description: "可选：1–100，缺省 40" },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true },
+      async execute(input) {
+        try {
+          const icons = searchIcons({
+            q: typeof input.q === "string" ? input.q : undefined,
+            library: typeof input.library === "string" ? input.library : undefined,
+            limit: typeof input.limit === "number" ? input.limit : undefined,
+          });
+          return withinBudget({ ok: true, icons, total: icons.length, catalogSize: iconCount() });
+        } catch (e) {
+          return fail(e);
+        }
+      },
+    },
+    {
+      name: "get_icon",
+      title: "取图标资产",
+      description:
+        "按 id 或 library+name 取图标，支持 color/size/strokeWidth；注册为 type=\"shape\" 资产。" +
+        "返回 {ok,assetId,width,height,library,name}（不回 data URL）；spec 里用 img.src=\"asset:<id>\" 或 preprocess.icon。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "可选：图标 id（如 lucide:star）" },
+          library: { type: "string", enum: ICON_LIBRARIES.map((l) => l.id), description: "可选：库（与 name 同传）" },
+          name: { type: "string", description: "可选：图标名（如 star / map-pin）" },
+          color: { type: "string", description: "可选：CSS 颜色，替换 currentColor（缺省 #000000）" },
+          size: { type: "number", description: "可选：16–512，缺省 128（按 viewBox 等比）" },
+          strokeWidth: { type: "number", description: "可选：0–40，覆盖描边宽度" },
+        },
+        additionalProperties: false,
+      },
+      annotations: { untrustedContentHint: true },
+      async execute(input) {
+        try {
+          const result = getIcon({
+            id: typeof input.id === "string" ? input.id : undefined,
+            library: typeof input.library === "string" ? input.library : undefined,
+            name: typeof input.name === "string" ? input.name : undefined,
+            color: typeof input.color === "string" ? input.color : undefined,
+            size: typeof input.size === "number" ? input.size : undefined,
+            strokeWidth: typeof input.strokeWidth === "number" ? input.strokeWidth : undefined,
+          });
+          return { ok: true, ...result };
+        } catch (e) {
+          return fail(e);
+        }
+      },
+    },
+    {
+      name: "list_demos",
+      title: "列出 Demo",
+      description:
+        "返回 ≥12 个可直接 render_card 的 demo 摘要（id/title/level/features/explain 前 200 字），不含完整 spec。" +
+        "level=basic|advanced|preprocess；preprocess demo 演示 pre:<key> 多素材组合。用 get_demo 取完整 spec。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          level: { type: "string", enum: ["basic", "advanced", "preprocess"], description: "可选：按级别过滤" },
+          q: { type: "string", description: "可选：关键词" },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true },
+      async execute(input) {
+        const demos = listDemos({
+          level: typeof input.level === "string" ? input.level : undefined,
+          q: typeof input.q === "string" ? input.q : undefined,
+        }).map(demoSummary);
+        return withinBudget({ ok: true, demos, total: demos.length });
+      },
+    },
+    {
+      name: "get_demo",
+      title: "读取 Demo",
+      description:
+        "按 id 返回完整 demo（title/level/features/explain/spec）。spec 可直接交给 render_card；" +
+        "preprocess demo 的 pre:<key> 都由 spec.preprocess 自己生成，不需要额外工具调用。",
+      inputSchema: {
+        type: "object",
+        properties: { id: { type: "string", description: "demo id（见 list_demos）" } },
+        required: ["id"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true },
+      async execute(input) {
+        const id = String(input.id ?? "");
+        const demo = getDemo(id);
+        if (!demo) return err(`demo 不存在：${id}（用 list_demos 查询）`);
+        return withinBudget({ ok: true, ...demo });
       },
     },
   ];

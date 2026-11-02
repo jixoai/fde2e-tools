@@ -14,6 +14,7 @@ import notoRegularUrl from "../../../packages/shared/assets/fonts/NotoSansSC-Reg
 import notoBoldUrl from "../../../packages/shared/assets/fonts/NotoSansSC-Bold.ttf?url";
 import { normalizeSpec, type CanvasSpec, type SpecNode, type SpecWarning } from "./spec";
 import { getAsset } from "./assets";
+import { resolvePreprocess } from "./preprocess";
 
 export const DEFAULT_FONT_FAMILY = "Noto Sans SC";
 
@@ -28,11 +29,19 @@ export interface LayoutNode {
   textContent?: string;
 }
 
+export interface RenderPreprocessSummary {
+  count: number;
+  keys: string[];
+  assetIds: Record<string, string>;
+}
+
 export interface RenderResult {
   spec: CanvasSpec;
   svg: string;
   nodes: LayoutNode[];
   warnings: SpecWarning[];
+  /** 预处理摘要（无 preprocess 时 count=0） */
+  preprocess: RenderPreprocessSummary;
 }
 
 export interface PngResult {
@@ -81,19 +90,58 @@ async function loadFonts() {
   return fontsReady;
 }
 
-function resolveAssetRefs(node: SpecNode): void {
-  if (node.type === "img" && typeof node.props.src === "string" && node.props.src.startsWith("asset:")) {
-    const id = node.props.src.slice("asset:".length);
+function resolveRefValue(value: string, preMap: Record<string, string>): string | null {
+  if (value.startsWith("pre:")) {
+    const key = value.slice("pre:".length);
+    const id = preMap[key];
+    if (!id) throw new Error(`pre:${key} 未在 preprocess 中解析（检查 key 与声明顺序）`);
+    const asset = getAsset(id);
+    if (!asset?.dataUrl) throw new Error(`pre:${key} → asset:${id} 不存在或没有图片数据`);
+    return asset.dataUrl;
+  }
+  if (value.startsWith("asset:")) {
+    const id = value.slice("asset:".length);
     const asset = getAsset(id);
     if (!asset?.dataUrl) {
       throw new Error(`asset:${id} 不存在或不是图片/SVG 素材（先 import_asset 或 list_assets）`);
     }
-    node.props.src = asset.dataUrl;
+    return asset.dataUrl;
+  }
+  return null;
+}
+
+const INLINE_REF_RE = /url\(\s*(['"]?)((?:pre|asset):[A-Za-z0-9_-]+)\1\s*\)/g;
+
+function resolveStyleRefs(style: Record<string, unknown>, preMap: Record<string, string>): void {
+  for (const [key, value] of Object.entries(style)) {
+    if (typeof value !== "string" || !value.includes("url(")) continue;
+    style[key] = value.replace(INLINE_REF_RE, (whole, _q: string, ref: string) => {
+      const resolved = resolveRefValue(ref, preMap);
+      return resolved ? `url("${resolved}")` : whole;
+    });
+  }
+}
+
+function resolveAssetRefs(node: SpecNode, preMap: Record<string, string>): void {
+  if (node.type === "img" && typeof node.props.src === "string") {
+    const resolved = resolveRefValue(node.props.src, preMap);
+    if (resolved) node.props.src = resolved;
+  }
+  // SVG 子树：href / xlink:href / src 也支持 pre:/asset:
+  for (const key of ["href", "xlink:href", "src"] as const) {
+    const value = node.props[key];
+    if (typeof value === "string") {
+      const resolved = resolveRefValue(value, preMap);
+      if (resolved) node.props[key] = resolved;
+    }
+  }
+  if (node.props.style && typeof node.props.style === "object") {
+    resolveStyleRefs(node.props.style as Record<string, unknown>, preMap);
   }
   const children = node.props.children;
   if (Array.isArray(children)) {
     for (const child of children) {
-      if (typeof child !== "string") resolveAssetRefs(child);
+      if (typeof child !== "string") resolveAssetRefs(child, preMap);
     }
   }
 }
@@ -109,7 +157,8 @@ function toElement(node: SpecNode | string): ReactNode {
 export async function renderCanvas(rawSpec: unknown): Promise<RenderResult> {
   await ensureSatori();
   const { spec, warnings: specWarnings } = normalizeSpec(rawSpec);
-  resolveAssetRefs(spec.root);
+  const preprocess = await resolvePreprocess(spec);
+  resolveAssetRefs(spec.root, preprocess.assetIds);
   const fonts = await loadFonts();
   const nodes: LayoutNode[] = [];
   const styleWarnings: SpecWarning[] = [];
@@ -133,7 +182,21 @@ export async function renderCanvas(rawSpec: unknown): Promise<RenderResult> {
       styleWarnings.push({ code: "style", message: e.message });
     },
   });
-  return { spec, svg, nodes, warnings: [...specWarnings, ...styleWarnings] };
+  const preprocessWarnings: SpecWarning[] = preprocess.warnings.map((message) => ({
+    code: "preprocess",
+    message,
+  }));
+  return {
+    spec,
+    svg,
+    nodes,
+    warnings: [...specWarnings, ...preprocessWarnings, ...styleWarnings],
+    preprocess: {
+      count: preprocess.count,
+      keys: preprocess.keys,
+      assetIds: preprocess.assetIds,
+    },
+  };
 }
 
 export async function svgToPng(

@@ -1,0 +1,33 @@
+# Icon catalog NOTICE
+
+`apps/canvas/src/icons/catalog.generated.json` is generated at build time by
+`scripts/gen-icon-catalog.mjs` from the following icon families, distributed via
+the `react-icons` package. The runtime ships only the generated SVG data; the
+`react-icons` package itself is a devDependency and is **not** bundled.
+
+| Library | react-icons pack | License |
+| --- | --- | --- |
+| Lucide | `react-icons/lu` | ISC |
+| Tabler Icons | `react-icons/tb` | MIT |
+| Heroicons | `react-icons/hi2` | MIT |
+| Bootstrap Icons | `react-icons/bi` | MIT |
+| Font Awesome Free | `react-icons/fa6` | CC BY 4.0 (icons) / OFL-1.1 (fonts) |
+| Material Icons | `react-icons/md` | Apache-2.0 |
+
+react-icons itself: MIT — https://github.com/react-icons/react-icons
+
+Upstream projects:
+
+- Lucide: https://lucide.dev (ISC)
+- Tabler Icons: https://tabler.io/icons (MIT)
+- Heroicons: https://heroicons.com (MIT)
+- Bootstrap Icons: https://icons.getbootstrap.com (MIT)
+- Font Awesome Free: https://fontawesome.com (CC BY 4.0 / OFL-1.1)
+- Material Icons: https://fonts.google.com/icons (Apache-2.0)
+
+Each generated entry carries a `license` field. Attribution for Font Awesome Free
+is required under CC BY 4.0; keep this NOTICE with any redistribution of
+`catalog.generated.json`.
+
+Arbitrary official SVG icons can be imported with `import_asset({url,type:"svg"})`;
+their license is the user's responsibility (Canvas only records provenance).

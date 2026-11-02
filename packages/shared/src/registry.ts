@@ -115,11 +115,11 @@ export const TOOLS: ToolMeta[] = [
     name: "Canvas 画布工具",
     tagline: "用 JSON 排版，导出 SVG/PNG",
     description:
-      "Satori 确定性出图：JSON spec/配方 → SVG/PNG；内置字体、背景、形状与配方，支持 fontkit 文本转 path、外部素材导入。Paper Shaders 内置背景生成/处理（mesh 渐变 / glass 棱镜 / paper 纸纹，WebGL2 页面内光栅化，可链式）。纯前端零后端，同输入同输出。",
-    tags: ["画布", "海报", "封面", "SVG", "PNG", "排版", "设计", "字体", "素材", "satori", "shader", "背景生成"],
+      "Satori 确定性出图：JSON spec/配方 → SVG/PNG；内置字体、背景、形状与配方，支持 fontkit 文本转 path、外部素材导入。Paper Shaders 内置背景生成/处理（mesh 渐变 / glass 棱镜 / paper 纸纹，WebGL2 页面内光栅化，可链式）。字体目录（常用中英文字体，Satori 内置 vs text_to_svg）、六族图标目录（Lucide/Tabler/Heroicons/Bootstrap/Font Awesome/Material）与 12+ demo；spec 级 preprocess 声明式生成/加载 shader/icon/image/text 素材（pre:<key> 引用）。纯前端零后端，同输入同输出。",
+    tags: ["画布", "海报", "封面", "SVG", "PNG", "排版", "设计", "字体", "图标", "素材", "demo", "satori", "shader", "背景生成", "preprocess"],
     subdomain: "canvas.tool.fde2e.com",
     aiGuideSummary:
-      "WebMCP：render_card({spec}) → inspect_layout → export_svg / export_canvas_png；list_fonts / text_to_svg / font_info / font_glyphs；list_assets / get_asset / import_asset（spec 里 img.src=\"asset:<id>\"）；list_recipes / get_recipe / list_styles；Paper Shaders：list_shader_presets / generate_background / apply_shader / shader_to_asset（1–4 步链式，返回 assetId）。spec={width,height,root}，children 在 props.children。",
+      "WebMCP：render_card({spec}) → inspect_layout → export_svg / export_canvas_png；list_fonts / list_font_catalog / text_to_svg / font_info / font_glyphs；search_icons / get_icon（六族图标 → shape 资产）；list_assets / get_asset / import_asset（spec 里 img.src=\"asset:<id>\"）；list_demos / get_demo（≥12 个 basic/advanced/preprocess demo）；list_recipes / get_recipe / list_styles；Paper Shaders：list_shader_presets / generate_background / apply_shader / shader_to_asset（1–4 步链式，返回 assetId）。spec={width,height,preprocess?,root}，children 在 props.children；preprocess 声明 shader/icon/image/text 后用 pre:<key> 引用。",
     urlParams: [],
     tools: [
       { name: "render_card", description: "JSON spec → Satori 渲染；返回 renderId/尺寸/摘要/警告" },
@@ -140,6 +140,11 @@ export const TOOLS: ToolMeta[] = [
       { name: "generate_background", description: "生成型预设（mesh）页面内 WebGL2 光栅化为背景资产" },
       { name: "apply_shader", description: "处理型预设（glass/paper）加工已有图片为新资产" },
       { name: "shader_to_asset", description: "1–4 步链式生成/处理（缺省上一步输出，返回 assetId/每步耗时）" },
+      { name: "list_font_catalog", description: "常用中英文字体目录（≥15；usage=satori|text_to_svg，不托管字体字节）" },
+      { name: "search_icons", description: "六族图标搜索（Lucide/Tabler/Heroicons/Bootstrap/Font Awesome/Material）" },
+      { name: "get_icon", description: "取图标为 shape 资产（color/size/strokeWidth）" },
+      { name: "list_demos", description: "≥12 个 demo 摘要（basic/advanced/preprocess）" },
+      { name: "get_demo", description: "按 id 读取完整 demo spec（可直接 render_card）" },
     ],
     repoPath: "apps/canvas",
   },

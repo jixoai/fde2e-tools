@@ -39,7 +39,7 @@ const ONLY_APPS = new Set(
 const EXPECT = {
   directory: { tools: ["list_tools", "search_tools"] },
   "pdf-tool": { tools: ["render_preview", "export_pdf"] },
-  canvas: { tools: ["render_card", "inspect_layout", "export_svg", "export_canvas_png", "list_fonts", "list_recipes", "get_recipe", "list_assets", "get_asset", "import_asset", "list_styles", "font_info", "text_to_svg", "font_glyphs", "list_shader_presets", "generate_background", "apply_shader", "shader_to_asset"] },
+  canvas: { tools: ["render_card", "inspect_layout", "export_svg", "export_canvas_png", "list_fonts", "list_recipes", "get_recipe", "list_assets", "get_asset", "import_asset", "list_styles", "font_info", "text_to_svg", "font_glyphs", "list_shader_presets", "generate_background", "apply_shader", "shader_to_asset", "list_font_catalog", "search_icons", "get_icon", "list_demos", "get_demo"] },
   "url-tool": { tools: ["pack_url", "decode_url"] },
   "file-viewer": { tools: ["preview_file"] },
   "easy-xlsx": { tools: ["create_xlsx", "add_sheet_sample"] },
@@ -151,6 +151,111 @@ const ILLEGAL_MATRIX = [
           },
         },
         word: "只允许",
+      },
+      // canvas-preprocess-v2：字体目录/图标/demo/预处理错误矩阵
+      { tool: "search_icons", input: { library: "no-such-library" }, word: "未知图标库" },
+      { tool: "get_icon", input: { library: "lucide", name: "definitely-not-an-icon" }, word: "图标不存在" },
+      { tool: "get_icon", input: {}, word: "需要 id" },
+      { tool: "get_demo", input: { id: "no-such-demo" }, word: "不存在" },
+      {
+        tool: "render_card",
+        input: {
+          spec: {
+            width: 100,
+            height: 100,
+            root: { type: "div", props: { id: "root", children: [{ type: "img", props: { id: "i", src: "pre:nope" } }] } },
+          },
+        },
+        word: "pre:nope",
+      },
+      {
+        tool: "render_card",
+        input: {
+          spec: {
+            width: 100,
+            height: 100,
+            preprocess: {
+              glass: { type: "shader", preset: "glass-prism", source: "bg" },
+              bg: { type: "shader", preset: "mesh-sunset" },
+            },
+            root: { type: "div", props: { id: "root", children: "x" } },
+          },
+        },
+        word: "之前",
+      },
+      {
+        tool: "render_card",
+        input: {
+          spec: {
+            width: 100,
+            height: 100,
+            preprocess: { img: { type: "image", url: "http://example.com/a.png" } },
+            root: { type: "div", props: { id: "root", children: "x" } },
+          },
+        },
+        word: "https",
+      },
+      {
+        tool: "render_card",
+        input: {
+          spec: {
+            width: 100,
+            height: 100,
+            preprocess: Object.fromEntries(
+              Array.from({ length: 9 }, (_, i) => [`k${i}`, { type: "icon", library: "lucide", name: "star" }]),
+            ),
+            root: { type: "div", props: { id: "root", children: "x" } },
+          },
+        },
+        word: "最多",
+      },
+      {
+        tool: "render_card",
+        input: {
+          spec: {
+            width: 100,
+            height: 100,
+            preprocess: { t: { type: "text", text: "x".repeat(2001) } },
+            root: { type: "div", props: { id: "root", children: "x" } },
+          },
+        },
+        word: "2000",
+      },
+      {
+        tool: "render_card",
+        input: {
+          spec: {
+            width: 100,
+            height: 100,
+            preprocess: { logo: { type: "icon", library: "lucide", name: "definitely-not-an-icon" } },
+            root: { type: "div", props: { id: "root", children: [{ type: "img", props: { id: "i", src: "pre:logo" } }] } },
+          },
+        },
+        word: "图标不存在",
+      },
+      {
+        tool: "render_card",
+        input: {
+          spec: {
+            width: 100,
+            height: 100,
+            preprocess: { g: { type: "shader", preset: "glass-prism" } },
+            root: { type: "div", props: { id: "root", children: "x" } },
+          },
+        },
+        word: "需要图片",
+      },
+      {
+        tool: "render_card",
+        input: {
+          spec: {
+            width: 100,
+            height: 100,
+            preprocess: { t: { type: "text", text: "hi", font: "no-such-font" } },
+            root: { type: "div", props: { id: "root", children: "x" } },
+          },
+        },
+        word: "字体目录",
       },
     ],
   },

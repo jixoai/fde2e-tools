@@ -32,7 +32,7 @@ export interface Asset {
   bytes?: number;
 }
 
-function svgDataUrl(svg: string): string {
+export function svgDataUrl(svg: string): string {
   return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
 }
 
@@ -285,28 +285,49 @@ export function listGeneratedAssets(): Asset[] {
   return [...imported.values()].filter((a) => a.source.startsWith("shader:"));
 }
 
+/** 列出全部非内置来源资产（导入/生成/预处理产物），按生成顺序。 */
+export function listImportedAssets(): Asset[] {
+  return [...imported.values()];
+}
+
 export interface RegisterGeneratedAssetInput {
   dataUrl: string;
   width: number;
   height: number;
   name?: string;
   tags?: string[];
-  /** 预设链（如 ["mesh-sunset", "glass-prism"]） */
-  chain: string[];
+  /** 预设链（如 ["mesh-sunset", "glass-prism"]）；shader 资产用于生成 source/名称 */
+  chain?: string[];
+  /** 产物类型：background（shader/image）或 shape（icon/text）。缺省 background。 */
+  type?: "background" | "shape";
+  /** 显式 provenance（如 icon:lucide/star、text:inter、preprocess:...）；缺省 shader:<chain> */
+  source?: string;
+  license?: string;
+  style?: string;
 }
 
-/** 注册 shader 生成资产：type=background / license=generated / source=shader:<chain>。 */
+/**
+ * 注册生成资产。
+ * - 缺省保持 shader 语义：type=background / license=generated / source=shader:<chain>；
+ * - 图标/文本/预处理产物用 type=shape + 显式 source 记录 provenance；
+ * - id 前缀：shader 走 `shader-<n>`（E2E 既有契约），其它走 `gen-<n>`。
+ */
 export function registerGeneratedAsset(input: RegisterGeneratedAssetInput): Asset {
-  const chain = input.chain.length > 0 ? input.chain : ["unknown"];
-  const id = `shader-${++seq}`;
+  const chain = input.chain && input.chain.length > 0 ? input.chain : ["unknown"];
+  const isShader = !input.source || input.source.startsWith("shader:");
+  const type = input.type ?? "background";
+  const id = `${isShader && type === "background" ? "shader" : "gen"}-${++seq}`;
+  const source = input.source ?? `shader:${chain.join(">")}`;
   const asset: Asset = {
     id,
-    type: "background",
-    name: input.name?.trim() || `Shader ${chain.join(" > ")}`,
-    tags: ["generated", "shader", ...chain, ...(input.tags ?? [])],
-    style: "shader",
-    license: "generated",
-    source: `shader:${chain.join(">")}`,
+    type,
+    name: input.name?.trim() || (isShader ? `Shader ${chain.join(" > ")}` : source),
+    tags: isShader
+      ? ["generated", "shader", ...chain, ...(input.tags ?? [])]
+      : ["generated", ...(input.tags ?? [])],
+    style: input.style ?? (isShader ? "shader" : "generated"),
+    license: input.license ?? (isShader ? "generated" : "generated"),
+    source,
     width: input.width,
     height: input.height,
     dataUrl: input.dataUrl,

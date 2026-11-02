@@ -13,6 +13,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@fde2e-tools/shared/ui
 import { Input } from "@fde2e-tools/shared/ui/input";
 import { Label } from "@fde2e-tools/shared/ui/label";
 import { Textarea } from "@fde2e-tools/shared/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@fde2e-tools/shared/ui/select";
 import { downloadBlob } from "@fde2e-tools/shared/download";
 import {
   renderSpec,
@@ -23,8 +32,16 @@ import {
   applyShaderAsset,
 } from "./webmcp";
 import { svgToPng, svgDataUrl, type RenderResult } from "./render";
-import { getAsset, listAssets, listGeneratedAssets, subscribeAssets, type Asset } from "./assets";
+import {
+  getAsset,
+  listAssets,
+  listGeneratedAssets,
+  listImportedAssets,
+  subscribeAssets,
+  type Asset,
+} from "./assets";
 import { getShaderPreset, SHADER_PRESETS } from "./shaders/presets";
+import { DEMOS, getDemo } from "./demos";
 
 const SAMPLE_SPEC = {
   width: 1080,
@@ -144,8 +161,37 @@ spec 形状：
 - 节点类型：div/span/p/img/svg；svg 子树允许 path/circle/rect/defs/g/...。
 - img.src 允许 data:image/... 或 asset:<id>（list_assets/get_asset 查 id；外部图片先 import_asset）。
 - 排版流程：render_card → inspect_layout（rect/overflow/off_canvas/contrast）→ 改 spec → export_svg/export_canvas_png。
-- 字体：list_fonts/get_asset 取 fontUrl；Satori 不支持时用 text_to_svg 转 path。字体授权由使用方负责，工具不拦截。
+- 字体：list_fonts/get_asset 取内置 fontUrl；Satori 不支持时用 text_to_svg 转 path。字体授权由使用方负责，工具不拦截。
 - style 不支持 writingMode/columns/fontStretch；外部 url()/@import 会被拒绝。
+
+字体目录（常用中英文，不托管字体字节）：
+- list_font_catalog({language?:"zh"|"en", style?:"sans"|"serif"|"display"|"hand"|"mono", q?}) → id/family/languages/styles/weights/license/source/url|cssUrl/usage/builtin/notes
+- 内置 Noto Sans SC：usage="satori"，spec 里 fontFamily:"Noto Sans SC" 直接排版（离线可用，Regular/Bold）
+- 外部字体：usage="text_to_svg"，先 font_info({url}) 再 text_to_svg({url,text,fontSize,...})；或写进 preprocess.text
+- 无直链条目只给官方来源页/cssUrl（不编造 404 链接）；中文 WOFF2 较大（1.5–2.7MB），按需加载并缓存
+
+图标库（六族同源 SVG，不是 react-icons 运行时）：
+- search_icons({q?, library?: "lucide"|"tabler"|"heroicons"|"bootstrap"|"fontawesome"|"material", limit?}) → id/library/name/tags/viewBox/license
+- get_icon({id? | library+name, color?, size? 16–512, strokeWidth?}) → {assetId,width,height}（type=shape 资产）
+- spec 里用 img.src="asset:<id>"；任意官方 SVG 仍走 import_asset({url,type:"svg"})（清洗/外部 href 拒绝）
+
+Demo 学习路径：
+- list_demos({level?:"basic"|"advanced"|"preprocess", q?}) → 摘要（id/title/level/features/explain 前 200 字）
+- get_demo({id}) → 完整 spec/explain，可直接 render_card；preprocess demo 演示 pre:<key> 多素材组合
+
+spec 预处理 preprocess（渲染前把素材准备好；不是新渲染引擎）：
+  "preprocess": {
+    "bg":    { "type": "shader", "preset": "mesh-sunset", "width": 1080, "height": 1440 },
+    "glass": { "type": "shader", "preset": "glass-prism", "source": "bg" },
+    "logo":  { "type": "icon", "library": "lucide", "name": "sparkles", "color": "#ffffff", "size": 96 },
+    "title": { "type": "text", "text": "FDE2E", "font": "inter", "fontUrl": "https://...woff2", "fontSize": 120 },
+    "photo": { "type": "image", "assetId": "bg-warm-sunset" }
+  }
+- 节点引用：img.src="pre:bg"；style.backgroundImage="url(pre:glass)"；SVG 子节点 href/xlink:href/src="pre:key"
+- 按对象插入顺序串行解析；shader.source 只能指向更早声明的 key 或 asset:<id>（否则 E_PREPROCESS_ORDER）
+- 限制：条目 ≤8、text ≤2000 字、icon size 16–512、总产物 ≤24MB；错误统一 E_PREPROCESS_* + key，不产生半张图
+- image 支持 url（https/私网校验）或 assetId；icon 支持 library+name 或官方 svg url；text 支持 font（目录 id）/fontUrl
+- render_card 返回 preprocess:{count,keys,assetIds}；产物注册进资产库（背景 background / 图标与文本 shape）
 
 操作：
 - 编辑 <textarea id="spec-input">，点 id=render-btn（渲染）→ 预览 <img id=canvas-preview>；
@@ -153,11 +199,14 @@ spec 形状：
 - 状态行 id=status 实时反馈。
 
 WebMCP 工具：
-- render_card({spec}) → renderId/尺寸/摘要/警告（不回整段 SVG）
+- render_card({spec}) → renderId/尺寸/摘要/警告/preprocess 摘要（不回整段 SVG）
 - inspect_layout({renderId?, ids?, format?}) → rect/type/text + blocking/advisory 警告
 - export_svg({renderId?, inlinePaths?}) → 自包含 SVG
 - export_canvas_png({renderId?, scale?, background?, filename?}) → 下载单张 PNG
-- list_fonts / list_recipes / list_styles → 摘要列表
+- list_fonts / list_font_catalog / list_recipes / list_styles / list_demos / get_demo → 摘要/目录
+- search_icons / get_icon → 六族图标搜索与 shape 资产
+- list_assets / get_asset / import_asset → 素材库
+- font_info / text_to_svg / font_glyphs → 外部字体解析与转 path
 
 Paper Shaders 背景（内置、WebGL2 页面内光栅化；不开放 GLSL/React 创作）：
 - list_shader_presets({tag?, needsImage?}) → 预设摘要（mesh/glass/paper），不含全量默认参数
@@ -188,8 +237,16 @@ export default function App() {
   const [shaderStatus, setShaderStatus] = useState<Status>({ msg: "选择预设后点「生成背景」…", kind: "ok" });
   const [shaderPreview, setShaderPreview] = useState<string | null>(null);
   const [generatedAssets, setGeneratedAssets] = useState<Asset[]>([]);
+  const [otherAssets, setOtherAssets] = useState<Asset[]>([]);
+  const [demoId, setDemoId] = useState(DEMOS[0]?.id ?? "");
+  const [demoStatus, setDemoStatus] = useState<Status>({ msg: "选择 demo 后点「载入 Demo」…", kind: "ok" });
   const shaderWidthRef = useRef<HTMLInputElement>(null);
   const shaderHeightRef = useRef<HTMLInputElement>(null);
+
+  function demoLabel(id: string): string {
+    const demo = getDemo(id);
+    return demo ? `${demo.level} · ${demo.title}` : "选择 demo";
+  }
 
   function setKind(msg: string, kind: StatusKind = "ok") {
     setStatus({ msg, kind });
@@ -247,6 +304,24 @@ export default function App() {
     void doRender();
   }
 
+  /** 载入内置 demo（basic/advanced/preprocess）到 spec 输入框并立即渲染。 */
+  async function loadDemo(id: string) {
+    const demo = getDemo(id);
+    if (!demo) {
+      setDemoStatus({ msg: `未知 demo：${id}`, kind: "error" });
+      return;
+    }
+    if (specRef.current) specRef.current.value = JSON.stringify(demo.spec, null, 2);
+    setDemoStatus({ msg: `正在载入 ${demo.level} · ${demo.title}…`, kind: "ok" });
+    const rendered = await doRender();
+    setDemoStatus({
+      msg: rendered
+        ? `已载入 ${demo.title} · ${demo.features.join(" / ")}`
+        : `demo ${demo.id} 渲染失败（见上方状态行）`,
+      kind: rendered ? "ok" : "error",
+    });
+  }
+
   async function onGenerateShader() {
     const preset = getShaderPreset(shaderPresetId);
     if (!preset) {
@@ -288,7 +363,7 @@ export default function App() {
     }
   }
 
-  /** 把生成资产以 asset:<id> 全幅背景插入当前 spec 并重新渲染。 */
+  /** 把生成/预处理资产插入当前 spec：背景铺满、shape 以 160×160 插入。 */
   function useAssetInSpec(assetId: string) {
     const raw = specRef.current?.value ?? "";
     let spec: Record<string, unknown>;
@@ -303,24 +378,38 @@ export default function App() {
       setShaderStatus({ msg: "当前 spec 缺 root 节点，无法插入资产", kind: "error" });
       return;
     }
+    const asset = getAsset(assetId);
     const props = root.props ?? {};
     const style = (props.style && typeof props.style === "object" ? props.style : {}) as Record<string, unknown>;
     style.position = style.position ?? "relative";
     props.style = style;
     const children = Array.isArray(props.children) ? props.children : [];
-    children.unshift({
-      type: "img",
-      props: {
-        id: `bg-${assetId}`,
-        src: `asset:${assetId}`,
-        style: { position: "absolute", left: 0, top: 0, width: "100%", height: "100%" },
-      },
-    });
+    children.unshift(
+      asset?.type === "shape"
+        ? {
+            type: "img",
+            props: { id: `asset-${assetId}`, src: `asset:${assetId}`, style: { width: 160, height: 160 } },
+          }
+        : {
+            type: "img",
+            props: {
+              id: `bg-${assetId}`,
+              src: `asset:${assetId}`,
+              style: { position: "absolute", left: 0, top: 0, width: "100%", height: "100%" },
+            },
+          },
+    );
     props.children = children;
     root.props = props;
     spec.root = root;
     if (specRef.current) specRef.current.value = JSON.stringify(spec, null, 2);
-    setShaderStatus({ msg: `已把 asset:${assetId} 作为全幅背景插入 spec，正在渲染…`, kind: "ok" });
+    setShaderStatus({
+      msg:
+        asset?.type === "shape"
+          ? `已把 asset:${assetId} 插入 spec（160×160），正在渲染…`
+          : `已把 asset:${assetId} 作为全幅背景插入 spec，正在渲染…`,
+      kind: "ok",
+    });
     void doRender();
   }
 
@@ -352,6 +441,7 @@ export default function App() {
     return subscribeAssets(() => {
       const list = listGeneratedAssets();
       setGeneratedAssets(list);
+      setOtherAssets(listImportedAssets().filter((a) => !a.source.startsWith("shader:")));
       const newest = list[list.length - 1];
       if (newest?.dataUrl) setShaderPreview(newest.dataUrl);
       if (newest && newest.id !== lastId) {
@@ -448,7 +538,56 @@ export default function App() {
 
       <Card className="mt-4">
         <CardHeader>
-          <CardTitle>3 · Shader 背景</CardTitle>
+          <CardTitle>3 · Demo 学习路径</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <p className="text-[13px] text-muted-foreground">
+            {DEMOS.length} 个内置 demo（basic / advanced / preprocess）：一键载入完整 spec 并渲染。
+            preprocess demo 演示 <code>pre:&lt;key&gt;</code> 声明式生成 shader / icon / image / text 素材。
+          </p>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex min-w-[280px] flex-col gap-1">
+              <Label htmlFor="demo-select-trigger" className="text-muted-foreground">
+                Demo
+              </Label>
+              <Select value={demoId} onValueChange={(value) => setDemoId(String(value ?? ""))}>
+                <SelectTrigger id="demo-select-trigger" className="w-full">
+                  <SelectValue>{(value) => demoLabel(String(value ?? ""))}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {(["basic", "advanced", "preprocess"] as const).map((level) => (
+                    <SelectGroup key={level}>
+                      <SelectLabel>{level}</SelectLabel>
+                      {DEMOS.filter((d) => d.level === level).map((d) => (
+                        <SelectItem key={d.id} value={d.id}>
+                          {d.title}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button id="demo-load-btn" onClick={() => void loadDemo(demoId)}>
+              载入 Demo
+            </Button>
+            <Button
+              id="preprocess-demo-btn"
+              variant="outline"
+              onClick={() => void loadDemo("preprocess-four-assets")}
+            >
+              载入预处理示例
+            </Button>
+          </div>
+          <p id="demo-status" className={"min-h-[24px] text-sm font-semibold " + statusTextClass(demoStatus.kind)}>
+            {demoStatus.msg}
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card className="mt-4">
+        <CardHeader>
+          <CardTitle>4 · Shader 背景</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <div className="flex flex-wrap gap-2">
@@ -538,6 +677,40 @@ export default function App() {
                     </Button>
                     <Button
                       id={`shader-use-${a.id}`}
+                      size="xs"
+                      variant="outline"
+                      onClick={() => useAssetInSpec(a.id)}
+                    >
+                      用于 spec
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-muted-foreground">图标 / 文本 / 预处理资产（{otherAssets.length}）</Label>
+            {otherAssets.length === 0 ? (
+              <p className="text-[13px] text-muted-foreground">
+                还没有图标/文本/预处理资产；用 get_icon、preprocess 或 import_asset 生成后会自动出现在这里。
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-1.5">
+                {otherAssets.map((a) => (
+                  <li
+                    key={a.id}
+                    className="flex flex-wrap items-center gap-2 rounded-md border border-input bg-muted/30 px-2 py-1.5 text-[12px]"
+                  >
+                    <span className="font-mono font-semibold">{a.id}</span>
+                    <span className="text-muted-foreground">
+                      {a.type} · {a.name} · {a.width ?? "?"}×{a.height ?? "?"} · {a.bytes ?? 0} bytes
+                    </span>
+                    <span className="font-mono text-[11px] text-muted-foreground">{a.source}</span>
+                    <Button size="xs" variant="outline" onClick={() => setShaderPreview(a.dataUrl ?? null)}>
+                      预览
+                    </Button>
+                    <Button
+                      id={`asset-use-${a.id}`}
                       size="xs"
                       variant="outline"
                       onClick={() => useAssetInSpec(a.id)}
