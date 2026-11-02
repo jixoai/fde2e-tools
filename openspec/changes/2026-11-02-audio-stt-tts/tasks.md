@@ -16,14 +16,14 @@
       notice, minDeviceTier}`；`deploy/models-fetch.sh` 按 manifest 钉版本
       拉取 `.gitignore` 目录 `models/`（哪个 app dist 就挂哪份，逐站分目录）
       →tools-upload.sh 顺带上传（编排者侧）。
-- [ ] 1.3 **downloader-core 复用**：vendor 方式引入 web bundle
+- [x] 1.3 **downloader-core 复用**：vendor 方式引入 web bundle
       （IIFE `FDE2ESmartDLCore`，参照 site 的 `build-downloader-core.mjs`
       --write/-­-check 漂移门纪律）；模型源池三源——
       ①同源 `stt.tool.fde2e.com/models/…`（OpenResty CORS+Range）；
       ②CF 边缘 GH 代理（sherpa 官方 releases、重模型 asr-models/tts tag）；
       ③服务器直连兜底；`expectedSha256` 全部挂 manifest.sha256（禁 no-expected
       出现在线上路径）。下载进度 UI 用 shadcn 官方仪表件收编形态。
-- [ ] 1.4 **缓存策略**：transformers.js `env.useBrowserCache` 走 Cache API
+- [x] 1.4 **缓存策略**：transformers.js `env.useBrowserCache` 走 Cache API
       默认；启动时 `navigator.storage.persist()` 请求；缓存被清（Safari 7 天
       规则/隐身窗）后的重下提示 UI；iOS 不下大模型（manifest
       minDeviceTier 挡）。
