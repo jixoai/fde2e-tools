@@ -216,7 +216,9 @@ export const SHADER_PRESETS: ShaderPreset[] = [
       distortion: 0.5,
       shift: 0,
       blur: 0,
-      edges: 0.25,
+      // 官方 Default 是 0.25；做全幅背景时会在上下边形成 ~10px 近黑暗边
+      // （vision 2026-11-03 实测），默认归零；需要复古边框可显式覆盖 edges。
+      edges: 0,
       stretch: 0,
       marginLeft: 0,
       marginRight: 0,
