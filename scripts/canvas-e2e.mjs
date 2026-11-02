@@ -146,6 +146,40 @@ async function main() {
     return { out, name: dl.name, width: buf.readUInt32BE(16), height: buf.readUInt32BE(20), bytes: buf.length };
   }
 
+  /**
+   * 画布像素采样：把当前预览图（SVG data URL）画进 canvas，统计整图暖色占比。
+   * 用于双素材断言——只查 PNG 非空会把「前景图被背景盖住」误判为通过（vision 2026-11-03）。
+   * 前景照片是暖色日落，冷色 mesh 背景上出现 >8% 暖色即证明前景可见。
+   */
+  async function warmRatio() {
+    return page.evaluate(async () => {
+      const img = document.getElementById("canvas-preview");
+      if (!img) throw new Error("canvas-preview 不存在");
+      if (!img.complete) {
+        await new Promise((resolve) => {
+          img.addEventListener("load", resolve, { once: true });
+          img.addEventListener("error", resolve, { once: true });
+        });
+      }
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth || 600;
+      c.height = img.naturalHeight || 400;
+      const ctx = c.getContext("2d");
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      const data = ctx.getImageData(0, 0, c.width, c.height).data;
+      let warm = 0;
+      let total = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        total += 1;
+        if (r > 110 && r > g + 12 && r > b + 8) warm += 1;
+      }
+      return { warm, total, ratio: total ? warm / total : 0 };
+    });
+  }
+
   try {
     await page.goto(base, { waitUntil: "load" });
     await page.waitForFunction(() => document.modelContext && document.modelContext.getTools().then((ts) => ts.some((t) => t.name === "render_card")), { timeout: 30000 });
@@ -863,13 +897,25 @@ async function main() {
           style: { width: "100%", height: "100%", position: "relative", display: "flex", alignItems: "flex-end", padding: 24 },
           children: [
             { type: "img", props: { id: "bg", src: "pre:bg", style: { position: "absolute", left: 0, top: 0, width: "100%", height: "100%" } } },
-            { type: "img", props: { id: "photo", src: "pre:photo", style: { width: 260, height: 180, borderRadius: 18, border: "4px solid #ffffff66" } } },
+            { type: "img", props: { id: "photo", src: "pre:photo", style: { position: "relative", width: 260, height: 180, borderRadius: 18, border: "4px solid #ffffff66" } } },
           ],
         },
       },
     };
+    const twoBefore = await page.evaluate(() => document.getElementById("canvas-preview")?.src ?? "");
     const two = await call("render_card", { spec: twoSpec });
     if (!two.ok || two.preprocess?.count !== 2) throw new Error(`双素材渲染失败: ${JSON.stringify(two).slice(0, 240)}`);
+    // WebMCP 渲染 → React 订阅更新预览是异步的；等预览 src 真正换掉再采样，否则会读到上一张图。
+    await page.waitForFunction(
+      (prev) => (document.getElementById("canvas-preview")?.src ?? "") !== prev,
+      twoBefore,
+      { timeout: 15000 },
+    );
+    await page.waitForTimeout(300);
+    const twoWarm = await warmRatio();
+    if (twoWarm.ratio < 0.08) {
+      throw new Error(`双素材前景不可见：整图暖色占比 ${(twoWarm.ratio * 100).toFixed(1)}%（期望 >8%，背景 mesh 是冷色）`);
+    }
     const twoPng = await exportPng("two-assets.png");
     if (twoPng.width !== 600 || twoPng.height !== 400 || twoPng.bytes < 1000) {
       throw new Error(`双素材 PNG 不符: ${JSON.stringify(twoPng)}`);
@@ -877,10 +923,10 @@ async function main() {
     await shotPreview(join(IMG, "s20-two-assets.png"));
     step("20 · 双素材：Shader 背景 + 图片前景", {
       intent: "pre:bg（mesh 背景）+ pre:photo（image.assetId 内置图片）同时可见；导出 PNG 验证两张素材都在。",
-      expect: "render ok；preprocess count=2（bg/photo）；PNG 600×400 非空（两张素材未被互相替换）。",
+      expect: "render ok；preprocess count=2（bg/photo）；整图暖色占比 >8%（证明前景照片未被背景盖住）；PNG 600×400 非空。",
       image: "img/s20-two-assets.png",
       imageMeta: "1440×960 · 双素材合成预览实拍",
-      assertion: `preprocess keys=${two.preprocess.keys.join(",")} · PNG ${twoPng.width}×${twoPng.height} ${twoPng.bytes}B（背景 + 前景）。`,
+      assertion: `preprocess keys=${two.preprocess.keys.join(",")} · 整图暖色占比 ${(twoWarm.ratio * 100).toFixed(1)}%（${twoWarm.warm}/${twoWarm.total}px）· PNG ${twoPng.width}×${twoPng.height} ${twoPng.bytes}B（背景 + 前景）。`,
       ok: true,
     });
 
