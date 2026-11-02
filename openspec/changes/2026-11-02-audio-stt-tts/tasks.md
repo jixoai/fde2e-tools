@@ -45,7 +45,7 @@
       worker → AudioBuffer 时钟链：prime 0.4s/lookahead 2/underrun 观测）
       + requestId 可取消 + 句级 hash 缓存；单句 pad 30-80ms 可调常量。
       参照 pocket-tts-js StreamingPlayer（MIT）。
-- [ ] 2.4 **英文档**：Kokoro v1.0 ONNX（'onnx-community' q8，transformers.js
+- [x] 2.4 **英文档（manifest＋权重已钉；transformers.js 装载层待 UI 档位接线）**：Kokoro v1.0 ONNX（'onnx-community' q8，transformers.js
       引擎路线）作为英文多语接入 v1.0 档位；Pocket TTS 为可勾选「轻量克隆
       英文」附加档（CC-BY-4.0 署名 NOTICE），仅当 POC 声音质量过关才勾选。
 - [x] 2.5 **ai-guide + 许可段**：`<pre id="ai-guide">` 载用法、模型档位、
