@@ -152,6 +152,25 @@ function validateStyle(style: Record<string, unknown> | undefined, id: string): 
   }
 }
 
+/** SVG 子树的 props 属性检查（canvas-tool-v1 安全修复）：
+ *  - `href`/`xlink:href`/`src` 只允许同文档 `#id`、`data:` 或 `asset:<id>`；
+ *  - 任意字符串里的 `url(...)` 仍走 checkUrlString（只允许 data:/#id）；
+ *  - `xmlns*` 是命名空间声明，不是外链，放行。 */
+function validateSvgProps(props: Record<string, unknown>, id: string): void {
+  for (const [key, value] of Object.entries(props)) {
+    if (key === "children" || key.startsWith("xmlns")) continue;
+    if (typeof value !== "string") continue;
+    checkUrlString(value, `SVG 节点 ${id} 的 ${key}`);
+    if (/^(?:https?:)?\/\//i.test(value.trim())) {
+      throw new SpecError("E_SPEC_URL", `SVG 节点 ${id} 的 ${key} 不允许外部 URL（只允许 #id / data: / asset:）`);
+    }
+    if ((key === "href" || key === "xlink:href" || key === "src")
+      && !(value.startsWith("#") || value.startsWith("data:") || value.startsWith("asset:"))) {
+      throw new SpecError("E_SPEC_URL", `SVG 节点 ${id} 的 ${key} 只允许 #id / data: / asset:`);
+    }
+  }
+}
+
 function normalizeChildren(
   raw: unknown,
   parentId: string,
@@ -215,6 +234,7 @@ function normalizeNode(
   }
   const style = props.style as Record<string, unknown> | undefined;
   validateStyle(style, id);
+  if (state.insideSvg || type === "svg") validateSvgProps(propsIn, id);
 
   if (type === "img") {
     const src = props.src;

@@ -72,6 +72,18 @@ function err(message: string): { ok: false; error: string; message: string } {
   return { ok: false, error: message, message };
 }
 
+/** 上下文预算（A6）：单工具结果 ≤64KB；超限降级/拒绝，不把大段 SVG/字符集塞进对话。 */
+const RESULT_BUDGET_BYTES = 64 * 1024;
+function withinBudget<T extends Record<string, unknown>>(
+  payload: T,
+  fallback?: Record<string, unknown>,
+): T | Record<string, unknown> {
+  const bytes = new TextEncoder().encode(JSON.stringify(payload)).length;
+  if (bytes <= RESULT_BUDGET_BYTES) return payload;
+  if (fallback !== undefined) return { ok: true, ...fallback, truncated: true, budgetBytes: bytes };
+  return err(`结果超过 ${RESULT_BUDGET_BYTES} 字节预算（${bytes} bytes）；请缩小输入或分页读取`);
+}
+
 const FONTS = [
   { family: "Noto Sans SC", weights: [400, 700], source: "builtin", license: "OFL-1.1" },
 ];
@@ -96,7 +108,8 @@ function buildTools(): WebMCPToolDef[] {
       async execute(input) {
         try {
           const { renderId, result } = await renderSpec(input.spec);
-          return {
+          const warnings = result.warnings.slice(0, 50);
+          return withinBudget({
             ok: true,
             renderId,
             width: result.spec.width,
@@ -106,8 +119,11 @@ function buildTools(): WebMCPToolDef[] {
               warnings: result.warnings.length,
               bytes: new TextEncoder().encode(result.svg).length,
             },
-            warnings: result.warnings,
-          };
+            warnings,
+            ...(result.warnings.length > warnings.length
+              ? { warningsTruncated: result.warnings.length - warnings.length }
+              : {}),
+          });
         } catch (e) {
           return fail(e);
         }
@@ -135,8 +151,21 @@ function buildTools(): WebMCPToolDef[] {
           const ids = Array.isArray(input.ids) ? input.ids.map(String) : undefined;
           const inspected = inspectCanvas(result, { ids, format: input.format === "text" ? "text" : "json" });
           for (const fn of inspectListeners) fn(inspected.warnings ?? []);
-          if (input.format === "text") return { ok: true, text: inspectToText(inspected) };
-          return { ok: true, ...inspected };
+          if (input.format === "text") return withinBudget({ ok: true, text: inspectToText(inspected) });
+          const warnings = (inspected.warnings ?? []).slice(0, 50);
+          const nodes = (inspected.nodes ?? []).slice(0, 120);
+          return withinBudget({
+            ok: true,
+            ...inspected,
+            nodes,
+            warnings,
+            ...(nodes.length < (inspected.nodes ?? []).length
+              ? { nodesTruncated: (inspected.nodes ?? []).length - nodes.length }
+              : {}),
+            ...(warnings.length < (inspected.warnings ?? []).length
+              ? { warningsTruncated: (inspected.warnings ?? []).length - warnings.length }
+              : {}),
+          });
         } catch (e) {
           return fail(e);
         }
@@ -291,7 +320,8 @@ function buildTools(): WebMCPToolDef[] {
         const id = String(input.id ?? "");
         const asset = getAsset(id);
         if (!asset) return err(`素材不存在：${id}`);
-        return { ok: true, asset: input.summaryOnly === true ? assetSummary(asset) : asset };
+        const full = { ok: true, asset: input.summaryOnly === true ? assetSummary(asset) : asset };
+        return withinBudget(full, { asset: assetSummary(asset) });
       },
     },
     {
@@ -417,7 +447,7 @@ function buildTools(): WebMCPToolDef[] {
                 ? (input.axes as Record<string, number>)
                 : undefined,
           });
-          return { ok: true, ...result };
+          return withinBudget({ ok: true, ...result });
         } catch (e) {
           return fail(e);
         }
@@ -443,7 +473,7 @@ function buildTools(): WebMCPToolDef[] {
           const chars = String(input.chars ?? "");
           if (!url || !chars) return err("url 与 chars 必填");
           const result = await fontGlyphs(url, Array.from(chars).slice(0, 64).join(""));
-          return { ok: true, ...result };
+          return withinBudget({ ok: true, ...result });
         } catch (e) {
           return fail(e);
         }

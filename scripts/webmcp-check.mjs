@@ -107,6 +107,30 @@ const ILLEGAL_MATRIX = [
       { tool: "font_info", input: {}, word: "url" },
       { tool: "import_asset", input: {}, word: "url" },
       { tool: "export_svg", input: { inlinePaths: true }, word: "inlinePaths" },
+      // 安全负例（B1）：SVG 子节点 props 顶层外部 url() 必须拒绝，不得静默出外链 SVG
+      {
+        tool: "render_card",
+        input: {
+          spec: {
+            width: 100,
+            height: 100,
+            root: {
+              type: "div",
+              props: {
+                id: "root",
+                children: [{
+                  type: "svg",
+                  props: {
+                    id: "evil-svg",
+                    children: [{ type: "rect", props: { id: "evil-rect", width: 10, height: 10, filter: "url(https://evil.example/f.svg#f)" } }],
+                  },
+                }],
+              },
+            },
+          },
+        },
+        word: "只允许",
+      },
     ],
   },
   {
@@ -559,6 +583,17 @@ async function assertNativePath(browser) {
         cases: (matrix.cases ?? []).map((c) => ({ tool: c.tool, input: c.input, word: c.word })),
         positive: (matrix.positive ?? []).map((c) => ({ tool: c.tool, input: c.input })),
       };
+      // 先等本次矩阵要用的工具全部注册（Chrome 原生注册是异步的；canvas 尤其慢）
+      const required = [...new Set([...(matrix.cases ?? []), ...(matrix.positive ?? [])].map((c) => c.tool))];
+      if (required.length > 0) {
+        await page.waitForFunction(
+          (names) => document.modelContext
+            ? document.modelContext.getTools().then((ts) => names.every((n) => ts.some((t) => t.name === n)))
+            : false,
+          required,
+          { timeout: 30000, polling: 500 },
+        );
+      }
       const out = await page
         .waitForFunction(
           async ([matrix]) => {

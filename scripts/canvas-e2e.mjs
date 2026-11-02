@@ -30,6 +30,11 @@ function serve() {
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://x");
     let p = url.pathname === "/" ? "/index.html" : url.pathname;
+    if (p === "/evil.svg") {
+      res.writeHead(200, { "content-type": "image/svg+xml" });
+      res.end('<svg xmlns="http://www.w3.org/2000/svg"><image href="https://evil.example.com/x.png" width="10" height="10"/></svg>');
+      return;
+    }
     const file = join(DIST, decodeURIComponent(p));
     if (!file.startsWith(DIST) || !existsSync(file)) { res.writeHead(404); res.end("not found"); return; }
     res.writeHead(200, { "content-type": MIME[extname(file)] ?? "application/octet-stream" });
@@ -243,6 +248,36 @@ async function main() {
     } finally {
       await offline.close();
     }
+
+    // 安全与预算负例（独立复核 B1/B2/B3/B4）
+    const evilSpec = await call("render_card", {
+      spec: { width: 100, height: 100, root: { type: "div", props: { id: "root", children: [{ type: "svg", props: { id: "s", children: [{ type: "rect", props: { id: "r", width: 10, height: 10, filter: "url(https://evil.example/f.svg#f)" } }] } }] } } },
+    });
+    if (evilSpec.ok !== false || !String(evilSpec.error).includes("只允许")) {
+      throw new Error(`SVG 外部 url() 未被拒绝: ${JSON.stringify(evilSpec).slice(0, 200)}`);
+    }
+    const evilUrl = new URL("/evil.svg", base).href;
+    const evil = await call("import_asset", { url: evilUrl, type: "svg" });
+    if (evil.ok !== false || !String(evil.error).includes("外部 href")) {
+      throw new Error(`外部 href SVG 未被拒绝: ${JSON.stringify(evil).slice(0, 200)}`);
+    }
+    const noCors = await call("font_info", { url: "https://example.com/definitely-not-a-font.ttf" });
+    if (noCors.ok !== false || !String(noCors.error).includes("素材库")) {
+      throw new Error(`无 CORS 字体未给人话兜底: ${JSON.stringify(noCors).slice(0, 200)}`);
+    }
+    const many = Array.from({ length: 600 }, (_, i) => ({ type: "div", children: "x", props: { id: `n${i}`, style: { width: 10, height: 10 } } }));
+    const budget = await call("render_card", {
+      spec: { width: 400, height: 300, root: { type: "div", props: { id: "root", style: { width: "100%", height: "100%", display: "flex", flexWrap: "wrap" }, children: many } } },
+    });
+    if (budget.ok !== true || !(budget.warningsTruncated > 0) || JSON.stringify(budget).length > 64 * 1024) {
+      throw new Error(`响应预算未生效: ${JSON.stringify({ ok: budget.ok, warningsTruncated: budget.warningsTruncated, bytes: JSON.stringify(budget).length }).slice(0, 200)}`);
+    }
+    step("8 · 安全与预算负例（B1/B2/B3/B4）", {
+      intent: "外部 href SVG 导入必须拒绝；无 CORS 字体给「上传素材库」人话兜底；601 条 warning 的 render_card 结果必须截断到 64KB 内。",
+      expect: "import_asset ok:false（外部 href）；font_info ok:false（素材库）；render_card warningsTruncated>0 且 JSON ≤64KB。",
+      assertion: `外部 href 拒绝；CORS 兜底命中；warningsTruncated=${budget.warningsTruncated}，结果 ${JSON.stringify(budget).length} bytes。`,
+      ok: true,
+    });
   } finally {
     await page.close();
     await browser.close();
@@ -267,6 +302,7 @@ async function main() {
       { title: "2 · 布局真值与导出", note: "inspect 给出可行动的 overflow/off_canvas 警告；导出 SVG/PNG。", steps: steps.filter((s) => s.section.startsWith("3") || s.section.startsWith("4")) },
       { title: "3 · 字体与素材", note: "字体导 SVG + 外部 SVG 导入。", steps: steps.filter((s) => s.section.startsWith("5") || s.section.startsWith("6")) },
       { title: "4 · 中国网络门", note: "阻断境外字体/素材域，内置素材仍可渲染导出。", steps: steps.filter((s) => s.section.startsWith("7")) },
+      { title: "5 · 安全与预算", note: "外部 href / 无 CORS 字体 / 响应预算负例。", steps: steps.filter((s) => s.section.startsWith("8")) },
     ],
   };
   writeFileSync(join(REPORT, "steps.json"), JSON.stringify(report, null, 2));

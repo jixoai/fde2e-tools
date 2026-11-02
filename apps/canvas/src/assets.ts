@@ -292,6 +292,7 @@ function assertSafeSvg(text: string): void {
   if (/@import/i.test(text)) throw new Error("SVG 不允许 @import");
   const bad = text.match(/url\(\s*['"]?(https?:|\/\/)/i);
   if (bad) throw new Error("SVG 不允许外部 url()");
+  if (/(?:xlink:)?href\s*=\s*["']\s*(?:https?:)?\/\//i.test(text)) throw new Error("SVG 不允许外部 href");
   if (/<script[\s>]/i.test(text)) throw new Error("SVG 不允许 script");
   if (/\son[a-z]+\s*=/i.test(text)) throw new Error("SVG 不允许事件属性");
 }
@@ -336,6 +337,7 @@ async function importSvg(url: string, name: string | undefined): Promise<Asset> 
   const text = await res.text();
   assertSafeSvg(text);
   const clean = DOMPurify.sanitize(text, { USE_PROFILES: { svg: true, svgFilters: true } });
+  assertSafeSvg(clean);
   const id = `svg-${++seq}`;
   const dataUrl = svgDataUrl(clean);
   return {

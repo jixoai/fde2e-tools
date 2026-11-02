@@ -48,9 +48,18 @@ async function loadFont(url: string): Promise<AnyFont> {
   let p = fontCache.get(url);
   if (!p) {
     p = (async () => {
-      const res = await fetch(url);
+      let res: Response;
+      try {
+        res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+      } catch (e) {
+        if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) {
+          throw new Error("字体加载超时：请确认 URL 可直连，或上传素材库后用 /uploads URL");
+        }
+        // fetch 网络层 TypeError 是 CORS 拒绝/不可达的典型形态
+        throw new Error("字体跨源加载失败（CORS/网络）：请上传素材库后用 /uploads 回源 URL");
+      }
       if (!res.ok) {
-        throw new Error(`字体加载失败（HTTP ${res.status}）：${url}`);
+        throw new Error(`字体加载失败（HTTP ${res.status}）：请确认 URL 可直连，或上传素材库后用 /uploads URL`);
       }
       const buf = await res.arrayBuffer();
       if (buf.byteLength === 0) throw new Error("字体文件为空");
