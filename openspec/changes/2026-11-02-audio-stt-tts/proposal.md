@@ -39,10 +39,12 @@ Owner 需求（2026-11-01）：在 fde2e-tools-v0 增加两个基础工具——
 
 ### 新工具两站（registry 加两条 + apps/ 新建）
 
-- `apps/audio-stt/`（`stt.tool.fde2e.com`）：音频文件/麦克风 → 本地转写文本。
-  引擎分层：transformers.js（Whisper 全系，多语+时间戳）为默认；sherpa-onnx
-  （SenseVoice-Small int8，中粤英日韩+情绪事件标签）为中文优先档；麦克风实时
-  （v2）走 AudioWorklet PCM + Silero VAD 切句（MIT，0.64MB）。
+- `apps/audio-stt/`（`stt.tool.fde2e.com`）：音频文件/麦克风 → 本地转写
+  （TranscriptDoc：段/词级时间轴）。引擎分层：transformers.js（Whisper 全系，
+  多语+时间戳）为默认；sherpa-onnx（SenseVoice-Small int8，中粤英日韩+情绪
+  事件标签）为中文优先档；**麦克风实时＝Zipformer 流式 bilingual
+  （≈190MB，Apache-2.0）＋AudioWorklet PCM＋Silero VAD 切句（MIT，0.64MB）
+  ——一步到位**（伪流式回落＝同 task 内收口，不留尾巴）。
   - WebMCP：`transcribe_audio`（结构化参数型：audioUrl 或页内 input + 语言/
     模型选项）与可枚举 `list_models`。
 - `apps/audio-tts/`（`tts.tool.fde2e.com`）：文本 → 本地合成音频（wav/pcm
@@ -135,8 +137,6 @@ Owner 需求（2026-11-01）：在 fde2e-tools-v0 增加两个基础工具——
 - 不做音频编辑（裁剪/混音/降噪——Owner 明示暂不涉及）。
 - 不做音色克隆的增值闭环（Pocket TTS/Chatterbox 克隆能力仅注册为模型档位，
   不做克隆体验专页；Chatterbox 1.5GB 大模型档最后排、POC 后再定）。
-- 麦克风实时转写（Zipformer 流式/Paraformer 流式）为 v2 排程（worktree 后续
-  批次），本 change 先做文件转写与 TTS。
 - 不新增 frp/frps 段端口、不引入任何服务端进程；模型分发只用既有 OpenResty
   静态托管与既有 GH 加速链（CF-edge/阿里云反代）。
 - 不为模型权重新发 npm 包（npmmirror 同步不可控风险，且 CDN 大文件策略在
@@ -160,7 +160,7 @@ Owner 需求（2026-11-01）：在 fde2e-tools-v0 增加两个基础工具——
   未来某项目真需要 SharedArrayBuffer 时另立 change 专项治理传染面
   （COEP 会把整页跨域资源拽进 CORP 治理，不是单站可关的小开关）。
 
-## 落地与验收顺序（实现批次的次序，不由本 change 决定）
+## 落地与验收顺序（构建次序，不分期——Owner 裁决 2026-11-02「不走多期工程，尽量一步到位」；此序只表达依赖先后，先建的基建不作为独立交付）
 
 1. packages/audio-engine + 分发路由 + downloader 集成 + deploy/models-fetch
    （基建先行，无 UI 也可被 STT/TTS 复用）。

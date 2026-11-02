@@ -55,9 +55,10 @@
       数）+ 只读 `get_capabilities`（整份 supports 对象，schema 由它派生
       ——enum/min/max/default 单源）；untrustedContentHint；ok:false 全带
       error。
-- [ ] 2.7 **试音对比/生成历史（v1 最小面）**：segment take chips（同句多
+- [ ] 2.7 **试音对比/生成历史（一步到位）**：segment take chips（同句多
       take，点击试听）+ 历史（IndexedDB：blob+参数元数据，replay/download/
-      delete）；A/B 并排形态可后置。
+      delete）+ **A/B 并排对比**（同 take 两条并排、参数 diff、点哪条播哪
+      条——Inflect compare 形态）。
 
 ## 3. STT 站（apps/audio-stt）
 
@@ -70,17 +71,22 @@
 - [ ] 3.2 **sherpa 中文档**：SenseVoice-Small int8（228MB）作为中文优先档；
       NOTICE 双声明（Apache-2.0 模型卡 + FunASR MODEL_LICENSE 链接）；若
       POC/法务否决则切 Dolphin base int8。
-- [ ] 3.3 **麦克风实时（v2 排程锚点）**：本 change 只落 AudioWorklet 取流
-      管线 + Silero VAD 接入（0.64MB MIT）；Zipformer 流式真转写挂 v2
-      （ duiding 明示「实验」或干脆 v2 前不展示麦克风入口）。
+- [ ] 3.3 **麦克风实时**：AudioWorklet 取 PCM + Silero VAD（0.64MB MIT）
+      切句，接 **Zipformer 流式 bilingual（≈190MB int8，Apache-2.0）真流式
+      转写**——一步到位不分期（Owner 裁决 2026-11-02）；sherpa 单线程
+      WASM 流式实时性 POC 实测后定档位呈现（不够实时则只留 VAD 切句+
+      离线模型伪流式形态，但同一个 task 内收口不留尾巴）。
 - [ ] 3.4 **TranscriptDoc 与导出面**：canonical 单源（秒制浮点
       segments/words/language/engine/model）驱动段列表+导出+WebMCP；
       导出 TXT/SRT/VTT/JSON/复制（自写 formatter ≤120 行：0.2s 最短 cue/
       空段过滤/--＞转义/end 回退——参照 Verbatim export.rs；不引三方库）
       + 单测边界矩阵（null end/空段/重叠/跨小时/连导两次不累加）。
-- [ ] 3.5 **段级同步**：RAF+二分+DOM class（禁 60fps setState）+点段跳播
-      +自动滚动（hover 暂停跟随）；词级高亮挂 supports.wordTimestamps 门
-      （Whisper return_timestamps:"word" / SenseVoice token timestamps）。
+- [ ] 3.5 **段级同步＋段编辑＋词级一步到位**：RAF+二分+DOM class（禁
+      60fps setState）+点段跳播+自动滚动（hover 暂停跟随）；**可编辑段文**
+      （contentEditable；编辑后词级时间以 LCS＋插值保持——Subtitler 形态；
+      编辑态禁自动滚动/改滚动）+ 词级高亮（supports.wordTimestamps 门：
+      Whisper return_timestamps:"word" / SenseVoice token timestamps；
+      最后词 end=null 回退）。
 - [ ] 3.6 **ai-guide + WebMCP**：`list_models` + `transcribe_audio`
       （返回 TranscriptDoc JSON：segments+words，非裸文本）+
       只读 `get_capabilities`；品名/档位/体积与 manifest 同源。
