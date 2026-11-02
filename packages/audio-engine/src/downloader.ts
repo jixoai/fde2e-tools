@@ -14,6 +14,7 @@
  * app 层组合，本仓组件红线＝官方一手源）。
  */
 import type { ModelManifest, ModelFile, ModelSource } from "./manifest";
+import { cachedGet, cachedPut } from "./cache";
 
 /* vendored IIFE 的结构化最小面（与主仓冻结 API 对齐；只取本层用到的） */
 interface SmartDLSource {
@@ -117,7 +118,6 @@ export async function ensureFileCached(
   onProgress?: ProgressCb,
   coreLoader: () => Promise<SmartDLCore> = () => loadSmartDLCore(),
 ): Promise<string> {
-  const { cachedGet, cachedPut } = await import("./cache");
   const selfhostSource = m.sources.find((s) => s.id === "selfhost");
   const cacheKey = selfhostSource ? selfhostSource.urlTemplate.replace("{path}", f.path) : f.path;
 

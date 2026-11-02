@@ -7,7 +7,8 @@
   "exports": {
     "./manifest": "./src/manifest.ts",
     "./capabilities": "./src/capabilities.ts",
-    "./cache": "./src/cache.ts"
+    "./cache": "./src/cache.ts",
+    "./downloader": "./src/downloader.ts"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
