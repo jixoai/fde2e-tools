@@ -26,6 +26,8 @@ import { ensureEngine, synthesize, type EnginePhase } from "./engine";
 import { VOICES, VOICE_GROUPS } from "./voices";
 import { splitSentences } from "./sentence";
 import { encodeWav } from "./wav";
+import { StreamingPlayer } from "./streaming-player";
+import { saveGeneration, listGenerations, deleteGeneration, clearGenerations, type GenerationRecord } from "./history";
 import { registerAppTools } from "./webmcp";
 
 const DEFAULT_EXPORT_NAME = "audio-tts-export.wav";
@@ -71,6 +73,10 @@ export default function App() {
   const audioUrlRef = useRef<string | null>(null);
   const lastWavRef = useRef<Blob | null>(null);
   const cancelRef = useRef<{ cancelled: boolean }>({ cancelled: false });
+  const playerRef = useRef<StreamingPlayer | null>(null);
+  const [history, setHistory] = useState<GenerationRecord[]>([]);
+  // A/B 并排：两条 take（同文本不同参数）
+  const [abSlots, setAbSlots] = useState<Array<{ url: string; label: string }>>([]);
 
   useEffect(() => {
     registerAppTools();
@@ -112,11 +118,20 @@ export default function App() {
       const v = VOICES.find((x) => x.name === voice);
       const sid = v?.sid ?? 3;
       const chunks: Float32Array[] = [];
+      const player = new StreamingPlayer();
+      playerRef.current = player;
+      // 边合成边播：句合成完即入队（AudioBuffer 时钟链 gapless；pocket-tts 形态）
       for (const s of sentences) {
-        if (cancel.cancelled) return;
+        if (cancel.cancelled) {
+          player.stop();
+          void player.dispose();
+          return;
+        }
         setEnginePhase({ phase: "loading", detail: `合成句 ${s.id + 1}/${sentences.length}`, pct: 0 });
         const out = synthesize(engine, s.text, sid, speed);
         chunks.push(out.samples);
+        // 音频上下文需用户手势——合成按钮点击即是；首句起播
+        player.enqueue(s.id, out.samples, out.sampleRate);
       }
       setEnginePhase({ phase: "ready", speakers: engine.tts.numSpeakers, sampleRate: engine.tts.sampleRate });
 
@@ -133,14 +148,20 @@ export default function App() {
       const url = URL.createObjectURL(wav);
       audioUrlRef.current = url;
       lastWavRef.current = wav;
-      const player = document.getElementById("audio-player");
-      if (player instanceof HTMLAudioElement) player.src = url;
+      const playerEl = document.getElementById("audio-player");
+      if (playerEl instanceof HTMLAudioElement) playerEl.src = url;
       setHasAudio(true);
+      addToAb(wav, `${v?.name ?? sid} @ ${speed.toFixed(1)}×`);
       const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
       const dur = (totalLen / sampleRate).toFixed(1);
       const filename = DEFAULT_EXPORT_NAME;
+      // 历史入库（IndexedDB；失败不阻塞主流程）
+      const durationSec = Number(dur);
+      void saveGeneration({
+        text, voice: v?.name ?? String(sid), speed, sentenceCount: sentences.length, durationSec, wav,
+      }).then(() => void refreshHistory()).catch(() => undefined);
       showStatus({
-        msg: `已合成 ${filename}（${sentences.length} 句 · ${dur}s 音频 · 耗时 ${elapsed}s）`,
+        msg: `已合成 ${filename}（${sentences.length} 句 · ${dur}s 音频 · 耗时 ${elapsed}s${player.stats().underruns ? ` · 断流 ${player.stats().underruns}` : ""}）`,
         kind: "ok",
       });
       setExportNameInput(filename);
@@ -169,6 +190,26 @@ export default function App() {
   function setExportNameInput(name: string) {
     const el = document.getElementById("export-name");
     if (el instanceof HTMLInputElement && !el.value) el.value = name;
+  }
+
+  const refreshHistory = useCallback(async () => {
+    try {
+      setHistory(await listGenerations());
+    } catch {
+      // IndexedDB 不可用（隐私模式等）——历史面板降级隐藏
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshHistory();
+  }, [refreshHistory]);
+
+  function addToAb(blob: Blob, label: string) {
+    const url = URL.createObjectURL(blob);
+    setAbSlots((slots) => {
+      const next = [...slots, { url, label }];
+      return next.length > 2 ? next.slice(next.length - 2) : next;
+    });
   }
 
   const loadingPct =
@@ -297,6 +338,87 @@ export default function App() {
           </p>
         </CardContent>
       </Card>
+
+      {abSlots.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">A/B 对比</CardTitle>
+            <CardDescription>最近两次合成并排（改参数重合成即产生新对比）；点播放钮播对应条。</CardDescription>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {abSlots.map((slot, i) => (
+              <div key={slot.url + i} className="flex flex-col gap-2 rounded-lg border border-input p-3">
+                <p className="font-mono text-xs text-muted-foreground">{["A", "B"][i]} · {slot.label}</p>
+                <audio controls src={slot.url} className="w-full" aria-label={`对比条 ${["A", "B"][i]}`} />
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {history.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">生成历史</CardTitle>
+            <CardDescription>本地 IndexedDB 存最近 50 条；replay／下载／删除；清空不可恢复。</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {history.map((rec) => (
+              <div key={rec.id} className="flex flex-col gap-2 rounded-lg border border-input p-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <span className="font-mono">{new Date(rec.createdAt).toLocaleString()}</span>
+                  <span>{rec.voice}</span>
+                  <span>{rec.speed.toFixed(1)}×</span>
+                  <span>{rec.sentenceCount} 句</span>
+                  <span>{rec.durationSec.toFixed(1)}s</span>
+                  <span className="ml-auto flex gap-1">
+                    <Button variant="ghost" size="sm"
+                      onClick={() => {
+                        const url = URL.createObjectURL(rec.wav);
+                        if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+                        audioUrlRef.current = url;
+                        const p = document.getElementById("audio-player");
+                        if (p instanceof HTMLAudioElement) p.src = url;
+                        setHasAudio(true);
+                        lastWavRef.current = rec.wav;
+                        showStatus({ msg: `已载入历史合成（${rec.voice} · ${rec.durationSec.toFixed(1)}s）`, kind: "ok" });
+                      }}
+                    >
+                      载入
+                    </Button>
+                    <Button variant="ghost" size="sm"
+                      onClick={() => downloadBlob(rec.wav, `audio-tts-${rec.id}.wav`)}
+                    >
+                      下载
+                    </Button>
+                    <Button variant="ghost" size="sm"
+                      onClick={async () => {
+                        if (rec.id !== undefined) await deleteGeneration(rec.id);
+                        await refreshHistory();
+                      }}
+                    >
+                      删除
+                    </Button>
+                  </span>
+                </div>
+                <p className="line-clamp-2 text-sm text-muted-foreground">{rec.text}</p>
+              </div>
+            ))}
+            <Button
+              variant="outline"
+              size="sm"
+              className="self-start"
+              onClick={async () => {
+                await clearGenerations();
+                setHistory([]);
+                showStatus({ msg: "已清空生成历史。", kind: "ok" });
+              }}
+            >
+              清空历史
+            </Button>
+          </CardContent>
+        </Card>
+      )}
     </main>
   );
 }
