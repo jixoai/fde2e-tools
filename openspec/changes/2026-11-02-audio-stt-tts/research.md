@@ -134,8 +134,17 @@ pad 30–80ms 可调；decodeAudioData 会重采样且不处理 encoder-delay—
 
 ## 6. 悬而未决（POC 必答，回填本节）
 
-1. sherpa WASM fetch→MEMFS 动态装载是否可行（FORCE_FILESYSTEM 开关在、
-   无文档）；不可行则 preload .data 按模型裁剪拆分。
+1. **sherpa WASM fetch→MEMFS 动态装载——✅ 已证可行（2026-11-02，本机 M 系）**。
+   实操：上游 `build-wasm-simd-tts.sh` 的 CMakeLists 两处补丁（①去
+   `--preload-file` ②`EXPORTED_RUNTIME_METHODS` 增 `FS`）后，emcc 6.0.13 构建
+   出无 `.data` 形态（wasm 13.7MB + js 74KB）；运行时 `FS.writeFile` 写 8 件
+   kokoro 模型（115MB，0.2-0.6s）→ `createOfflineTts` 正常创建（103 音色、
+   24kHz）→ 中文合成成功。RTF 实测（M 系 WASM 单线程 int8）：2.91 / 3.02
+   （两句平均 ≈3.0）；产物与构建脚本已入库（apps/audio-tts/src/vendor/sherpa/
+   ＋scripts/build-sherpa-wasm.sh ＋poc-memfs-load.cjs）。preload .data 方案
+   （120MB 整包预载）废弃。注意：emcc 6 非 MODULARIZE 形态在 Node import()
+   下静默 abort——测试须 vm 沙箱（`__dirname`/`module` stub）或浏览器 worker
+   （`importScripts` 共享词法，`self.Module` 正常生效）。
 2. 浏览器侧 RTF 实测（三设备：M 系桌面 / 中低端 Win / 一台手机）——STT
    whisper-base/turbo + SenseVoice；TTS Kokoro v1.1-zh int8。
 3. transformers.js v4 WebGPU vs WASM 实际快慢（维护者 2026-03 口头结论
