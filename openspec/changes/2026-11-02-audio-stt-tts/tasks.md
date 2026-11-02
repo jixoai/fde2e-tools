@@ -36,11 +36,11 @@
       （wasm+js，禁带 espeak-ng-data/piper-phonemize）；构建脚本入库、产物
       入库（静态站要求）；POC 确认 fetch→MEMFS 动态装载可行（不行则切
       preload 分片 .data 裁剪方案；POC 结论落 research.md 附录）。
-- [ ] 2.2 **Kokoro v1.1-zh int8 模型接入**：模型文件（model+voices+lexicon，
+- [x] 2.2 **Kokoro v1.1-zh int8 模型接入**：模型文件（model+voices+lexicon，
       ≈157MB）经 deploy/models-fetch 钉定；`create_speech` 后端接 sherpa
       offline-tts（句切分流式 5/20 词基准）；文本框 + 音色选择（100 音色
       数字 ID，分组 UI 用 shadcn 官方 combobox）+ 语速/试听/下载。
-- [ ] 2.3 **长文流式与播放调度**：切句（缩写/小数安全，稳定 ID，v1.1-zh
+- [ ] 2.3 **长文流式与播放调度（句切已落/时钟链播放待）**：切句（缩写/小数安全，稳定 ID，v1.1-zh
       ≤80–100 音素/句）+ 边生成边播（sherpa 增量回调 samples 复制出
       worker → AudioBuffer 时钟链：prime 0.4s/lookahead 2/underrun 观测）
       + requestId 可取消 + 句级 hash 缓存；单句 pad 30-80ms 可调常量。
@@ -48,9 +48,9 @@
 - [ ] 2.4 **英文档**：Kokoro v1.0 ONNX（'onnx-community' q8，transformers.js
       引擎路线）作为英文多语接入 v1.0 档位；Pocket TTS 为可勾选「轻量克隆
       英文」附加档（CC-BY-4.0 署名 NOTICE），仅当 POC 声音质量过关才勾选。
-- [ ] 2.5 **ai-guide + 许可段**：`<pre id="ai-guide">` 载用法、模型档位、
+- [x] 2.5 **ai-guide + 许可段**：`<pre id="ai-guide">` 载用法、模型档位、
       首载体积、许可声明（与 NOTICE 单源）；音色/模型选择值域文档化。
-- [ ] 2.6 **WebMCP**：`list_voices`（带 voices 元数据：lang/gender/分组）+
+- [x] 2.6 **WebMCP**：`list_voices`（带 voices 元数据：lang/gender/分组）+
       `create_speech`（text/voice/speed/filename? → 下载 wav；返回时长/句
       数）+ 只读 `get_capabilities`（整份 supports 对象，schema 由它派生
       ——enum/min/max/default 单源）；untrustedContentHint；ok:false 全带
