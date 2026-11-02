@@ -147,8 +147,19 @@ pad 30–80ms 可调；decodeAudioData 会重采样且不处理 encoder-delay—
    （`importScripts` 共享词法，`self.Module` 正常生效）。
 2. 浏览器侧 RTF 实测（三设备：M 系桌面 / 中低端 Win / 一台手机）——STT
    whisper-base/turbo + SenseVoice；TTS Kokoro v1.1-zh int8。
-3. transformers.js v4 WebGPU vs WASM 实际快慢（维护者 2026-03 口头结论
-   「已反超」，无数字）。
+3. **transformers.js v4 WebGPU vs WASM——✅ 已实测（2026-11-02，本机 M 系
+   headless Chromium + whisper-base q8）**：3 轮推理延迟 WebGPU 2982/2899/2921/
+   2858ms ≈ WASM 2909/2945/2913/2932ms——**whisper-base q8 小模型上两者无实质
+   差异**（模型太小，GPU 调度开销吃掉并行收益）；首载 WebGPU 1.1-3.7s vs WASM
+   0.5-0.6s（WebGPU pipeline 初始化更贵）。**结论**：q8 小档以 WASM 兜底为主
+   体验即可；WebGPU 档的价值在 large-v3-turbo q4f16 大模型（待后续实测回填）。
+   转录质量双向验证：中文样例（zh.wav）输出「开放时间早上9点…」两路一致
+   （WebGPU 出繁体——tokenizer 繁简差异，工程上无需处理，用户可见输出属正常）。
+   **工程要点（部署形态关键）**：transformers.js 的 `localModelPath` 只认非 http
+   路径（http URL + `local_files_only` 直接 throw，见 y$/qr 源码）——自托管
+   同源部署＝把 `env.remoteHost` 指向同源 base（`{model}/resolve/{revision}/`
+   模板不变，服务器 mirror 同构 HF 路径形态）。POC 脚本
+   scripts/poc-transformers-webgpu.cjs 入库可复跑。
 4. SenseVoice/Zipformer 中文质量与@中文音色听感盲评（Owner 参评）。
 5. Kanji/misaki 路线不采信原则：无一手证据的第三方 fork（@uzen 中文
    golden 21 gap、3 stars）不进依赖，只作技术参考。
