@@ -132,7 +132,9 @@ spec 形状：
 }
 - children 必须在 props.children（Satori 只认这个位置）；顶层 children 会被归一。
 - 节点类型：div/span/p/img/svg；svg 子树允许 path/circle/rect/defs/g/...。
-- img.src 必须是 data:image/...；外部图片先 import_asset。
+- img.src 允许 data:image/... 或 asset:<id>（list_assets/get_asset 查 id；外部图片先 import_asset）。
+- 排版流程：render_card → inspect_layout（rect/overflow/off_canvas/contrast）→ 改 spec → export_svg/export_canvas_png。
+- 字体：list_fonts/get_asset 取 fontUrl；Satori 不支持时用 text_to_svg 转 path。字体授权由使用方负责，工具不拦截。
 - style 不支持 writingMode/columns/fontStretch；外部 url()/@import 会被拒绝。
 
 操作：
