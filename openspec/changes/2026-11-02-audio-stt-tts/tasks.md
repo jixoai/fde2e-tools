@@ -6,12 +6,12 @@
 
 ## 1. 共享基建（packages/audio-engine + 分发）
 
-- [ ] 1.1 **audio-engine 包骨架**：`packages/audio-engine/`——双引擎装配
+- [x] 1.1 **audio-engine 包骨架**：`packages/audio-engine/`——双引擎装配
       （transformers.js npm 依赖按 app 懒加载 + sherpa-onnx wasm vendor 产物
       懒加载）、设备能力探测（`canWebGPU()`/`canThreads()`/iOS 判别只含能力
       语义，禁 UA 身份分支——iOS 降级判据用「Safari 26 以下能力缺失」表达）、
       模型 manifest 类型与清单常量、Cache API 统一缓存层。
-- [ ] 1.2 **模型 manifest 单源**：每模型一条
+- [x] 1.2 **模型 manifest 单源**：每模型一条
       `{modelId, files[{path,bytes,sha256}], sources, engine, licenseTag,
       notice, minDeviceTier}`；`deploy/models-fetch.sh` 按 manifest 钉版本
       拉取 `.gitignore` 目录 `models/`（哪个 app dist 就挂哪份，逐站分目录）
