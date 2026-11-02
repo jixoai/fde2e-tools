@@ -233,3 +233,26 @@ AudioBuffer 时钟链无缝调度」管线**边生成边播**；生成任务 SHA
 - **WHEN** 用户仅修改文中一句后点重新合成
 - **THEN** 未变化的句子命中缓存不重推，仅变更句重推并按稳定 ID 回填
   （音频与文本状态不漂移）
+
+### Requirement: 交付门＝真实 omni 使用测试（不一次收工）
+
+两站交付验收 SHALL 包含**真实 omni 使用测试**（本地跑的 omni；线上 omni
+高频迭代重启不作被测端）：经 BU 桥 webmcp_list/webmcp_call 对两站发起真
+实回合（能力枚举→按能力面参数调用 transcribe_audio/create_speech→含蓄
+意非法参数验证人话报错→产物校验），且 agent 浏览器路径逐步走查（拖文件
+→分片下载→播放→改字重生成→导出）。测试 SHALL 用隔离 HOME/HERMES_HOME
+与测试模型，不触线上生产；证据落 `.agents/reports/tools/`（report.html
+走统一生成管线）。
+
+#### Scenario: agent 真用回合
+
+- **WHEN** omni 会话中 agent 调用音频两站任一 WebMCP 工具
+- **THEN** 工具以声明的能力面应答（非法参数 ok:false 带人话 error），
+  转写/产物与页内路径一致；发现的使用摩擦（ai-guide 不友好/描述缺失）
+  实时记档
+
+#### Scenario: 反哺打磨回路
+
+- **WHEN** 每轮真实使用测试完成
+- **THEN** 「缺陷→修复→复测」清单一轮闭环；上一轮 P0/P1 清零 + 至少
+  「agent 真用」与「人真用」各一轮达标后，交付门才算过

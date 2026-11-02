@@ -131,7 +131,7 @@
 - [ ] 6.3 openspec specs 增量（见 specs/）合入对应 capability 目录；
       本 change 验收后 archive。
 
-## 7. 收口
+## 7. 收尾验收规范（Owner 补全指令 2026-11-02：真实 omni 使用测试）
 
 - [ ] 7.1 绿门全绿：`pnpm -r check && pnpm -r build` + webmcp:check +
       smoke:check + 新增 audio 冒烟三件全过。
@@ -139,3 +139,31 @@
       动作由编排者统一执行（dist/models 留本地由部署脚本收）。
 - [ ] 7.3 交叉复核：vision 子代理走查两站 UI（desktop 视口真浏览器全
       流程录屏级证据）；FastRemix 裁决（前端类 change 豁免 Codex）。
+- [ ] 7.4 **真实 omni 使用测试（E2E 报告双支柱之一，与 7.3 并列硬门）**：
+      用**本地跑的 omni**（fde2e-omni-v1；线上 omni 在高频迭代重启、
+      不可作稳定被测端——Owner 裁决 2026-11-02）驱动 BU 桥
+      （webmcp_list/webmcp_call，开法见 fde2e-bu-v1/docs/webmcp.md：
+      Chromium 150+ 开 chrome://flags「WebMCP for testing」或
+      --enable-blink-features=WebMCP）对两站做**真实回合使用测试**，
+      不用任何 mock：
+      ① **Agent 视角**：omni 会话里让 agent 枚举两站工具面
+      （get_capabilities/list_models/list_voices）→ 按能力面选参数发起
+      transcribe_audio / create_speech（含一个故意非法参数，验证 ok:false
+      人话报错）→ 校验 TranscriptDoc 返回结构与下载产物；
+      ② **人机协同视角**：omni 驱动浏览器真点击走两站用户路径（拖文件→
+      等分片下载→播放→改一点文本→逐句重生→导出 SRT/wav），Omni 的
+      browser 工具逐步截图；
+      ③ 测试环境纪律：隔离 HOME/HERMES_HOME（不碰 Owner 在用会话）、
+      测试模型 deepseek-v4.1-flash（A6API）、本机 dev server 或
+      alpha 预交付域（不部署生产）、随测过程发现的缺陷即时修复；
+      工具站/桥面问题回写本仓，**omni 的 skills/BU 使用方式不顺手处
+      （如注册的 ai-guide 对 agent 不友好、能力面描述缺失） Honest
+      回写 fde2e-tools 仓与相关 skill 文档**（见 7.5）；
+      ④ E2E 证据落 `.agents/reports/tools/audio-stt-tts/`（report.html
+      由 e2e-report-gen 管线生成，禁手写 HTML；E2E-REPORTS.md 入索引）。
+- [ ] 7.5 **反哺打磨回路（连续迭代不一次收工）**：7.4 每一轮完测后输出
+      「缺陷→修复→复测」闭环清单；至少一轮「agent 真用」+一轮「人真用」
+      （或 Owner 参与）通过、且上一轮遗留缺陷清零，两站才算交付达标。
+      本 skill/tools 双面（如本仓 ai-guide 文案、WebMCP 工具
+      描述/annotations、agent-brief）经真实使用后回写打磨——质量问
+      题不分归属，谁坏修谁。
