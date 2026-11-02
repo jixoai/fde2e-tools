@@ -269,11 +269,14 @@ export default function App() {
       setResult(r);
       setSvg(r.svg);
       setWarnings(r.warnings.map((w) => `[${w.code}] ${w.message}`));
+      // 新一轮渲染后旧 inspect 警告已过期（vision 复核：s18 曾残留上一张画布的 overflow）
+      setInspectWarnings([]);
       setKind(`渲染完成：${r.spec.width}×${r.spec.height} px · ${r.nodes.length} 个布局节点`, "ok");
       return r;
     } catch (e) {
       setSvg(null);
       setResult(null);
+      setInspectWarnings([]);
       setKind("渲染失败：" + (e instanceof Error ? e.message : String(e)), "error");
       return null;
     }
@@ -426,6 +429,7 @@ export default function App() {
     setResult(s.result);
     setSvg(s.result.svg);
     setWarnings(s.result.warnings.map((w) => `[${w.code}] ${w.message}`));
+    setInspectWarnings([]);
     if (specRef.current) specRef.current.value = JSON.stringify(s.input, null, 2);
     setKind(`渲染完成：${s.result.spec.width}×${s.result.spec.height} px · ${s.result.nodes.length} 个布局节点`, "ok");
   }), []);
