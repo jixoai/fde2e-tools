@@ -22,6 +22,7 @@ export interface Asset {
   style: string;
   license: string;
   source: string;
+  author?: string;
   width?: number;
   height?: number;
   dataUrl?: string;
@@ -359,6 +360,9 @@ export async function importAsset(req: {
   name?: string;
   maxWidth?: number;
   maxHeight?: number;
+  source?: string;
+  license?: string;
+  author?: string;
 }): Promise<Asset> {
   validateFetchableUrl(req.url, "import_asset.url");
   if (req.type === "font") {
@@ -370,8 +374,9 @@ export async function importAsset(req: {
       name: req.name || info.family,
       tags: ["imported", "font"],
       style: "imported",
-      license: "user",
-      source: req.url,
+      license: req.license ?? "user",
+      source: req.source ?? req.url,
+      ...(req.author !== undefined ? { author: req.author } : {}),
       fontUrl: req.url,
       family: info.family,
       weights: [400, 700],
@@ -388,6 +393,9 @@ export async function importAsset(req: {
           Math.min(4096, Math.max(16, req.maxWidth ?? 1600)),
           Math.min(4096, Math.max(16, req.maxHeight ?? 1600)),
         );
+  asset.source = req.source ?? asset.source;
+  asset.license = req.license ?? asset.license;
+  if (req.author !== undefined) asset.author = req.author;
   imported.set(asset.id, asset);
   return asset;
 }

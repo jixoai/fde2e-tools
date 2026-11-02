@@ -338,6 +338,9 @@ function buildTools(): WebMCPToolDef[] {
           name: { type: "string", description: "可选显示名" },
           maxWidth: { type: "number", description: "图片最大宽（缺省 1600）" },
           maxHeight: { type: "number", description: "图片最大高（缺省 1600）" },
+          source: { type: "string", description: "可选出处（只记录，不校验）" },
+          license: { type: "string", description: "可选许可（只记录，不拦截）" },
+          author: { type: "string", description: "可选作者（只记录）" },
         },
         required: ["url", "type"],
         additionalProperties: false,
@@ -357,6 +360,9 @@ function buildTools(): WebMCPToolDef[] {
             name: typeof input.name === "string" ? input.name : undefined,
             maxWidth: typeof input.maxWidth === "number" ? input.maxWidth : undefined,
             maxHeight: typeof input.maxHeight === "number" ? input.maxHeight : undefined,
+            source: typeof input.source === "string" ? input.source : undefined,
+            license: typeof input.license === "string" ? input.license : undefined,
+            author: typeof input.author === "string" ? input.author : undefined,
           });
           return { ok: true, assetId: asset.id, asset: assetSummary(asset) };
         } catch (e) {
@@ -382,7 +388,12 @@ function buildTools(): WebMCPToolDef[] {
         "字体 URL 只允许 https（本地 dev 允许 localhost）；CORS 失败会返回上传素材库建议。",
       inputSchema: {
         type: "object",
-        properties: { url: { type: "string", description: "字体文件 URL" } },
+        properties: {
+          url: { type: "string", description: "字体文件 URL" },
+          source: { type: "string", description: "可选出处（只记录）" },
+          license: { type: "string", description: "可选许可（只记录，不拦截）" },
+          author: { type: "string", description: "可选作者（只记录）" },
+        },
         required: ["url"],
         additionalProperties: false,
       },
@@ -392,7 +403,12 @@ function buildTools(): WebMCPToolDef[] {
           const url = String(input.url ?? "");
           if (!url) return err("url 必填");
           const info = await fontInfo(url);
-          return { ok: true, ...info };
+          const provenance = {
+            ...(typeof input.source === "string" ? { source: input.source } : {}),
+            ...(typeof input.license === "string" ? { license: input.license } : {}),
+            ...(typeof input.author === "string" ? { author: input.author } : {}),
+          };
+          return { ok: true, ...info, ...(Object.keys(provenance).length > 0 ? { provenance } : {}) };
         } catch (e) {
           return fail(e);
         }
