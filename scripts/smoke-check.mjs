@@ -1213,18 +1213,18 @@ async function main() {
     });
 
     // ---------- directory ----------
-    await check("directory：registry 渲染 + 纯前端搜索（10 卡全现役、0 建设中占位）", async () => {
+    await check("directory：registry 渲染 + 纯前端搜索（11 卡全现役、0 建设中占位）", async () => {
       await withPage("directory", "", async (page) => {
-        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length >= 10, { timeout: 30000 });
+        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length >= 11, { timeout: 30000 });
         const total = await page.evaluate(() => document.querySelectorAll('[data-slot="card"]').length);
-        if (total !== 10) throw new Error(`卡片数不符: ${total}（期望 10＝10 现役 + 0 建设中占位）`);
+        if (total !== 11) throw new Error(`卡片数不符: ${total}（期望 11＝11 现役 + 0 建设中占位）`);
         const comingSoon = await page.evaluate(() => document.querySelectorAll('[data-testid="coming-soon-badge"]').length);
         if (comingSoon !== 0) throw new Error(`建设中 Badge 数不符: ${comingSoon}（期望 0——编辑器三站已转现役）`);
         // 「图片」命中 pptx 编辑器（img-tool 已退役；特性描述含「图片表格图表」）
         await page.fill('input[aria-label="搜索工具"]', "图片");
         await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
         const count = await page.textContent("main, body");
-        if (!count.includes("1 / 10")) throw new Error("搜索计数未显示 1 / 10");
+        if (!count.includes("1 / 11")) throw new Error("搜索计数未显示 1 / 11");
         await page.fill('input[aria-label="搜索工具"]', "表格生成");
         await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
         // 编辑器三站转现役：主域名卡带完整 WebMCP 面投影（抽查 xlsx 卡）
