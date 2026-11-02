@@ -177,7 +177,9 @@ export default function App() {
     }
     setKind("正在渲染…", "ok");
     try {
-      const { result: r } = await renderSpec(parsed);
+      const { result: r, applied } = await renderSpec(parsed);
+      // 并发时只让最后发起的渲染更新 UI；慢的旧渲染直接丢弃
+      if (!applied) return r;
       setResult(r);
       setSvg(r.svg);
       setWarnings(r.warnings.map((w) => `[${w.code}] ${w.message}`));

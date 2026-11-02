@@ -48,13 +48,18 @@ export function getLastRender(): RenderResult | null {
   return state?.result ?? null;
 }
 
-export async function renderSpec(rawSpec: unknown): Promise<{ renderId: string; result: RenderResult }> {
+export async function renderSpec(rawSpec: unknown): Promise<{ renderId: string; result: RenderResult; applied: boolean }> {
+  // 并发渲染以「最后发起者」为准：先发起的慢渲染完成后不得覆盖后发起的 state
+  // （线上实证：页面初始示例渲染晚于 AI render_card 完成，把导出尺寸改回示例值）。
+  const ticket = ++counter;
   const result = await renderCanvas(rawSpec);
-  counter += 1;
-  const renderId = `r${counter}`;
-  state = { renderId, result, input: rawSpec };
-  for (const fn of renderListeners) fn(state);
-  return { renderId, result };
+  const renderId = `r${ticket}`;
+  const applied = ticket === counter;
+  if (applied) {
+    state = { renderId, result, input: rawSpec };
+    for (const fn of renderListeners) fn(state);
+  }
+  return { renderId, result, applied };
 }
 
 function current(renderId?: string): RenderResult {
