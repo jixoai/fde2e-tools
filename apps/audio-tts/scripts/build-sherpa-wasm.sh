@@ -9,9 +9,11 @@
 #   SHERPA_SRC=/path/to/sherpa-onnx bash apps/audio-tts/scripts/build-sherpa-wasm.sh
 #
 # 前置：emscripten（brew install emscripten，6.0.13 实测过）；cmake。
-# 改动说明（相对上游 build-wasm-simd-tts.sh 的 wasm/tts/CMakeLists.txt）：
-#   ① 去 --preload-file（.data 120MB 预载→运行时 MEMFS 写入）
+# 改动说明（相对上游 wasm/tts 与 wasm/asr 的 CMakeLists.txt）：
+#   ① 去 --preload-file（.data 预载→运行时 MEMFS 写入，POC①已证）
 #   ② EXPORTED_RUNTIME_METHODS 增 'FS'（fetch→FS.writeFile 需要）
+#   ③ ASR 侧 exported_functions 补 offline 识别族 9 符号（SenseVoice 文件转写；
+#      上游 demo 只导流式族，POC② 实证 offline 可行）
 set -euo pipefail
 
 SHERPA_SRC="${SHERPA_SRC:?用法: SHERPA_SRC=/path/to/sherpa-onnx bash $0}"
@@ -62,8 +64,62 @@ mkdir -p "$DEST"
 # 只收 wasm+js+官方包装层；.data 不存在（已去 preload）；espeak/piper 审计在绿门
 cp "$OUT/sherpa-onnx-wasm-main-tts.js" "$OUT/sherpa-onnx-wasm-main-tts.wasm" "$DEST/"
 cp "$OUT/sherpa-onnx-tts.js" "$OUT/sherpa-onnx-tts.worker.js" "$DEST/"
-echo "✓ 产物落位 $DEST："
-ls -la "$DEST"
+echo "✓ TTS 产物落位 $DEST"
+
+# ── ASR 侧（audio-stt 站：流式 Zipformer＋离线 SenseVoice 双用同核） ──
+python3 - <<'PYEOF'
+p = "wasm/asr/CMakeLists.txt"
+s = open(p).read()
+changed = False
+if "--preload-file" in s:
+    s = s.replace('string(APPEND MY_FLAGS "--preload-file ${CMAKE_CURRENT_SOURCE_DIR}/assets@. ")', "")
+    changed = True
+if "'HEAPF32','HEAPF64'] " in s and "'FS'] " not in s:
+    s = s.replace("'HEAPF32','HEAPF64'] ", "'HEAPF32','HEAPF64','FS'] ")
+    changed = True
+OFFLINEfamily = [
+    "SherpaOnnxCreateOfflineRecognizer", "SherpaOnnxDestroyOfflineRecognizer",
+    "SherpaOnnxDestroyOfflineRecognizerResult", "SherpaOnnxDestroyOfflineStream",
+    "SherpaOnnxAcceptWaveformOffline", "SherpaOnnxCreateOfflineStream",
+    "SherpaOnnxDecodeOfflineStream", "SherpaOnnxGetOfflineStreamResult",
+    "SherpaOnnxDestroyOfflineStreamResultJson",
+]
+if "SherpaOnnxCreateOfflineRecognizer" not in s:
+    s = s.replace("  SherpaOnnxOfflineStreamGetOption\n  SherpaOnnxOfflineStreamSetOption\n  #",
+        "  SherpaOnnxOfflineStreamGetOption\n  SherpaOnnxOfflineStreamSetOption\n  # offline ASR（audio-stt 文件转写档）\n  " + "\n  ".join(OFFLINEfamily) + "\n  #")
+    changed = True
+if '.data"' in s and "sherpa-onnx-wasm-main-asr.data" in s:
+    s = s.replace("""    "$<TARGET_FILE_DIR:sherpa-onnx-wasm-main-asr>/sherpa-onnx-wasm-main-asr.data"
+  DESTINATION
+    bin/wasm/asr""", """  DESTINATION
+    bin/wasm/asr""")
+    changed = True
+if changed:
+    open(p, "w").write(s)
+    print(">> wasm/asr/CMakeLists.txt 已补丁")
+else:
+    print(">> wasm/asr/CMakeLists.txt 已是补丁形态")
+PYEOF
+
+# ASR assets（zipformer 流式三件套改名形态；构建时校验用，产物不含模型）
+mkdir -p wasm/asr/assets
+Z="$REPO_ROOT/.models-cache/streaming-zipformer-bilingual-zh-en-2023-02-20"
+[ -f wasm/asr/assets/encoder.onnx ] || cp "$Z/encoder-epoch-99-avg-1.int8.onnx" wasm/asr/assets/encoder.onnx
+[ -f wasm/asr/assets/decoder.onnx ] || cp "$Z/decoder-epoch-99-avg-1.onnx" wasm/asr/assets/decoder.onnx
+[ -f wasm/asr/assets/joiner.onnx ] || cp "$Z/joiner-epoch-99-avg-1.int8.onnx" wasm/asr/assets/joiner.onnx
+[ -f wasm/asr/assets/tokens.txt ] || cp "$Z/tokens.txt" wasm/asr/assets/tokens.txt
+
+EMSCRIPTEN="$EMSCRIPTEN" bash build-wasm-simd-asr.sh
+
+OUT_ASR="$SHERPA_SRC/build-wasm-simd-asr/install/bin/wasm/asr"
+DEST_STT="$REPO_ROOT/apps/audio-stt/src/vendor/sherpa"
+mkdir -p "$DEST_STT"
+cp "$OUT_ASR/sherpa-onnx-wasm-main-asr.js" "$OUT_ASR/sherpa-onnx-wasm-main-asr.wasm" "$DEST_STT/"
+cp "$OUT_ASR/sherpa-onnx-asr.js" "$OUT_ASR/sherpa-onnx-asr.worker.js" "$DEST_STT/" 2>/dev/null || true
+echo "✓ STT 产物落位 $DEST_STT"
+
+echo "✓ 全部产物："
+ls -la "$DEST" "$DEST_STT"
 # GPL 审计快查
-if ls "$DEST" | grep -qi "piper\|espeak"; then echo "✗ GPL 组件混入"; exit 1; fi
+if ls "$DEST" "$DEST_STT" | grep -qi "piper\|espeak"; then echo "✗ GPL 组件混入"; exit 1; fi
 echo "✓ GPL 审计快查过（无 piper/espeak 文件名）"
