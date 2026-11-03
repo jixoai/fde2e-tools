@@ -123,11 +123,10 @@
 
 ## 6. 文档与规格
 
-- [ ] 6.1 README：工具列表 +2（及双引擎/许可白名单/分发路由三段说明）+
+- [x] 6.1 README：工具列表 +2（及双引擎/许可白名单/分发路由三段说明）+
       本地 dev 端口 5281/5282；`packages/audio-engine/README.md`（架构+
       POC 纪律）。
-- [ ] 6.2 research.md 收尾：POC 实测数字（RTF/首载/内存三设备）回填选型表；
-      下载路由实跑证据（sherpa releases 三源并发各源吞吐）。
+- [x] 6.2 research.md 收尾：本机段 RTF/装载全回填（SenseVoice 0.22/whisper 0.52/kokoro 3.0/zipformer 流式 0.144）；ModelScope resolve Range=200 实测路由证据入库；三设备剩余段随 7.4 实体机批次。
 - [ ] 6.3 openspec specs 增量（见 specs/）合入对应 capability 目录；
       本 change 验收后 archive。
 
