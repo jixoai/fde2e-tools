@@ -62,13 +62,13 @@
 
 ## 3. STT 站（apps/audio-stt）
 
-- [ ] 3.1 **transformers.js 路线（默认）**：whisper-base/q8 WASM 兜底 +
+- [x] 3.1 **transformers.js 路线（默认）**：whisper-base/q8 WASM 兜底 +
       whisper-large-v3-turbo/q4f16 WebGPU 档（能力探测门下发）；文件转写
       输入区（audio/video 文件→decodeAudioData；格式矩阵支持的就解码，
       不支持列白名单明示）；**长音频分片转写 + 每 N 片重建 pipeline**
       （#1739 泄漏防御）；**应用层幻觉抑制**（VAD 切句→静音段丢弃→输出
       重复率/压缩比检测，阈值 OpenAI 口径 2.4/-1.0/0.6 为参照常量）。
-- [ ] 3.2 **sherpa 中文档**：SenseVoice-Small int8（228MB）作为中文优先档；
+- [x] 3.2 **sherpa 中文档（装载/离线识别链路通；E2E 中文断言随 7.4）**：SenseVoice-Small int8（228MB）作为中文优先档；
       NOTICE 双声明（Apache-2.0 模型卡 + FunASR MODEL_LICENSE 链接）；若
       POC/法务否决则切 Dolphin base int8。
 - [ ] 3.3 **麦克风实时**：AudioWorklet 取 PCM + Silero VAD（0.64MB MIT）
@@ -76,18 +76,18 @@
       转写**——一步到位不分期（Owner 裁决 2026-11-02）；sherpa 单线程
       WASM 流式实时性 POC 实测后定档位呈现（不够实时则只留 VAD 切句+
       离线模型伪流式形态，但同一个 task 内收口不留尾巴）。
-- [ ] 3.4 **TranscriptDoc 与导出面**：canonical 单源（秒制浮点
+- [x] 3.4 **TranscriptDoc 与导出面**：canonical 单源（秒制浮点
       segments/words/language/engine/model）驱动段列表+导出+WebMCP；
       导出 TXT/SRT/VTT/JSON/复制（自写 formatter ≤120 行：0.2s 最短 cue/
       空段过滤/--＞转义/end 回退——参照 Verbatim export.rs；不引三方库）
       + 单测边界矩阵（null end/空段/重叠/跨小时/连导两次不累加）。
-- [ ] 3.5 **段级同步＋段编辑＋词级一步到位**：RAF+二分+DOM class（禁
+- [ ] 3.5 **段级同步＋段编辑＋词级一步到位（同步/编辑已落；词级高亮待）**：RAF+二分+DOM class（禁
       60fps setState）+点段跳播+自动滚动（hover 暂停跟随）；**可编辑段文**
       （contentEditable；编辑后词级时间以 LCS＋插值保持——Subtitler 形态；
       编辑态禁自动滚动/改滚动）+ 词级高亮（supports.wordTimestamps 门：
       Whisper return_timestamps:"word" / SenseVoice token timestamps；
       最后词 end=null 回退）。
-- [ ] 3.6 **ai-guide + WebMCP**：`list_models` + `transcribe_audio`
+- [x] 3.6 **ai-guide + WebMCP**：`list_models` + `transcribe_audio`
       （返回 TranscriptDoc JSON：segments+words，非裸文本）+
       只读 `get_capabilities`；品名/档位/体积与 manifest 同源。
 
