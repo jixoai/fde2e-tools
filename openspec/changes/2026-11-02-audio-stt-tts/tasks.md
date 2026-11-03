@@ -93,11 +93,11 @@
 
 ## 4. 黄页与 registry
 
-- [ ] 4.1 registry 加两卡（`audio-stt`/`audio-tts`：标签/一句话/子域/
+- [x] 4.1 registry 加两卡（`audio-stt`/`audio-tts`：标签/一句话/子域/
       WebMCP 入口点/aiGuideSummary）；黄页自动收录（不改 directory 代码，
       零 registry 外引用）；搜索词覆盖（语音/转写/配音/tts/stt/whisper/
       kokoro 等）。
-- [ ] 4.2 两站 dev 端口 5281/5282 落 vite.config + root package.json
+- [x] 4.2 两站 dev 端口 5281/5282 落 vite.config + root package.json
       dev:audio-stt / dev:audio-tts 脚本 + README 本地开发段。
 
 ## 5. 绿门扩展
