@@ -226,8 +226,11 @@ export const WHISPER_BASE_Q8: ModelManifest = {
     modelscopeRepo: "onnx-community/whisper-base",
     hfRepo: "onnx-community/whisper-base",
   }),
+  // 实测（2026-11-03）：onnx-community q8 量化未导出 output_attentions——
+  // word-level timestamps 不可用（transformers.js 报 cross attentions 缺失）。
+  // 段级时间戳可用。词级档由 WebGPU 大模型（fp16 导出）承担——如启用时修正此门。
   supports: {
-    wordTimestamps: true,
+    wordTimestamps: false,
     languages: ["multilingual"],
   },
 };
@@ -287,6 +290,27 @@ export const ZIPFORMER_BILINGUAL_STREAMING: ModelManifest = {
   },
 };
 
+/* ── VAD：Silero（麦克风实时切句；0.64MB MIT） ── */
+export const SILERO_VAD: ModelManifest = {
+  modelId: "silero-vad",
+  use: "stt",
+  engine: "sherpa",
+  name: "Silero VAD",
+  description: "语音活动检测（麦克风实时切句），0.6MB",
+  upstreamId: "k2-fsa/sherpa-onnx (asr-models: silero_vad.onnx)",
+  licenseTag: "mit",
+  notice: "Silero VAD，MIT（snakers4/silero-vad；sherpa-onnx 重打包 ONNX 形态）",
+  minDeviceTier: "small",
+  root: "silero-vad",
+  files: [
+    { path: "silero_vad.onnx", bytes: 643854, sha256: "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6" },
+  ],
+  sources: sourcesFor("silero-vad", {
+    modelscopeRepo: "", // tar/直链无仓——自托管唯一源（同 sherpa 系）
+  }),
+  supports: {},
+};
+
 /** 全量清单（两站按 use 过滤） */
 export const AUDIO_MODELS: ModelManifest[] = [
   KOKORO_V1_1_ZH_INT8,
@@ -294,6 +318,7 @@ export const AUDIO_MODELS: ModelManifest[] = [
   WHISPER_BASE_Q8,
   SENSEVOICE_SMALL_INT8,
   ZIPFORMER_BILINGUAL_STREAMING,
+  SILERO_VAD,
 ];
 
 export function modelById(modelId: string): ModelManifest | undefined {

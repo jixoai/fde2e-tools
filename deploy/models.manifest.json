@@ -357,5 +357,38 @@
         "role": "fallback"
       }
     ]
+  },
+  {
+    "modelId": "silero-vad",
+    "use": "stt",
+    "engine": "sherpa",
+    "root": "silero-vad",
+    "licenseTag": "mit",
+    "notice": "Silero VAD，MIT（snakers4/silero-vad；sherpa-onnx 重打包 ONNX 形态）",
+    "minDeviceTier": "small",
+    "totalBytes": 643854,
+    "files": [
+      {
+        "path": "silero_vad.onnx",
+        "bytes": 643854,
+        "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6"
+      }
+    ],
+    "sources": [
+      {
+        "id": "selfhost",
+        "urlTemplate": "/models/silero-vad/{path}",
+        "cors": true,
+        "range": true,
+        "role": "primary"
+      },
+      {
+        "id": "modelscope",
+        "urlTemplate": "https://modelscope.cn/api/v1/models//repo?FilePath={pathEnc}",
+        "cors": true,
+        "range": true,
+        "role": "fallback"
+      }
+    ]
   }
 ]

@@ -11,7 +11,7 @@
  */
 import { WHISPER_BASE_Q8, SENSEVOICE_SMALL_INT8, type ModelManifest } from "@fde2e-tools/audio-engine/manifest";
 import { ensureModelCached, cachedGet } from "@fde2e-tools/audio-engine/downloader";
-import type { TranscriptDoc, TranscriptSegment } from "./transcript";
+import type { TranscriptDoc, TranscriptSegment, TranscriptWord } from "./transcript";
 
 const SHERPA = "/vendor/sherpa";
 // ORT wasm 走 npm 包内 dist（vite 处理 URL——wasm 拷 dist 是上游标准形态）
@@ -294,7 +294,9 @@ async function transcribeWhisper(
       asr = await ensureWhisper(info, onPhase);
     }
     const out = await asr(slice, {
-      return_timestamps: true,
+      // 词级门（spec 3.5）：按 manifest supports 分流——q8 量化无 cross attentions
+      // 实测不可 word-level；supports.wordTimestamps=false 走段级 timestamps
+      return_timestamps: info.manifest.supports.wordTimestamps ? "word" : true,
       chunk_length_s: CHUNK_SEC,
       stride_length_s: 5,
       language: "chinese",
@@ -302,16 +304,31 @@ async function transcribeWhisper(
     });
     const offset = c * CHUNK_SEC;
     if (out.chunks?.length) {
+      // 词级 chunks 聚合成段（终止标点或跨句合并段语义由聚合规则承担：
+      // Whisper word-level chunks 无段界——按 5 词窗口聚合段（SRT 友好））
+      let words: TranscriptWord[] = [];
+      const flush = () => {
+        if (words.length === 0) return;
+        const start = words[0].start;
+        const end = words[words.length - 1].end;
+        segments.push({
+          id: segments.length,
+          text: words.map((w) => w.text).join("").trim(),
+          start,
+          end,
+          words,
+        });
+        words = [];
+      };
       for (const chunk of out.chunks) {
         const [start, end] = chunk.timestamp;
         if (start === null) continue;
-        segments.push({
-          id: segments.length,
-          text: chunk.text.trim(),
-          start: offset + start,
-          end: end === null ? null : offset + end,
-        });
+        const wordText = chunk.text.trim();
+        if (!wordText) continue;
+        words.push({ text: wordText, start: offset + start, end: end === null ? null : offset + end });
+        if (words.length >= 8) flush(); // 8 词窗口（中英混合短句粒度）
       }
+      flush();
     } else if (out.text.trim()) {
       segments.push({ id: segments.length, text: out.text.trim(), start: offset, end: offset + slice.length / TARGET_SR });
     }

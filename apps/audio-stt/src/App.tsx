@@ -112,6 +112,22 @@ export default function App() {
           el?.scrollIntoView({ block: "nearest" });
         }
       }
+      // 词级高亮（3.5）：当前段内按词时间直接改 DOM class（同 RAF，禁 setState）
+      const seg = segList[found];
+      const li = listRef.current?.children[found] as HTMLElement | undefined;
+      if (seg?.words && li) {
+        const spans = li.querySelectorAll<HTMLElement>("[data-word]");
+        spans.forEach((sp) => {
+          const ws = Number(sp.dataset.start);
+          const we = Number(sp.dataset.end);
+          const on = t >= ws && t < we;
+          if (sp.dataset.on !== String(on)) {
+            sp.dataset.on = String(on);
+            sp.classList.toggle("bg-primary/20", on);
+            sp.classList.toggle("rounded", on);
+          }
+        });
+      }
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
@@ -301,14 +317,34 @@ export default function App() {
                   }}
                 >
                   <span className="shrink-0 pt-0.5 font-mono text-xs text-muted-foreground">{fmtTime(s.start)}</span>
-                  <span
-                    contentEditable
-                    suppressContentEditableWarning
-                    className="min-w-0 flex-1 rounded px-1 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    onBlur={(e) => onSegmentBlur(e, s.id)}
-                  >
-                    {s.text}
-                  </span>
+                  {s.words ? (
+                    <span
+                      className="min-w-0 flex-1 rounded px-1 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => onSegmentBlur(e, s.id)}
+                    >
+                      {s.words.map((w, wi) => (
+                        <span
+                          key={wi}
+                          data-word
+                          data-start={w.start}
+                          data-end={w.end ?? s.end ?? w.start + 1}
+                        >
+                          {w.text}
+                        </span>
+                      ))}
+                    </span>
+                  ) : (
+                    <span
+                      contentEditable
+                      suppressContentEditableWarning
+                      className="min-w-0 flex-1 rounded px-1 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onBlur={(e) => onSegmentBlur(e, s.id)}
+                    >
+                      {s.text}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
