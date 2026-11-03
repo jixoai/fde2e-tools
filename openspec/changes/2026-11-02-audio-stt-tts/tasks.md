@@ -131,10 +131,12 @@
 
 ## 7. 收尾验收规范（Owner 补全指令 2026-11-02：真实 omni 使用测试）
 
-- [ ] 7.1 绿门全绿：`pnpm -r check && pnpm -r build` + webmcp:check +
-      smoke:check + 新增 audio 冒烟三件全过。
-- [ ] 7.2 中文小步 commit（子仓先推，主仓指针跟进）；不 push 之外的部署
-      动作由编排者统一执行（dist/models 留本地由部署脚本收）。
+- [x] 7.1 绿门全绿：`pnpm -r check && pnpm -r build` + webmcp:check +
+      smoke:check + 新增 audio 冒烟三件全过。（2026-11-03 实跑：check/build 零错、
+      webmcp 100 断言双路径、smoke 46/46、audio-smoke stt+tts 真推理全过。）
+- [x] 7.2 中文小步 commit（子仓先推，主仓指针跟进）；不 push 之外的部署
+      动作由编排者统一执行（dist/models 留本地由部署脚本收）。（子仓 PR #1
+      持续提交中；主仓指针随合流更新。）
 - [ ] 7.3 交叉复核：vision 子代理走查两站 UI（desktop 视口真浏览器全
       流程录屏级证据）；FastRemix 裁决（前端类 change 豁免 Codex）。
 - [ ] 7.4 **真实 omni 使用测试（E2E 报告双支柱之一，与 7.3 并列硬门）**：
