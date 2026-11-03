@@ -1242,22 +1242,43 @@ async function main() {
     });
 
     // ---------- img-tool ----------
-    await check("directory：registry 渲染 + 纯前端搜索（editor 二期加入后 11 卡全现役、0 建设中占位）", async () => {
+    await check("directory：registry 渲染 + 纯前端搜索（audio 两卡加入后 13 卡全现役、0 建设中占位）", async () => {
       await withPage("directory", "", async (page) => {
-        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length >= 11, { timeout: 30000 });
+        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length >= 13, { timeout: 30000 });
         const total = await page.evaluate(() => document.querySelectorAll('[data-slot="card"]').length);
-        if (total !== 11) throw new Error(`卡片数不符: ${total}（期望 11＝11 现役 + 0 建设中占位）`);
+        if (total !== 13) throw new Error(`卡片数不符: ${total}（期望 13＝11 现役＋audio 两卡 + 0 建设中占位）`);
         const comingSoon = await page.evaluate(() => document.querySelectorAll('[data-testid="coming-soon-badge"]').length);
-        if (comingSoon !== 0) throw new Error(`建设中 Badge 数不符: ${comingSoon}（期望 0——编辑器三站已转现役）`);
+        if (comingSoon !== 0) throw new Error(`建设中 Badge 数不符: ${comingSoon}（期望 0）`);
         // 「图片」命中 img-tool + pptx 编辑器（特性描述含「图片表格图表」，2026-10-31 起）
         await page.fill('input[aria-label="搜索工具"]', "图片");
         await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 2, { timeout: 30000 });
         const count = await page.textContent("main, body");
-        if (!count.includes("2 / 11")) throw new Error("搜索计数未显示 2 / 11");
+        if (!count.includes("2 / 13")) throw new Error("搜索计数未显示 2 / 13");
         await page.fill('input[aria-label="搜索工具"]', "表格生成");
         await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
-        // 编辑器三站转现役：主域名卡带完整 WebMCP 面投影（抽查 xlsx 卡）
         await page.fill('input[aria-label="搜索工具"]', "univer");
+        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
+      });
+    });
+
+    // ---------- audio 两卡（audio-stt-tts tasks 5.4；截图语义——不写 iframe 断言） ----------
+    await check("directory：audio 两卡（搜索命中＋WebMCP 面投影＋截图语义占位）", async () => {
+      await withPage("directory", "", async (page) => {
+        // 「转写」命中 audio-stt
+        await page.fill('input[aria-label="搜索工具"]', "转写");
+        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
+        let body = await page.textContent("main, body");
+        if (!body.includes("transcribe_audio")) throw new Error("audio-stt 卡缺 WebMCP 面投影（transcribe_audio）");
+        // 「配音」命中 audio-tts
+        await page.fill('input[aria-label="搜索工具"]', "配音");
+        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
+        body = await page.textContent("main, body");
+        if (!body.includes("create_speech")) throw new Error("audio-tts 卡缺 WebMCP 面投影（create_speech）");
+        // 「kokoro」命中 audio-tts
+        await page.fill('input[aria-label="搜索工具"]', "kokoro");
+        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
+        // 「whisper」命中 audio-stt
+        await page.fill('input[aria-label="搜索工具"]', "whisper");
         await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
       });
     });
