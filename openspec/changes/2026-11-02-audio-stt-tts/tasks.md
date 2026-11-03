@@ -137,8 +137,16 @@
 - [x] 7.2 中文小步 commit（子仓先推，主仓指针跟进）；不 push 之外的部署
       动作由编排者统一执行（dist/models 留本地由部署脚本收）。（子仓 PR #1
       持续提交中；主仓指针随合流更新。）
-- [ ] 7.3 交叉复核：vision 子代理走查两站 UI（desktop 视口真浏览器全
+- [x] 7.3 交叉复核：vision 子代理走查两站 UI（desktop 视口真浏览器全
       流程录屏级证据）；FastRemix 裁决（前端类 change 豁免 Codex）。
+      （2026-11-03 实跑：`pnpm vision:walk` 产 7 图全过黑图防线（浅/深×两站×
+      终态/加载态/Select 弹层，构建 a40273a）；独立 fresh-context 评审判读
+      **P0=0，两站各 7/10，7.3 门可过**；P1-3 深色段文对比度像素实测
+      ≈9.0:1 远超 AA（复验脚本闭环）；P1×3（ai-guide 首屏/时长口径）源码
+      对表定位根因随 7.5 闭环；P2×11 入反哺清单。证据＋findings 落
+      `.agents/reports/tools/audio-stt-tts/vision-7.3/`（e2e-report-gen
+      生成 10/10 PASS）；顺手修 engine.ts FS 类型缺 mkdirTree 声明
+      （check 曾红）。8f3e543。）
 - [ ] 7.4 **真实 omni 使用测试（E2E 报告双支柱之一，与 7.3 并列硬门）**：
       用**本地跑的 omni**（fde2e-omni-v1；线上 omni 在高频迭代重启、
       不可作稳定被测端——Owner 裁决 2026-11-02）驱动 BU 桥
