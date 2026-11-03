@@ -161,6 +161,11 @@ pad 30–80ms 可调；decodeAudioData 会重采样且不处理 encoder-delay—
      （SenseVoice）需在 CMakeLists exported_functions 补 9 个
      SherpaOnnx*Offline* 符号（POC 已验证可行，纳入 build-sherpa-wasm.sh
      的补丁清单）。POC 脚本 scripts/poc-sherpa-sensevoice.cjs。
+   - **流式 Zipformer bilingual int8（3.3 裁决数据，2026-11-03 实测）**：
+     100ms 块喂入真流式，RTF(decode)=0.144（5.1s 音频累计 decode 736ms），
+     **快过实时 7 倍——真流式可行**（WASM 单线程），中间结果逐秒递进可见。
+     POC 脚本 scripts/poc-sherpa-streaming.cjs。麦克风实时档走
+     AudioWorklet PCM＋Silero VAD 切句＋本引擎（无伪流式回落必要）。
 3. **transformers.js v4 WebGPU vs WASM——✅ 已实测（2026-11-02，本机 M 系
    headless Chromium + whisper-base q8）**：3 轮推理延迟 WebGPU 2982/2899/2921/
    2858ms ≈ WASM 2909/2945/2913/2932ms——**whisper-base q8 小模型上两者无实质
