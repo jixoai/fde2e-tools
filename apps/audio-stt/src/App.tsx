@@ -21,6 +21,7 @@ import { FileTextIcon, MicIcon } from "lucide-react";
 import {
   STT_MODELS, transcribe, isSupportedFile, SUPPORTED_EXT, type EnginePhase, type SttModelId,
 } from "./engine";
+import { startRealtime, type RealtimeHandle } from "./realtime";
 import { emptyDoc, type TranscriptDoc } from "./transcript";
 import { toSrt, toVtt, toTxt, toJson } from "./export-formats";
 import { registerAppTools } from "./webmcp";
@@ -69,6 +70,8 @@ export default function App() {
   const [doc, setDoc] = useState<TranscriptDoc>(() => emptyDoc("transformers", "whisper-base-q8"));
   const [warn, setWarn] = useState<string | null>(null);
   const [activeSeg, setActiveSeg] = useState<number | null>(null);
+  const [micOn, setMicOn] = useState(false);
+  const micRef = useRef<RealtimeHandle | null>(null);
   const audioUrlRef = useRef<string | null>(null);
   const hoverRef = useRef(false);
   const listRef = useRef<HTMLUListElement>(null);
@@ -132,6 +135,35 @@ export default function App() {
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [segList, activeSeg]);
+
+  async function toggleMic() {
+    if (micOn) {
+      await micRef.current?.stop();
+      micRef.current = null;
+      setMicOn(false);
+      showStatus({ msg: "已停止麦克风实时转写。", kind: "ok" });
+      return;
+    }
+    try {
+      setBusy(true);
+      setDoc(emptyDoc("sherpa", "zipformer-bilingual-streaming"));
+      const handle = await startRealtime(
+        (detail, pct) => setPhase({ phase: "loading", detail, pct }),
+        (partial) => {
+          setPhase({ phase: "ready" });
+          setDoc(partial);
+          (window as unknown as { __sttDoc?: unknown }).__sttDoc = partial;
+        },
+      );
+      micRef.current = handle;
+      setMicOn(true);
+      showStatus({ msg: "实时转写中：请对麦克风说话（句界自动落段；再点一次停止）。", kind: "ok" });
+    } catch (e) {
+      showStatus({ msg: `实时转写启动失败：${e instanceof Error ? e.message : String(e)}`, kind: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function handleTranscribe() {
     const input = fileRef.current;
@@ -258,6 +290,9 @@ export default function App() {
           <div className="flex flex-wrap items-center gap-2">
             <Button id="transcribe-btn" onClick={handleTranscribe} disabled={busy || phase.phase === "loading"}>
               {busy ? "转写中…" : "开始转写"}
+            </Button>
+            <Button id="mic-btn" variant="outline" onClick={toggleMic} disabled={busy && !micOn}>
+              <MicIcon aria-hidden /> {micOn ? "停止实时" : "麦克风实时"}
             </Button>
             {busy && (
               <Button variant="outline" onClick={() => { if (cancelRefGlobal.current) cancelRefGlobal.current.cancelled = true; }}>
