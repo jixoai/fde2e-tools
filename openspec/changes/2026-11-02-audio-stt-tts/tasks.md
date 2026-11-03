@@ -127,8 +127,7 @@
       本地 dev 端口 5281/5282；`packages/audio-engine/README.md`（架构+
       POC 纪律）。
 - [x] 6.2 research.md 收尾：本机段 RTF/装载全回填（SenseVoice 0.22/whisper 0.52/kokoro 3.0/zipformer 流式 0.144）；ModelScope resolve Range=200 实测路由证据入库；三设备剩余段随 7.4 实体机批次。
-- [ ] 6.3 openspec specs 增量（见 specs/）合入对应 capability 目录；
-      本 change 验收后 archive。
+- [x] 6.3 openspec specs 增量合入 openspec/specs/audio-ai-tools/（archive 随 7.x 交付门后）。
 
 ## 7. 收尾验收规范（Owner 补全指令 2026-11-02：真实 omni 使用测试）
 
