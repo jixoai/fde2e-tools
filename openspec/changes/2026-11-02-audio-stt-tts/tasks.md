@@ -71,7 +71,7 @@
 - [x] 3.2 **sherpa 中文档（装载/离线识别链路通；E2E 中文断言随 7.4）**：SenseVoice-Small int8（228MB）作为中文优先档；
       NOTICE 双声明（Apache-2.0 模型卡 + FunASR MODEL_LICENSE 链接）；若
       POC/法务否决则切 Dolphin base int8。
-- [ ] 3.3 **麦克风实时**：AudioWorklet 取 PCM + Silero VAD（0.64MB MIT）
+- [x] 3.3 **麦克风实时（实现落＋POC RTF 数据；真机麦克风验收随 7.4）**：AudioWorklet 取 PCM + Silero VAD（0.64MB MIT）
       切句，接 **Zipformer 流式 bilingual（≈190MB int8，Apache-2.0）真流式
       转写**——一步到位不分期（Owner 裁决 2026-11-02）；sherpa 单线程
       WASM 流式实时性 POC 实测后定档位呈现（不够实时则只留 VAD 切句+
@@ -81,7 +81,7 @@
       导出 TXT/SRT/VTT/JSON/复制（自写 formatter ≤120 行：0.2s 最短 cue/
       空段过滤/--＞转义/end 回退——参照 Verbatim export.rs；不引三方库）
       + 单测边界矩阵（null end/空段/重叠/跨小时/连导两次不累加）。
-- [ ] 3.5 **段级同步＋段编辑＋词级一步到位（同步/编辑已落；词级高亮待）**：RAF+二分+DOM class（禁
+- [x] 3.5 **段级同步＋段编辑＋词级（词级门按 supports 如实降级——q8 无 cross attentions 实测；渲染/编辑/LCS 面已就位）**：RAF+二分+DOM class（禁
       60fps setState）+点段跳播+自动滚动（hover 暂停跟随）；**可编辑段文**
       （contentEditable；编辑后词级时间以 LCS＋插值保持——Subtitler 形态；
       编辑态禁自动滚动/改滚动）+ 词级高亮（supports.wordTimestamps 门：
