@@ -102,7 +102,7 @@
 
 ## 5. 绿门扩展
 
-- [ ] 5.1 **真推理冒烟**（新增脚本 scripts/audio-smoke.mjs 或并入
+- [x] 5.1 **真推理冒烟**（新增脚本 scripts/audio-smoke.mjs 或并入
       smoke-check）：headless Chromium（WebGPU flag）+ 本地 seed 权重，
       ①stt：whisper-base q8 转 3-5s 样例音频断言文本命中关键词；
       ②tts：Kokoro 音色中文短句合成断言 .wav 文件头/字节长度合理，
@@ -114,12 +114,12 @@
       `.models-cache/`，避免误入 git）；与部署同一套 manifest 单源（顺路
       趟平 models-fetch）。绿门运行时权重不在场＝冒烟 **fail**，附
       「先跑 prep:audio-smoke-weights」提示。
-- [ ] 5.2 **下载分片冒烟**：downloader-core + mock 三源（本地 http 服务）
+- [x] 5.2 **下载分片冒烟（models-fetch 大件直取/分片双路真实验证＋downloader 20MB 假模型冒烟开工批已过）**：downloader-core + mock 三源（本地 http 服务）
       对 20MB 假模型文件跑分片往返：中断→续传→sha256 match 断言协议。
-- [ ] 5.3 **interface-lint 纳入两站**（三面一致/schema 卫生/选择器白名
+- [x] 5.3 **interface-lint 纳入两站**（三面一致/schema 卫生/选择器白名
       单/错误形态）；webmcp:check 断言两站工具枚举+executeTool 往返；烟
       囚矩阵非法入参全过。
-- [ ] 5.4 黄页卡片断言 +2（卡片/搜索/**截图语义**——**不写 iframe 断言**：黄页已裁决去 iframe，见 DECISIONS.md；存量断言随另立 change 迁移，本站不承担存量改动）。
+- [x] 5.4 黄页卡片断言 +2（卡片/搜索/**截图语义**——**不写 iframe 断言**：黄页已裁决去 iframe，见 DECISIONS.md；存量断言随另立 change 迁移，本站不承担存量改动）。
 
 ## 6. 文档与规格
 
