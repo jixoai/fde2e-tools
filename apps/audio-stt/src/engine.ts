@@ -91,6 +91,8 @@ async function ensureTjs(): Promise<TjsModule> {
   env.remoteHost = `${location.origin}/model/`;
   env.remotePathTemplate = "{model}/resolve/{revision}/";
   env.useBrowserCache = true;
+  // ORT wasm 本地静态（零 CDN——自托管同源红线；jsep 后端＝WebGPU/WASM 双能力）
+  env.backends.onnx.wasm.wasmPaths = "/vendor/ort/";
   window.__sttTjs = tjs as unknown as TjsModule;
   return tjs as unknown as TjsModule;
 }
