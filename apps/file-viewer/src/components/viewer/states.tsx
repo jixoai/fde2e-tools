@@ -70,6 +70,12 @@ URL 契约（打开即预览，三参数）：
    解码器 id 清单（14 个）：${DECODER_ID_LIST}
    （text 支持编码切换：UTF-8 / auto / GBK / Big5 / Shift_JIS / Latin-1。）
 
+无壳截图面（给自动化代理截图取图，可选三参数，仅 frameless 下生效）：
+&frameless=1（或 true）：隐藏预览器全部 chrome（顶栏/底栏/媒体控件），只留文件内容本体；
+&size=WxH：内容盒严格尺寸（CSS px，1–8192 整数，如 1080x1440）；非法/缺省＝视口；
+&background=<CSS 颜色>：无壳背景色（如 %23ffffff 表示 #ffffff，缺省透明）。
+渲染落定后根节点带 data-frameless-ready="1"（失败为 "error"）——用 waitFor 等它，别靠 sleep。
+
 示例链接（同源 /demo 夹具，零 CORS 依赖，直接可开）：
 `;
 
@@ -148,10 +154,10 @@ export function LoadErrorState({
   );
 }
 
-/** 加载期骨架：顶栏占位＋主体脉冲。 */
+/** 加载期骨架：顶栏占位＋主体脉冲（data-decoder-loading：无壳就绪观测不把骨架当内容）。 */
 export function ViewerLoadingState() {
   return (
-    <div className="flex h-full flex-col gap-3 p-6">
+    <div className="flex h-full flex-col gap-3 p-6" data-decoder-loading="true">
       <div className="flex items-center gap-3">
         <Skeleton className="size-8 rounded-lg" />
         <Skeleton className="h-5 w-56" />

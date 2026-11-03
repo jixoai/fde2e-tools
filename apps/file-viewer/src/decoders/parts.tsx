@@ -23,14 +23,17 @@ export function DecoderShell({
   main,
   footer,
   children,
+  footerChrome = 'footer',
 }: {
   main: ReactNode;
   footer?: ReactNode;
   children?: ReactNode;
+  /** footer 的 chrome 标记值（无壳模式据此整条隐藏；默认 footer） */
+  footerChrome?: string;
 }) {
   return (
     <div className="relative flex h-full min-h-0 flex-col">
-      <div className="min-h-0 flex-1 p-4 max-sm:p-0">
+      <div className="min-h-0 flex-1 p-4 max-sm:p-0" data-decoder-frame="true">
         <div
           className="glass-panel h-full min-h-0 overflow-hidden rounded-xl max-sm:rounded-none"
           data-decoder-surface="true"
@@ -40,7 +43,10 @@ export function DecoderShell({
       </div>
       {children}
       {footer ? (
-        <footer className="glass-panel flex h-10 shrink-0 items-center gap-4 border-t px-3 text-xs text-muted-foreground">
+        <footer
+          className="glass-panel flex h-10 shrink-0 items-center gap-4 border-t px-3 text-xs text-muted-foreground"
+          data-viewer-chrome={footerChrome}
+        >
           {footer}
         </footer>
       ) : null}
@@ -157,7 +163,10 @@ export function DecoderErrorState({
 /** 解码器内部加载态（shiki/docx/pptx 等异步初始化期间）。 */
 export function DecoderLoading({ label }: { label: string }) {
   return (
-    <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+    <div
+      className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"
+      data-decoder-loading="true"
+    >
       <Loader2Icon className="size-4 animate-spin" aria-hidden />
       {label}
     </div>

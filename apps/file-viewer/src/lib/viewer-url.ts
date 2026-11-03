@@ -6,9 +6,28 @@
  * - 可选 `&name=<显示名>`（缺省取路径末段）；
  * - 可选 `&decoder=<id>` 强制解码器（未知 id 视为无效，回自动判定）；
  * - 「在新窗口打开原始内容」＝ `<url>?raw`（url 已带 query 则 `&raw`）。
+ *
+ * 无壳面契约（file-viewer-frameless）：
+ * - `&frameless=1|true`：隐藏一切 viewer 注入的 chrome，只留内容本体；
+ * - `&size=WxH`：内容盒严格尺寸（CSS px，1–8192 整数）；非法/缺省＝视口；
+ * - `&background=<css color>`：无壳背景色（缺省透明）。
+ * - 三个参数只在 frameless 下生效；非 frameless 全忽略（零行为变化）。
  */
 
-export interface ViewerTarget {
+/** 无壳尺寸（CSS px，1–8192 整数）。 */
+export interface FramelessSize {
+  width: number;
+  height: number;
+}
+
+/** 无壳选项（frameless=false 时 size/background 恒为 undefined——全忽略）。 */
+export interface FramelessOptions {
+  frameless: boolean;
+  size?: FramelessSize;
+  background?: string;
+}
+
+export interface ViewerTarget extends FramelessOptions {
   /** 文件原始 URL（http/https 绝对地址） */
   url: string;
   /** 显示名（缺省从 URL 路径末段取） */
@@ -18,6 +37,50 @@ export interface ViewerTarget {
 }
 
 export type ViewerTargetResult = ViewerTarget | { error: string };
+
+/** size 允许的最大边长（CSS px）——防离谱值撑爆截图/显存。 */
+const SIZE_MAX = 8192;
+/** background 最大长度（CSS 颜色串；超长视为非法，静默忽略）。 */
+const BACKGROUND_MAX_LENGTH = 200;
+
+/** `WxH` 解析：仅接受 1–8192 的十进制整数；非法返回 undefined（静默回退视口）。 */
+export function parseFramelessSize(raw: string | null | undefined): FramelessSize | undefined {
+  const value = (raw ?? '').trim();
+  if (!value) return undefined;
+  const match = /^(\d+)\s*[xX]\s*(\d+)$/.exec(value);
+  if (!match) return undefined;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!Number.isInteger(width) || !Number.isInteger(height)) return undefined;
+  if (width < 1 || height < 1 || width > SIZE_MAX || height > SIZE_MAX) return undefined;
+  return { width, height };
+}
+
+/** 尺寸 → 契约串（`WxH`；供 WebMCP 回执与断言使用）。 */
+export function formatFramelessSize(size: FramelessSize | undefined): string | null {
+  return size ? `${size.width}x${size.height}` : null;
+}
+
+/**
+ * 解析无壳三参（与完整契约解析共用同一 search 串）。
+ * 非法 size 静默回退（预览可用优先，绝不因此报契约错误）；background 超长忽略。
+ */
+export function parseFramelessOptions(search: string): FramelessOptions {
+  let params: URLSearchParams;
+  try {
+    params = new URLSearchParams(search);
+  } catch {
+    return { frameless: false };
+  }
+  const flag = (params.get('frameless') ?? '').trim().toLowerCase();
+  const frameless = flag === '1' || flag === 'true';
+  if (!frameless) return { frameless: false };
+  const size = parseFramelessSize(params.get('size'));
+  const rawBackground = (params.get('background') ?? '').trim();
+  const background =
+    rawBackground && rawBackground.length <= BACKGROUND_MAX_LENGTH ? rawBackground : undefined;
+  return { frameless, size, background };
+}
 
 /**
  * 解析 viewer 的 search 串（形如 `?url=...&name=...&decoder=...`）。
@@ -43,7 +106,7 @@ export function parseViewerSearch(search: string): ViewerTargetResult {
   }
   const name = (params.get('name') ?? '').trim() || fileNameFromUrl(parsed);
   const forcedDecoder = (params.get('decoder') ?? '').trim() || undefined;
-  return { url: parsed.href, name, forcedDecoder };
+  return { url: parsed.href, name, forcedDecoder, ...parseFramelessOptions(search) };
 }
 
 /** 从已解析的 URL 取显示名：路径末段（解码百分号编码），无有效段则退主机名。 */

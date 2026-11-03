@@ -600,6 +600,7 @@ export default function VideoDecoder({ name, mime, bytes, url, size }: DecoderFi
             className={`pointer-events-none absolute inset-0 z-10 flex items-center justify-center transition-opacity duration-200 ${
               controlsVisible && overlay === null ? 'opacity-100' : 'opacity-0'
             }`}
+            data-viewer-chrome="video-play"
           >
             <Button
               variant="ghost"
@@ -621,6 +622,7 @@ export default function VideoDecoder({ name, mime, bytes, url, size }: DecoderFi
               controlsVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
             }`}
             data-fv-controls="true"
+            data-viewer-chrome="video-controls"
             data-visible={controlsVisible ? 'true' : 'false'}
             onPointerDown={(e) => e.stopPropagation()}
             onPointerEnter={() => {

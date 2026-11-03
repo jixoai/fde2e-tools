@@ -4,12 +4,22 @@
  * 流程（规格）：解析 URL 契约 → fetch 原始字节（omni CORS）→ resolveDecoder
  * → 顶栏 + Suspense 懒加载解码器。解码器切换经 URL 参数回写（replaceState），
  * 链接保持可分享；重试只重拉字节，不重解析契约。
+ *
+ * 无壳面（?frameless=1）：隐藏全部 viewer chrome、内容盒严格尺寸、渲染落定后
+ * 置 `data-frameless-ready`（见 src/lib/frameless.ts）。非 frameless 零副作用。
  */
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { ViewerTopBar } from '@/components/viewer/TopBar';
 import { ContractErrorState, LoadErrorState, ViewerLoadingState } from '@/components/viewer/states';
 import { resolveDecoder, shouldStreamDirect, type DecoderFile } from '@/decoders/registry';
-import { applySearchParam, parseViewerSearch } from '@/lib/viewer-url';
+import {
+  clearFramelessReady,
+  framelessRootStyle,
+  useFramelessDocument,
+  useFramelessReadyWatcher,
+  writeFramelessReady,
+} from '@/lib/frameless';
+import { applySearchParam, parseFramelessOptions, parseViewerSearch } from '@/lib/viewer-url';
 import { registerAppTools } from './webmcp';
 
 /** 字节拉取结果（与契约分离：decoder 参数变化不重拉）。 */
@@ -36,8 +46,17 @@ export default function App() {
   const [nonce, setNonce] = useState(0);
 
   const parsed = useMemo(() => parseViewerSearch(search), [search]);
+  // 无壳三参独立解析：即使 url 契约错误也要按 frameless 渲染错误态（可诊断截图），
+  // 非 frameless 时 size/background 全部丢弃（零行为变化）。
+  const framelessOptions = useMemo(() => parseFramelessOptions(search), [search]);
+  const frameless = 'error' in parsed ? framelessOptions.frameless : parsed.frameless;
+  const framelessSize = frameless ? framelessOptions.size : undefined;
+  const framelessBackground = frameless ? framelessOptions.background : undefined;
   const targetUrl = 'error' in parsed ? null : parsed.url;
   const forcedDecoder = 'error' in parsed ? undefined : parsed.forcedDecoder;
+
+  // 无壳文档态：<html data-frameless="1">；切回带壳/卸载时彻底清属性
+  useFramelessDocument(frameless);
 
   // 浏览器返回键（popstate）同步 search 态
   useEffect(() => {
@@ -128,18 +147,46 @@ export default function App() {
 
   const retry = useCallback(() => setNonce((n) => n + 1), []);
 
+  // 无壳错误态：壳级失败（契约错误/拉取失败）也必须落定信号（"error"），
+  // 避免调用方无限等待；重试回到加载态时清掉旧信号，由就绪观测器重新落定。
+  const shellError = 'error' in parsed || phase.kind === 'error';
+  useEffect(() => {
+    if (!frameless) return;
+    if (shellError) writeFramelessReady('error');
+    else if (phase.kind !== 'ready') clearFramelessReady();
+  }, [frameless, shellError, phase.kind]);
+
+  // 无壳根内容盒：严格尺寸（缺省视口）＋可选背景；带壳形态完全不变
+  const rootClass = frameless ? 'flex flex-col overflow-hidden' : 'flex h-full flex-col';
+  const rootStyle = frameless ? framelessRootStyle(framelessSize, framelessBackground) : undefined;
+  const rootProps = {
+    className: rootClass,
+    style: rootStyle,
+    ...(frameless
+      ? {
+          'data-frameless-root': 'true',
+          ...(framelessSize ? { 'data-frameless-sized': 'true' } : {}),
+        }
+      : {}),
+  } as const;
+
   // ---- 契约错误态 ----
   if ('error' in parsed) {
-    return <ContractErrorState message={parsed.error} />;
+    return (
+      <div {...rootProps}>
+        <ContractErrorState message={parsed.error} />
+      </div>
+    );
   }
 
   // ---- 加载/错误/就绪 ----
   return (
-    <div className="flex h-full flex-col">
+    <div {...rootProps}>
       {phase.kind === 'ready' ? (
         <ReadyShell
           target={parsed}
           fetched={phase.fetched}
+          frameless={frameless}
           onSelectDecoder={handleSelectDecoder}
         />
       ) : phase.kind === 'error' ? (
@@ -160,13 +207,18 @@ export default function App() {
 function ReadyShell({
   target,
   fetched,
+  frameless,
   onSelectDecoder,
 }: {
   target: { url: string; name: string; forcedDecoder?: string };
   fetched: Fetched;
+  frameless: boolean;
   onSelectDecoder: (id: string | null) => void;
 }) {
   const decoder = resolveDecoder(target.name, fetched.mime, target.forcedDecoder);
+  // 无壳就绪观测：iframe 类解码器经 onContentReady 显式上报首帧；
+  // contentKey=解码器 id——切解码器时观测器重启，旧 ready 不冒充新内容
+  const markContentReady = useFramelessReadyWatcher(frameless, decoder.id);
   const file: DecoderFile = {
     url: fetched.url,
     name: target.name,
@@ -187,7 +239,7 @@ function ReadyShell({
       />
       <main className="min-h-0 flex-1" data-decoder-root={decoder.id}>
         <Suspense fallback={<ViewerLoadingState />}>
-          <DecoderComponent {...file} />
+          <DecoderComponent {...file} frameless={frameless} onContentReady={markContentReady} />
         </Suspense>
       </main>
     </>

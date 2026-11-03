@@ -11,7 +11,7 @@ import { DecoderShell, InfoItem } from '@/decoders/parts';
 import { normalizeMime, type DecoderFile } from '@/decoders/registry';
 import { formatBytes, formatDuration } from '@/lib/format';
 
-export default function AudioDecoder({ name, mime, bytes, url, size }: DecoderFile) {
+export default function AudioDecoder({ name, mime, bytes, url, size, frameless }: DecoderFile) {
   const [duration, setDuration] = useState<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -36,8 +36,16 @@ export default function AudioDecoder({ name, mime, bytes, url, size }: DecoderFi
     <DecoderShell
       main={
         <div className="flex h-full flex-col items-center justify-center gap-5">
-          <AudioLinesIcon className="size-10 text-muted-foreground/60" aria-hidden />
-          <audio ref={audioRef} src={url} controls autoPlay className="w-full max-w-xl" aria-label={name} />
+          <AudioLinesIcon className="size-10 text-muted-foreground/60" data-viewer-chrome="audio-badge" aria-hidden />
+          {/* 无壳模式不渲染原生 controls（截图面零控件；播放语义由带壳形态承担） */}
+          <audio
+            ref={audioRef}
+            src={url}
+            controls={!frameless}
+            autoPlay
+            className="w-full max-w-xl"
+            aria-label={name}
+          />
         </div>
       }
       footer={

@@ -197,6 +197,7 @@ export default function ImageDecoder({ name, mime, bytes }: DecoderFile) {
           {natural ? (
             <div
               className="glass-control absolute top-3 right-3 z-10 flex items-center gap-0.5 rounded-xl bg-background/70 p-1"
+              data-viewer-chrome="image-controls"
               onPointerDown={(e) => e.stopPropagation()}
               onDoubleClick={(e) => e.stopPropagation()}
             >

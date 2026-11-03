@@ -26,6 +26,13 @@ export interface DecoderFile {
   size?: number | null;
   /** 内嵌预览深度（zip→zip 递归防爆；顶层为 0） */
   depth?: number;
+  /** 无壳模式（?frameless=1）：去壳铺满内容盒；仅无壳语义相关解码器读取 */
+  frameless?: boolean;
+  /**
+   * 无壳内容就绪回调：解码器在内容首帧可绘（如 sandbox iframe onLoad /
+   * PDF 查看器 onLoad）时调用一次。壳层据此把 `data-frameless-ready` 置 "1"。
+   */
+  onContentReady?: () => void;
 }
 
 export interface Decoder {

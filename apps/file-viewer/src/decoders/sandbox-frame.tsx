@@ -4,6 +4,9 @@
  * html 与 svg 解码器共用的安全隔离渲染形态（规格统一预览）：
  * 字节 → 带正确 mime 的 blob URL → `sandbox=""`（禁脚本、禁同源、禁表单——
  * 全部默认拒绝）的 iframe。内嵌脚本不执行；blob URL 随组件卸载回收。
+ *
+ * 无壳模式（?frameless=1）：iframe 铺满内容盒、去圆角/白底（背景由根内容盒
+ * 的 background 参数提供），底栏整条隐藏；iframe onLoad 即向壳层上报内容就绪。
  */
 import { DecoderShell, InfoItem, useObjectUrl, downloadBytes } from '@/decoders/parts';
 import type { DecoderFile } from '@/decoders/registry';
@@ -22,21 +25,24 @@ export function SandboxFrameDecoder({
   rendererLabel: string;
   note: string;
 }) {
-  const { name, mime, bytes } = file;
+  const { name, mime, bytes, frameless, onContentReady } = file;
   const objectUrl = useObjectUrl(bytes, blobMime);
 
   return (
     <DecoderShell
+      footerChrome="sandbox-footer"
       main={
         objectUrl ? (
           // 安全形态：sandbox 全默认拒绝（等价空串）——脚本永不执行。
           // 面板内边距区即内容面（P1-1：不再全幅贴边），圆角对齐壳语言。
+          // 无壳：去圆角/白底，内容盒背景（background 参数）直接透出。
           <iframe
             key={objectUrl}
             src={objectUrl}
             sandbox=""
             title={name}
-            className="h-full w-full rounded-lg border-0 bg-white"
+            className={`h-full w-full border-0 ${frameless ? '' : 'rounded-lg bg-white'}`}
+            onLoad={onContentReady}
           />
         ) : null
       }

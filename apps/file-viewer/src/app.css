@@ -36,6 +36,56 @@
   }
 }
 
+/* ---- 无壳内容面（file-viewer-frameless）---------------------------------
+ * `?frameless=1` 时只留文件内容本体：隐藏 viewer 注入的一切 chrome、
+ * 内容盒严格尺寸、页面零边距禁滚动、背景可指定（缺省透明）。
+ * 常规预览零影响——所有规则都挂在 [data-frameless="1"] 下。
+ * 无壳规则写在 layer 外：Tailwind 分层工具类的优先级低于未分层 CSS，
+ * 无需堆砌选择器即可覆盖 glass-panel/圆角/内边距等既有形态。
+ */
+
+/* 页面底：收掉 body 的主题底与径向光斑，背景完全由内容盒承担 */
+html[data-frameless="1"],
+html[data-frameless="1"] body {
+  background: transparent !important;
+  background-image: none !important;
+  overflow: hidden !important;
+}
+
+/* 一切 viewer chrome：顶栏 / 解码器底栏 / 视频控制层 / 图片工具簇 … */
+[data-frameless="1"] [data-viewer-chrome] {
+  display: none !important;
+}
+
+/* 无壳根内容盒：铺满视口（指定 size 时严格等于 WxH，定位到左上角） */
+[data-frameless="1"] [data-frameless-root] {
+  position: fixed;
+  inset: 0;
+  margin: 0;
+  overflow: hidden;
+}
+[data-frameless="1"] [data-frameless-root][data-frameless-sized="true"] {
+  inset: auto;
+  top: 0;
+  left: 0;
+}
+
+/* 内容面：去内边距 / 玻璃面板 / 圆角 / 描边，让内容 1:1 落进内容盒 */
+[data-frameless="1"] [data-decoder-frame] {
+  padding: 0 !important;
+}
+[data-frameless="1"] [data-decoder-surface] {
+  border-radius: 0 !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+[data-frameless="1"] [data-decoder-surface] iframe,
+[data-frameless="1"] [data-decoder-surface] img {
+  border-radius: 0 !important;
+}
+
 /* ---- 本仓桥接层（业务接线 CSS）---------------------------------------- */
 
 @theme inline {

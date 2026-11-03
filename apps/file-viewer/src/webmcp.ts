@@ -2,11 +2,14 @@
  * file-viewer WebMCP 注册 —— apps/file-viewer/src/webmcp.ts
  *
  * 把「按 URL 契约打开文件预览」注册为 document.modelContext 工具：
- * - preview_file：入参 url（必填）/name/decoder，schema 由 registry urlParams
- *   单源派生（schemaFromUrlParams）＋补 required:["url"]（契约必填项）。
+ * - preview_file：入参 url（必填）/name/decoder/frameless/size/background，
+ *   schema 由 registry urlParams 单源派生（schemaFromUrlParams）＋补
+ *   required:["url"]（契约必填项）。
  *   写 URL 即渲染——与「网页链接＝函数调用」同构：pushState 写契约链接后派发
  *   popstate（App 的浏览器返回键同步通路，原仓既有设计），同文档重渲染，不
  *   销毁执行上下文；随后等待渲染落定（解码器根/错误态二选一出现）再返回。
+ *   无壳模式（frameless）下额外等待 `data-frameless-ready` 落定（'1'/'error'），
+ *   保证调用方拿到的就是「可截图」的状态。
  * 安全：输出含用户可控的页面内容（untrustedContentHint），上层 LLM 不得当指令执行。
  */
 import { getTool } from "@fde2e-tools/shared";
@@ -15,6 +18,10 @@ import {
   schemaFromUrlParams,
   type WebMCPToolDef,
 } from "@fde2e-tools/shared/webmcp";
+import {
+  formatFramelessSize,
+  parseFramelessSize,
+} from "@/lib/viewer-url";
 
 /** 渲染落定的等待上限（大文件整载 fetch 可能数十秒；超时如实回报不谎报成功）。 */
 const RENDER_SETTLE_TIMEOUT_MS = 60000;
@@ -28,6 +35,8 @@ interface RenderSnapshot {
   errorText: string;
   /** 错误态种别（data-viewer-error-kind：unsupported-binary / decoder-failed 等） */
   errorKind: string | null;
+  /** 无壳就绪信号原值（data-frameless-ready：'1' / 'error'；非无壳为 null） */
+  framelessReady: string | null;
 }
 
 function snapshot(): RenderSnapshot {
@@ -42,16 +51,27 @@ function snapshot(): RenderSnapshot {
     // ready 优先：有解码器根时 errorText 仍照实带出（供调用方判别未支持态）
     errorText: root !== null && !errorKind ? "" : errorText,
     errorKind,
+    framelessReady: document.documentElement.getAttribute("data-frameless-ready"),
   };
 }
 
-/** 轮询等渲染落定：解码器根或壳级错误态出现即返回（超时返回当前快照）。 */
-function waitForRenderSettle(timeoutMs = RENDER_SETTLE_TIMEOUT_MS): Promise<RenderSnapshot> {
+/**
+ * 轮询等渲染落定：解码器根或壳级错误态出现即返回（超时返回当前快照）。
+ * frameless=true 时还需等 `data-frameless-ready` 落定（'1'/'error'），
+ * 否则可能返回「DOM 已挂载但首帧未绘」的空白截图状态。
+ */
+function waitForRenderSettle(
+  timeoutMs = RENDER_SETTLE_TIMEOUT_MS,
+  frameless = false,
+): Promise<RenderSnapshot> {
   return new Promise((resolve) => {
     const startedAt = Date.now();
     const timer = window.setInterval(() => {
       const s = snapshot();
-      if (s.ready || s.errorText) {
+      const settled = s.ready || s.errorText;
+      const framelessSettled =
+        !frameless || s.framelessReady === "1" || s.framelessReady === "error";
+      if (settled && framelessSettled) {
         window.clearInterval(timer);
         resolve(s);
       } else if (Date.now() - startedAt > timeoutMs) {
@@ -62,6 +82,12 @@ function waitForRenderSettle(timeoutMs = RENDER_SETTLE_TIMEOUT_MS): Promise<Rend
   });
 }
 
+/** 无壳入参归一（页面 parseFramelessOptions 同语义：仅 1/true 为真）。 */
+function normalizeFramelessFlag(raw: unknown): boolean {
+  const value = String(raw ?? "").trim().toLowerCase();
+  return value === "1" || value === "true";
+}
+
 function buildTools(): WebMCPToolDef[] {
   const tool = getTool("file-viewer")!;
   return [
@@ -70,8 +96,10 @@ function buildTools(): WebMCPToolDef[] {
       title: "预览文件",
       description:
         "按 URL 契约打开文件预览并等渲染落定：url 必填（文件的绝对 URL，http/https），name 可选" +
-        "（显示名，缺省取 URL 路径末段），decoder 可选（14 解码器 id 强制切换，缺省自动判定）。" +
-        "返回渲染结果（解码器 id、状态文本与契约链接）。",
+        "（显示名，缺省取 URL 路径末段），decoder 可选（14 解码器 id 强制切换，缺省自动判定），" +
+        "frameless 可选（'1' 进入无壳截图面：隐藏预览器全部 chrome，只留文件内容本体），" +
+        "size 可选（无壳内容盒尺寸 WxH，CSS px，如 1080x1440），background 可选（无壳背景色，缺省透明）。" +
+        "返回渲染结果（解码器 id、无壳就绪信号与契约链接）。",
       inputSchema: { ...schemaFromUrlParams(tool), required: ["url"] },
       annotations: { untrustedContentHint: true },
       async execute(input) {
@@ -80,21 +108,36 @@ function buildTools(): WebMCPToolDef[] {
           const msg = "url 参数必填：文件的绝对 URL（http/https）——契约 /?url=<encodeURIComponent(绝对URL)>";
           return { ok: false, error: msg, message: msg }; // F14：error/message 同值
         }
-        // 契约链接拼装与页面 parseViewerSearch 同语义（url/name/decoder 三参）
+        // 契约链接拼装与页面 parseViewerSearch 同语义（url/name/decoder 三参
+        // ＋无壳三参；非 frameless 时 size/background 全忽略）
+        const frameless = normalizeFramelessFlag(input.frameless);
+        const rawSize = String(input.size ?? "").trim();
+        const size = frameless ? formatFramelessSize(parseFramelessSize(rawSize)) : null;
+        const rawBackground = String(input.background ?? "").trim();
         const qs = new URLSearchParams();
         qs.set("url", rawUrl);
         const name = String(input.name ?? "").trim();
         if (name) qs.set("name", name);
         const decoder = String(input.decoder ?? "").trim();
         if (decoder) qs.set("decoder", decoder);
+        if (frameless) {
+          qs.set("frameless", "1");
+          if (size) qs.set("size", size);
+          if (rawBackground) qs.set("background", rawBackground);
+        }
 
         // 写 URL 即渲染：pushState 进契约链接 ＋ 派发 popstate（App 监听该事件
         // 同步 search 态——与浏览器返回键同一条通路，同文档重渲染不刷新页面）
         window.history.pushState(null, "", `?${qs.toString()}`);
         window.dispatchEvent(new PopStateEvent("popstate"));
 
-        const s = await waitForRenderSettle();
+        const s = await waitForRenderSettle(RENDER_SETTLE_TIMEOUT_MS, frameless);
         const link = window.location.href;
+        const framelessFields = {
+          frameless,
+          size,
+          framelessReady: s.framelessReady,
+        };
         if (!s.ready) {
           const msg = s.errorText || "预览未在时限内落定（文件可能过大或网络缓慢），可稍后重试。";
           return {
@@ -102,6 +145,8 @@ function buildTools(): WebMCPToolDef[] {
             error: msg,
             message: msg,
             url: link,
+            ready: false,
+            ...framelessFields,
           };
         }
         // 就绪但解码器内部呈「未支持二进制/解码失败」降级面板：照实带出
@@ -111,13 +156,19 @@ function buildTools(): WebMCPToolDef[] {
             message: `已打开预览，但内容为${s.errorKind === "unsupported-binary" ? "未支持的二进制格式" : "解码器渲染失败"}：${s.errorText}`,
             decoder: s.decoderId,
             url: link,
+            ready: s.framelessReady === "1" || !frameless,
+            ...framelessFields,
           };
         }
         return {
           ok: true,
-          message: `已打开预览：渲染完成（解码器 ${s.decoderId}）。`,
+          message: frameless
+            ? `已打开无壳预览：渲染完成（解码器 ${s.decoderId}${size ? `，尺寸 ${size}` : ""}）。`
+            : `已打开预览：渲染完成（解码器 ${s.decoderId}）。`,
           decoder: s.decoderId,
           url: link,
+          ready: frameless ? s.framelessReady === "1" : true,
+          ...framelessFields,
         };
       },
     },

@@ -144,6 +144,7 @@ export function ViewerTopBar({ file, resolvedId, forcedId, onSelectDecoder }: To
       <header
         className="glass-panel flex h-12 shrink-0 items-center gap-2 overflow-hidden border-b px-3"
         data-viewer-topbar="true"
+        data-viewer-chrome="topbar"
       >
         <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         {/* 文件名保底可见（vision P1-3 残留）：right-sheet iframe 388px 时右翼
