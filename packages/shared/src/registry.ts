@@ -407,6 +407,7 @@ export const TOOLS: ToolMeta[] = [
     urlParams: [],
     tools: [],
     repoPath: "external:ghcr.io/ranuts/document（AGPL 未修改镜像，不经本仓构建）",
+  },
   // ---------- audio-stt / audio-tts（audio-stt-tts change，2026-11 开工）----------
   // 浏览器本地语音双工具（WebGPU/WASM 推理，零云端）：模型权重不入仓、
   // 按模型 manifest 分发（deploy/models-fetch.sh），许可白名单见各站 ai-guide。

@@ -166,8 +166,10 @@ export default function App() {
       });
       setExportNameInput(filename);
     } catch (e) {
+      const detail =
+        e instanceof Error ? e.message : typeof e === "string" ? e : JSON.stringify(e).slice(0, 200);
       showStatus({
-        msg: `合成失败：${e instanceof Error ? e.message : String(e)}`,
+        msg: `合成失败：${detail}`,
         kind: "error",
       });
     } finally {
@@ -242,6 +244,7 @@ export default function App() {
             <Label htmlFor="input-text">文本</Label>
             <textarea
               id="input-text"
+              ref={inputRef}
               rows={6}
               defaultValue="你好，这是本地语音合成测试。今天天气不错，我们出去走走吧。"
               className="min-h-24 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"

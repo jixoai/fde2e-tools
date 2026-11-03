@@ -133,13 +133,36 @@ export function ensureEngine(
       const Module = await ensureWasmModule();
 
       onPhase?.({ phase: "loading", detail: "模型写入运行时文件系统", pct: 75 });
+      // 子目录文件（dict/pos_dict/…）写入前建全路径目录（EMFS writeFile 不自动
+      // mkdir——errno 44；两级以上目录逐段建）
+      const dirs = new Set<string>();
+      for (const f of m.files) {
+        const parts = f.path.split("/");
+        parts.pop();
+        let cur = "";
+        for (const seg of parts) {
+          cur = cur ? `${cur}/${seg}` : seg;
+          dirs.add(cur);
+        }
+      }
+      for (const dir of dirs) {
+        try {
+          Module.FS.mkdirTree(dir);
+        } catch {
+          // 已存在（EEXIST）无害
+        }
+      }
       for (const f of m.files) {
         const key = m.sources.find((s) => s.id === "selfhost")!.urlTemplate.replace("{path}", f.path);
         const resp = await cachedGet(key);
         if (!resp) throw new Error(`缓存缺文件（异常态）: ${f.path}`);
         const bytes = new Uint8Array(await resp.arrayBuffer());
-        // MEMFS 路径＝自托管路径（./model.int8.onnx 相对 cwd 根）
-        Module.FS.writeFile(f.path, bytes);
+        try {
+          Module.FS.writeFile(f.path, bytes);
+        } catch (e) {
+          // ErrnoError 无 stack——带上文件名定位（errno 44＝No such file/目录缺）
+          throw new Error(`FS.writeFile ${f.path} 失败: ${JSON.stringify(e)}`);
+        }
       }
 
       onPhase?.({ phase: "loading", detail: "创建合成器（Kokoro v1.1-zh int8）", pct: 90 });
