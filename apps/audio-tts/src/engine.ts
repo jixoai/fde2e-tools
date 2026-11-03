@@ -37,6 +37,7 @@ interface SherpaOfflineTts {
 interface SherpaModule {
   FS: {
     writeFile(path: string, data: Uint8Array): void;
+    mkdirTree(path: string): void;
     stat(path: string): { size: number };
     unlink(path: string): void;
   };

@@ -14,6 +14,7 @@
     "webmcp:check": "node scripts/webmcp-check.mjs",
     "prep:audio-smoke-weights": "node deploy/models-fetch.mjs --model whisper-base-q8 && node deploy/models-fetch.mjs --model kokoro-v1_1-zh-int8",
     "audio-smoke": "node scripts/audio-smoke.mjs",
+    "vision:walk": "node scripts/vision-walk.mjs",
     "smoke:check": "node scripts/smoke-check.mjs",
     "dev:directory": "pnpm --filter directory dev",
     "dev:pdf-tool": "pnpm --filter pdf-tool dev",
