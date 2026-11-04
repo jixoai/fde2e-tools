@@ -114,8 +114,64 @@ const wavInfo = await page.evaluate(async () => {
   return { riff, bytes: u8.length, dataLen, nonSilentRatio: total ? nonSilent / total : 0 };
 });
 console.log("wav:", JSON.stringify(wavInfo));
-const ok = !!wavInfo && wavInfo.riff === "RIFF" && wavInfo.dataLen > 16000 && wavInfo.nonSilentRatio > 0.3;
-console.log(ok ? `★ TTS 冒烟过：RIFF 头对、${(wavInfo.bytes/1024).toFixed(0)}KB、非静音 ${(wavInfo.nonSilentRatio*100).toFixed(0)}%` : "✗ TTS 冒烟不过");
+const pageOk = !!wavInfo && wavInfo.riff === "RIFF" && wavInfo.dataLen > 16000 && wavInfo.nonSilentRatio > 0.3;
+console.log(pageOk ? `★ TTS 页面冒烟过：RIFF 头对、${(wavInfo.bytes/1024).toFixed(0)}KB、非静音 ${(wavInfo.nonSilentRatio*100).toFixed(0)}%` : "✗ TTS 页面冒烟不过");
+
+// WebMCP 真推理回归：同页第二轮覆盖旧终态 baseline；非默认 voice/speed 必须
+// 进入 React 权威状态；filename 必须成为真实下载产物名而非只在回执中回显。
+const expectedFilename = "audio-tts-webmcp-smoke.wav";
+const downloadPromise = page.waitForEvent("download", { timeout: 120000 });
+const executePromise = page.evaluate(async ({ filename }) => {
+  const mc = document.modelContext;
+  const tool = (await mc.getTools()).find((t) => t.name === "create_speech");
+  if (!tool) return { ok: false, error: "create_speech 未注册" };
+  const raw = await mc.executeTool(tool, {
+    text: "非默认音色与语速的 WebMCP 真推理测试。",
+    voice: "zm_050",
+    speed: 1.5,
+    filename,
+  });
+  return typeof raw === "string" ? JSON.parse(raw) : raw;
+}, { filename: expectedFilename });
+const [download, webmcpOut] = await Promise.all([downloadPromise, executePromise]);
+const downloadedPath = await download.path();
+const downloaded = downloadedPath ? readFileSync(downloadedPath) : null;
+let downloadedInfo = null;
+if (downloaded && downloaded.length >= 44) {
+  let nonSilent = 0;
+  const total = Math.floor((downloaded.length - 44) / 2);
+  for (let i = 44; i + 1 < downloaded.length; i += 2) {
+    if (Math.abs(downloaded.readInt16LE(i)) > 300) nonSilent++;
+  }
+  downloadedInfo = {
+    riff: downloaded.toString("ascii", 0, 4),
+    bytes: downloaded.length,
+    dataLen: downloaded.readUInt32LE(40),
+    nonSilentRatio: total ? nonSilent / total : 0,
+  };
+}
+const applied = await page.evaluate(() => ({
+  voice: document.getElementById("voice-select")?.textContent ?? "",
+  speed: document.getElementById("speed-value")?.textContent ?? "",
+  status: document.getElementById("status")?.textContent ?? "",
+}));
+const webmcpOk = webmcpOut?.ok === true
+  && webmcpOut.voice === "zm_050"
+  && webmcpOut.speed === 1.5
+  && webmcpOut.filename === expectedFilename
+  && webmcpOut.synthesisMessage?.includes(expectedFilename)
+  && download.suggestedFilename() === expectedFilename
+  && applied.voice.includes("zm_050")
+  && applied.speed.includes("1.5")
+  && applied.status.includes(`已下载 ${expectedFilename}`)
+  && downloadedInfo?.riff === "RIFF"
+  && downloadedInfo.dataLen > 16000
+  && downloadedInfo.nonSilentRatio > 0.3;
+console.log(webmcpOk
+  ? `★ TTS WebMCP 冒烟过：zm_050 @ 1.5×，真实下载 ${expectedFilename}，${(downloadedInfo.bytes/1024).toFixed(0)}KB`
+  : `✗ TTS WebMCP 冒烟不过：${JSON.stringify({ webmcpOut, applied, downloadedInfo, suggested: download.suggestedFilename() }).slice(0, 1200)}`);
+
+const ok = pageOk && webmcpOk;
 await browser.close();
 server.close();
 process.exit(ok ? 0 : 1);

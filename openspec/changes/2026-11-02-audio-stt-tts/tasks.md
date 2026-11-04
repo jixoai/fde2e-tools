@@ -175,3 +175,9 @@
       本 skill/tools 双面（如本仓 ai-guide 文案、WebMCP 工具
       描述/annotations、agent-brief）经真实使用后回写打磨——质量问
       题不分归属，谁坏修谁。
+      （2026-11-04 agent 真用第 1 轮：能力枚举/非法参数/真转写/真合成业务链
+      已通过；发现并修复 ①STT「已转写」未进终态词表导致假超时，②连续调用
+      误读上一轮终态，③Base UI 受控 model/voice/speed 被 DOM 伪赋值后回执
+      假称生效，④create_speech 只回显 filename 未真下载。audio-smoke 追加
+      WebMCP 第二轮真推理＋状态回读＋RIFF 下载回归。真实人用/麦克风轮与最终
+      HTML 报告仍待完成，故 7.4/7.5 暂不勾选。）

@@ -113,8 +113,39 @@ const docJson = await page.evaluate(() => (window).__sttDoc ?? null);
 console.log("doc:", JSON.stringify(docJson).slice(0, 400));
 const text = (docJson?.segments ?? []).map((s) => s.text).join("");
 const segs = (docJson?.segments ?? []).length;
-const ok = segs > 0 && /开放|開放|开饭|开饭|时间|時間|9点|9點|5点|5點/.test(text);
-console.log(ok ? `★ STT 冒烟过：${segs} 段，文本「${text.slice(0, 40)}…」` : "✗ STT 冒烟不过");
+const pageOk = segs > 0 && /开放|開放|开饭|开饭|时间|時間|9点|9點|5点|5點/.test(text);
+console.log(pageOk ? `★ STT 页面冒烟过：${segs} 段，文本「${text.slice(0, 40)}…」` : "✗ STT 页面冒烟不过");
+
+// WebMCP 真推理回归：先把受控 Select 切到另一档，再由工具参数切回 Whisper；
+// 同页第二轮还覆盖 baseline 纪律（上一轮「已转写」不得被秒读为本轮结果）。
+const switchedBefore = await page.evaluate(async () => {
+  if (typeof window.__audioSttSetModel !== "function") return { ok: false, text: "" };
+  window.__audioSttSetModel("sensevoice-small-int8");
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  const text = document.getElementById("model-select")?.textContent ?? "";
+  return { ok: text.includes("sensevoice-small-int8"), text };
+});
+const webmcpOut = await page.evaluate(async ({ sampleUrl }) => {
+  const mc = document.modelContext;
+  const tool = (await mc.getTools()).find((t) => t.name === "transcribe_audio");
+  if (!tool) return { ok: false, error: "transcribe_audio 未注册" };
+  const raw = await mc.executeTool(tool, { fileUrl: sampleUrl, model: "whisper-base-q8" });
+  return typeof raw === "string" ? JSON.parse(raw) : raw;
+}, { sampleUrl: `${base}/sample.wav` });
+const modelText = await page.evaluate(() => document.getElementById("model-select")?.textContent ?? "");
+const webDoc = webmcpOut?.doc ?? {};
+const webText = (webDoc.segments ?? []).map((s) => s.text).join("");
+const webmcpOk = switchedBefore.ok
+  && webmcpOut?.ok === true
+  && webmcpOut?.segmentCount > 0
+  && webDoc.model === "whisper-base-q8"
+  && modelText.includes("whisper-base-q8")
+  && /开放|開放|开饭|时间|時間|9点|9點|5点|5點/.test(webText);
+console.log(webmcpOk
+  ? `★ STT WebMCP 冒烟过：模型状态实生效，${webmcpOut.segmentCount} 段，message=${webmcpOut.message}`
+  : `✗ STT WebMCP 冒烟不过：${JSON.stringify({ switchedBefore, modelText, webmcpOut }).slice(0, 900)}`);
+
+const ok = pageOk && webmcpOk;
 await browser.close();
 server.close();
 process.exit(ok ? 0 : 1);

@@ -6,6 +6,7 @@
  */
 import {
   clickById,
+  readStatus,
   registerWebMCPTools,
   waitForStatusChange,
   type WebMCPToolDef,
@@ -13,11 +14,20 @@ import {
 import { WHISPER_BASE_Q8, SENSEVOICE_SMALL_INT8, totalBytes } from "@fde2e-tools/audio-engine/manifest";
 import { SUPPORTED_EXT } from "./engine";
 
-function setInputValue(id: string, value: string): void {
-  const el = document.getElementById(id);
-  if (!(el instanceof HTMLInputElement)) throw new Error(`页面未就绪（#${id} 缺失）`);
-  el.value = value;
-  el.dispatchEvent(new Event("change", { bubbles: true }));
+const MODEL_IDS = ["whisper-base-q8", "sensevoice-small-int8"] as const;
+type ModelId = (typeof MODEL_IDS)[number];
+type AudioSttBridgeWindow = Window & {
+  __audioSttSetModel?: (modelId: ModelId) => void;
+};
+
+/** 等 React 受控 Select 的真实可见值落地；不用 rAF（后台任务窗会暂停帧时钟）。 */
+async function waitForUiValue(id: string, expected: string, timeoutMs = 5000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if ((document.getElementById(id)?.textContent ?? "").includes(expected)) return true;
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+  }
+  return false;
 }
 
 /** 取当前 TranscriptDoc（App 的 module 态不可直接读——经 window 桥） */
@@ -56,6 +66,9 @@ function buildTools(): WebMCPToolDef[] {
           return { ok: false, error: `fileUrl 不是合法 URL：${fileUrl}` };
         }
         const modelName = String(input.model ?? "whisper-base-q8");
+        if (!MODEL_IDS.includes(modelName as ModelId)) {
+          return { ok: false, error: `未知模型「${modelName}」——用 list_models 查可用模型。` };
+        }
         const name = fileUrl.split("/").pop() ?? "audio";
         // URL 路径不在白名单扩展时以 fetch 内容为准（decodeAudioData 判真），白名单只拦显式坏后缀
         const ext = name.split(".").pop()?.toLowerCase() ?? "";
@@ -73,10 +86,21 @@ function buildTools(): WebMCPToolDef[] {
           const dt = new DataTransfer();
           dt.items.add(file);
           input2.files = dt.files;
-          // 选模型（若非缺省）
-          if (modelName !== "whisper-base-q8") setInputValue("model-select", modelName);
-          clickById("transcribe-btn");
-          const status = await waitForStatusChange(1_800_000);
+
+          // model-select 是 Base UI 受控 Select：DOM 赋值不会进入 React 权威状态。
+          // 经 App 暴露的最小 setter 改值并等提交后，再复用页面按钮主链路。
+          const bridgeWindow = window as AudioSttBridgeWindow;
+          if (typeof bridgeWindow.__audioSttSetModel !== "function") {
+            return { ok: false, error: "页面未就绪（STT 模型状态桥缺失）" };
+          }
+          bridgeWindow.__audioSttSetModel(modelName as ModelId);
+          if (!(await waitForUiValue("model-select", modelName))) {
+            return { ok: false, error: `模型状态未生效：期望 ${modelName}` };
+          }
+
+          const baseline = readStatus().message;
+          if (!clickById("transcribe-btn")) return { ok: false, error: "页面未就绪（#transcribe-btn 缺失）" };
+          const status = await waitForStatusChange(1_800_000, 400, baseline);
           if (!status.message.includes("已转写")) {
             return { ok: false, error: status.message, message: status.message };
           }

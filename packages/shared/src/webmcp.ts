@@ -139,14 +139,14 @@ export function readStatus(): { message: string; ok: boolean } {
 
 /**
  * 工具 #status 的终态词表：全部终态文案（成功/失败/完成/已按/已生成/已载入/
- * 错误…）必含其一；中间态（「正在加载底图…」「正在导出 PDF…」「正在渲染…」
- * 「正在生成 .xlsx…」）刻意不含任何词——防止 B3（对抗审查 2026-10-30）：
- * 首变即返回把中间态谎报成成功。
+ * 已转写/已合成/已下载/错误…）必含其一；中间态（「正在加载底图…」
+ * 「正在导出 PDF…」「正在转写…」「正在合成…」）刻意不含任何词——防止
+ * B3（对抗审查 2026-10-30）：首变即返回把中间态谎报成成功。
  * 「错误」为 office-suite 扩容词（2026-10-31）：办公三站人话错误（「sheets
  * 结构错误」「表名重复」等）经此即时判定终态，不靠超时兜底。
  */
 export const STATUS_TERMINAL_PATTERN =
-  /(成功|失败|完成|已按|已生成|已载入|已接收|已合成|等待输入|请先|还没有|没有可|受限|为空|错误)/;
+  /(成功|失败|完成|已按|已生成|已载入|已接收|已转写|已合成|已下载|等待输入|请先|还没有|没有可|受限|为空|错误)/;
 
 /**
  * 等 #status 进入终态（B3 修复：对抗审查 2026-10-30）。
@@ -154,16 +154,22 @@ export const STATUS_TERMINAL_PATTERN =
  * 解析条件＝文案命中 STATUS_TERMINAL_PATTERN 且经 stableMs 稳定窗确认不再变化
  * （防连变截断）；中间态一律继续等待。整体超时仍未进终态 → 返回当前快照且
  * ok=false（防误报成功——中间态「正在导出…」永不谎报完成）。
+ *
+ * baselineMessage 用于连续调用：给定时，必须先观测到状态离开本轮调用前文案，
+ * 才可把终态判给本轮。这样上一轮残留的「已转写/已合成」不会被新调用秒读为成功；
+ * 既有调用方不传 baseline 时保持原有「启动时已是终态也可返回」语义。
  */
 export function waitForStatusChange(
   timeoutMs = 15000,
   stableMs = 400,
+  baselineMessage?: string,
 ): Promise<{ message: string; ok: boolean }> {
   const el = document.getElementById("status");
   if (!el) return Promise.resolve(readStatus());
   return new Promise((resolve) => {
     let settled = false;
     let lastText = el.textContent ?? "";
+    let leftBaseline = baselineMessage === undefined || lastText !== baselineMessage;
     let confirmTimer = 0;
     const observer = new MutationObserver(watch);
     const finish = (okOverride?: boolean) => {
@@ -180,17 +186,19 @@ export function waitForStatusChange(
       const text = el!.textContent ?? "";
       if (text === lastText) return;
       lastText = text;
+      if (baselineMessage !== undefined && text !== baselineMessage) leftBaseline = true;
       window.clearTimeout(confirmTimer);
       evaluate();
     }
     function evaluate() {
       const text = el!.textContent ?? "";
-      if (STATUS_TERMINAL_PATTERN.test(text)) {
+      if (baselineMessage !== undefined && text !== baselineMessage) leftBaseline = true;
+      if (leftBaseline && STATUS_TERMINAL_PATTERN.test(text)) {
         confirmTimer = window.setTimeout(() => finish(), stableMs);
       }
     }
     observer.observe(el, { characterData: true, childList: true, subtree: true });
-    evaluate(); // 启动时文案可能已是终态
+    evaluate(); // 无 baseline 时保留「启动时已是终态」兼容语义
   });
 }
 

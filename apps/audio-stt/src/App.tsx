@@ -52,6 +52,10 @@ interface Status {
   kind: StatusKind;
 }
 
+type AudioSttBridgeWindow = Window & {
+  __audioSttSetModel?: (modelId: SttModelId) => void;
+};
+
 function fmtTime(t: number): string {
   const m = Math.floor(t / 60);
   const s = Math.floor(t % 60);
@@ -77,8 +81,11 @@ export default function App() {
   const listRef = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
+    const bridgeWindow = window as AudioSttBridgeWindow;
+    bridgeWindow.__audioSttSetModel = (nextModelId) => setModelId(nextModelId);
     registerAppTools();
     return () => {
+      delete bridgeWindow.__audioSttSetModel;
       if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
     };
   }, []);
@@ -177,6 +184,7 @@ export default function App() {
       return;
     }
     if (busy) return;
+    showStatus({ msg: `正在转写 ${file.name}…`, kind: "ok" });
     setBusy(true);
     setWarn(null);
     setDoc(emptyDoc(modelId === "whisper-base-q8" ? "transformers" : "sherpa", modelId));

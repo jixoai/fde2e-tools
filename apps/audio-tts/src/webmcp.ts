@@ -10,6 +10,7 @@ import { safeFilename } from "@fde2e-tools/shared/download";
 import {
   clickById,
   normalizeExecuteResult,
+  readStatus,
   registerWebMCPTools,
   waitForStatusChange,
   type WebMCPToolDef,
@@ -26,6 +27,20 @@ function setInputValue(id: string, value: string): void {
     throw new Error(`页面未就绪（#${id} 缺失）`);
   }
   el.value = value;
+}
+
+type AudioTtsBridgeWindow = Window & {
+  __audioTtsSetOptions?: (options: { voice: string; speed: number }) => void;
+};
+
+/** 等 React 受控 Select/Slider 的真实可见值落地；不用 rAF（后台任务窗会暂停帧时钟）。 */
+async function waitForUiValue(id: string, expected: string, timeoutMs = 5000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if ((document.getElementById(id)?.textContent ?? "").includes(expected)) return true;
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+  }
+  return false;
 }
 
 function buildTools(): WebMCPToolDef[] {
@@ -73,29 +88,40 @@ function buildTools(): WebMCPToolDef[] {
           ".wav",
         );
 
-        // 写输入区＋音色选择＋语速，点页面按钮（与手工操作同链路）
+        // input-text/export-name 是非受控输入，可直接写；voice/speed 是 Base UI
+        // 受控组件，必须经 App 权威 setter，禁止 DOM 伪赋值后回显请求参数。
         setInputValue("input-text", text);
-        const voiceSel = document.getElementById("voice-select");
-        if (voiceSel instanceof HTMLElement && "value" in voiceSel) {
-          (voiceSel as HTMLSelectElement).value = v.name;
-          voiceSel.dispatchEvent(new Event("change", { bubbles: true }));
+        setInputValue("export-name", filename);
+        const bridgeWindow = window as AudioTtsBridgeWindow;
+        if (typeof bridgeWindow.__audioTtsSetOptions !== "function") {
+          return { ok: false, error: "页面未就绪（TTS 音色/语速状态桥缺失）" };
         }
-        // 语速经滑杆：写不了 base-ui 内部态——当前值已满足大多数场景；speed≠1 时提示人话
-        const speedInput = document.getElementById("speed-range");
-        if (speedInput instanceof HTMLInputElement) {
-          speedInput.value = String(speed);
-          speedInput.dispatchEvent(new Event("change", { bubbles: true }));
+        bridgeWindow.__audioTtsSetOptions({ voice: v.name, speed });
+        const [voiceApplied, speedApplied] = await Promise.all([
+          waitForUiValue("voice-select", v.name),
+          waitForUiValue("speed-value", speed.toFixed(1)),
+        ]);
+        if (!voiceApplied || !speedApplied) {
+          return { ok: false, error: `音色/语速状态未生效：期望 ${v.name} @ ${speed.toFixed(1)}×` };
         }
 
-        clickById("generate-btn");
-        const status = await waitForStatusChange(600_000);
+        const baseline = readStatus().message;
+        if (!clickById("generate-btn")) return { ok: false, error: "页面未就绪（#generate-btn 缺失）" };
+        const status = await waitForStatusChange(600_000, 400, baseline);
         if (!/已合成/.test(status.message)) {
           return { ok: false, error: status.message, message: status.message };
         }
-        // 从状态行提取句数与时长
+
+        // 从状态行提取句数与时长；随后复用页面下载按钮，filename 才是实际产物名，
+        // 而不是只在回执里回显请求值。
         const m = status.message.match(/(\d+) 句 · ([\d.]+)s/);
         const player = document.getElementById("audio-player");
         const src = player instanceof HTMLAudioElement ? player.src : "";
+        if (!clickById("download-btn")) return { ok: false, error: "页面未就绪（#download-btn 缺失）" };
+        const downloadStatus = await waitForStatusChange(15_000, 400, status.message);
+        if (!downloadStatus.message.includes("已下载")) {
+          return { ok: false, error: downloadStatus.message, message: downloadStatus.message };
+        }
         return {
           ok: true,
           filename,
@@ -104,7 +130,8 @@ function buildTools(): WebMCPToolDef[] {
           audioUrl: src || undefined,
           voice: v.name,
           speed,
-          message: status.message,
+          message: downloadStatus.message,
+          synthesisMessage: status.message,
         };
       },
     },

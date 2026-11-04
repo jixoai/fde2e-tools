@@ -19,7 +19,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@fde2
 import { Label } from "@fde2e-tools/shared/ui/label";
 import { Slider } from "@fde2e-tools/shared/ui/slider";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@fde2e-tools/shared/ui/select";
-import { downloadBlob } from "@fde2e-tools/shared/download";
+import { downloadBlob, safeFilename } from "@fde2e-tools/shared/download";
 import { AudioLinesIcon, DownloadIcon, PlayIcon, SquareIcon } from "lucide-react";
 import { KOKORO_V1_1_ZH_INT8, totalBytes } from "@fde2e-tools/audio-engine/manifest";
 import { ensureEngine, synthesize, type EnginePhase } from "./engine";
@@ -58,6 +58,10 @@ interface Status {
   kind: StatusKind;
 }
 
+type AudioTtsBridgeWindow = Window & {
+  __audioTtsSetOptions?: (options: { voice: string; speed: number }) => void;
+};
+
 export default function App() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [status, setStatus] = useState<Status>({
@@ -79,8 +83,14 @@ export default function App() {
   const [abSlots, setAbSlots] = useState<Array<{ url: string; label: string }>>([]);
 
   useEffect(() => {
+    const bridgeWindow = window as AudioTtsBridgeWindow;
+    bridgeWindow.__audioTtsSetOptions = (options) => {
+      setVoice(options.voice);
+      setSpeed(options.speed);
+    };
     registerAppTools();
     return () => {
+      delete bridgeWindow.__audioTtsSetOptions;
       if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
     };
   }, []);
@@ -106,6 +116,7 @@ export default function App() {
       return;
     }
     if (generating) return;
+    showStatus({ msg: "正在合成…", kind: "ok" });
     setGenerating(true);
     cancelRef.current = { cancelled: false };
     const cancel = cancelRef.current;
@@ -154,7 +165,9 @@ export default function App() {
       addToAb(wav, `${v?.name ?? sid} @ ${speed.toFixed(1)}×`);
       const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
       const dur = (totalLen / sampleRate).toFixed(1);
-      const filename = DEFAULT_EXPORT_NAME;
+      const exportNameEl = document.getElementById("export-name");
+      const requestedFilename = exportNameEl instanceof HTMLInputElement ? exportNameEl.value : undefined;
+      const filename = safeFilename(requestedFilename, DEFAULT_EXPORT_NAME, ".wav");
       // 历史入库（IndexedDB；失败不阻塞主流程）
       const durationSec = Number(dur);
       void saveGeneration({
@@ -184,8 +197,9 @@ export default function App() {
       return;
     }
     const nameEl = document.getElementById("export-name");
-    const name = (nameEl instanceof HTMLInputElement ? nameEl.value : "").trim() || DEFAULT_EXPORT_NAME;
-    downloadBlob(lastWavRef.current, name.toLowerCase().endsWith(".wav") ? name : `${name}.wav`);
+    const requestedName = nameEl instanceof HTMLInputElement ? nameEl.value : undefined;
+    const name = safeFilename(requestedName, DEFAULT_EXPORT_NAME, ".wav");
+    downloadBlob(lastWavRef.current, name);
     showStatus({ msg: `已下载 ${name}`, kind: "ok" });
   }
 
