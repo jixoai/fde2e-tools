@@ -11,7 +11,12 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = dirname(fileURLToPath(import.meta.url)) + "/..";
 // 必需模型 root 按 manifest 投影（models-fetch --emit-manifest 与 manifest.ts 同源）
-const REQUIRED_MODELS = ["whisper-base-q8", "kokoro-v1_1-zh-int8"];
+const REQUIRED_MODELS = [
+  "whisper-base-q8",
+  "kokoro-v1_1-zh-int8",
+  "zipformer-bilingual-streaming",
+  "silero-vad",
+];
 const manifest = JSON.parse(readFileSync(join(ROOT, "deploy/models.manifest.json"), "utf8"));
 const REQUIRED = REQUIRED_MODELS.map(
   (id) => manifest.find((m) => m.modelId === id)?.root ?? id,
@@ -21,7 +26,7 @@ if (missing.length) {
   console.error(`✗ 权重不在场（缺 ${missing.join(", ")}）——先跑 pnpm prep:audio-smoke-weights（Owner 裁决：缺失=fail 非 skip）`);
   process.exit(1);
 }
-console.log("✓ 权重预取检查过（whisper-base-q8 ＋ kokoro-v1_1-zh-int8 在场）");
+console.log("✓ 权重预取检查过（Whisper/Kokoro/Zipformer/Silero 在场）");
 
 for (const [name, script] of [
   ["stt", "scripts/audio-stt-smoke.mjs"],
@@ -34,4 +39,4 @@ for (const [name, script] of [
     process.exit(1);
   }
 }
-console.log("\n★ audio-smoke 全过（stt＋tts 真推理往返）");
+console.log("\n★ audio-smoke 全过（STT 文件＋WebMCP＋实时麦克风，TTS 页面＋WebMCP 真推理）");

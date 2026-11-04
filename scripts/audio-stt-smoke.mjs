@@ -9,7 +9,7 @@
  * 用法：node scripts/audio-stt-smoke.mjs
  */
 import { createServer } from "node:http";
-import { readFileSync, existsSync, statSync } from "node:fs";
+import { readFileSync, existsSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, extname, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
@@ -145,12 +145,85 @@ console.log(webmcpOk
   ? `★ STT WebMCP 冒烟过：模型状态实生效，${webmcpOut.segmentCount} 段，message=${webmcpOut.message}`
   : `✗ STT WebMCP 冒烟不过：${JSON.stringify({ switchedBefore, modelText, webmcpOut }).slice(0, 900)}`);
 
-const ok = pageOk && webmcpOk;
 await browser.close();
-server.close();
-process.exit(ok ? 0 : 1);
+if (!pageOk || !webmcpOk) {
+  server.close();
+  process.exit(1);
+}
 
-console.log(JSON.stringify(out, null, 2).slice(0, 900));
-const doc = out.doc ?? {};
+// 麦克风实时全链：Chromium 官方 fake audio capture 只替换输入硬件，页面仍走
+// getUserMedia → AudioWorklet → Zipformer WASM → TranscriptDoc → 停止闭段。
+// 这是确定性 CI 门，不冒充实体麦克风；实体设备轮在 7.4 单独留证。
+const micErrors = [];
+// Chromium 会循环 fake-capture 文件；给固定样例尾部追加 3 秒零 PCM，使 Sherpa
+// 在首轮循环结束前命中 1.2/2.4s endpoint，直接覆盖自动闭段分支。
+const micFixture = `/tmp/audio-stt-realtime-${process.pid}.wav`;
+const sourceWav = readFileSync(SAMPLE);
+if (sourceWav.toString("ascii", 0, 4) !== "RIFF" || sourceWav.toString("ascii", 36, 40) !== "data") {
+  throw new Error("实时麦克风夹具不是标准 44-byte PCM WAV");
+}
+const silence = Buffer.alloc(sourceWav.readUInt32LE(28) * 3);
+const micWav = Buffer.concat([sourceWav, silence]);
+micWav.writeUInt32LE(micWav.length - 8, 4);
+micWav.writeUInt32LE(sourceWav.readUInt32LE(40) + silence.length, 40);
+writeFileSync(micFixture, micWav);
+const micBrowser = await chromium.launch({
+  executablePath: chrome,
+  headless: true,
+  args: [
+    "--no-sandbox",
+    "--use-fake-ui-for-media-stream",
+    "--use-fake-device-for-media-stream",
+    `--use-file-for-fake-audio-capture=${micFixture}`,
+  ],
+});
+const micPage = await micBrowser.newPage();
+micPage.on("pageerror", (e) => micErrors.push(String(e)));
+let micDoc = null;
+let micStatus = "";
+let realtimeOk = false;
+try {
+  await micPage.goto(base + "/", { waitUntil: "load" });
+  await micPage.click("#mic-btn");
+  await micPage.waitForFunction(
+    () => {
+      const text = (window.__sttDoc?.segments ?? []).map((s) => s.text).join("");
+      return /开放时间.*九点.*下午五点/.test(text);
+    },
+    undefined,
+    { timeout: 120000 },
+  );
+  await micPage.waitForFunction(
+    () => (window.__sttDoc?.segments ?? []).some((s) => typeof s.end === "number"),
+    undefined,
+    { timeout: 15000 },
+  );
+  await micPage.click("#mic-btn");
+  await micPage.waitForFunction(
+    () => document.getElementById("status")?.textContent?.includes("已停止麦克风实时转写"),
+    undefined,
+    { timeout: 10000 },
+  );
+  micDoc = await micPage.evaluate(() => window.__sttDoc ?? null);
+  micStatus = (await micPage.textContent("#status")) ?? "";
+  const micText = (micDoc?.segments ?? []).map((s) => s.text).join("");
+  realtimeOk = micErrors.length === 0
+    && micStatus.includes("已停止麦克风实时转写")
+    && micDoc?.engine === "sherpa"
+    && micDoc?.model === "zipformer-bilingual-streaming"
+    && typeof micDoc?.duration === "number"
+    && micDoc.duration > 0
+    && (micDoc.segments ?? []).every((s) => typeof s.end === "number")
+    && /开放时间.*九点.*下午五点/.test(micText);
+} catch (e) {
+  micErrors.push(String(e));
+  micDoc = await micPage.evaluate(() => window.__sttDoc ?? null).catch(() => null);
+  micStatus = (await micPage.textContent("#status").catch(() => "")) ?? "";
+}
+console.log(realtimeOk
+  ? `★ STT 实时麦克风冒烟过：AudioWorklet→Zipformer→闭段，文本「${micDoc.segments.map((s) => s.text).join("").slice(0, 40)}…」`
+  : `✗ STT 实时麦克风冒烟不过：${JSON.stringify({ micStatus, micDoc, micErrors }).slice(0, 1200)}`);
+await micBrowser.close();
+unlinkSync(micFixture);
 server.close();
-process.exit(ok ? 0 : 1);
+process.exit(realtimeOk ? 0 : 1);

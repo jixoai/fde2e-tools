@@ -81,14 +81,18 @@ async function ensureStreamingEngine(
 function streamingConfig(): unknown {
   return {
     modelConfig: {
-      transducer: { encoder: "./encoder.onnx", decoder: "./decoder.onnx", joiner: "./joiner.onnx" },
+      transducer: {
+        encoder: "./encoder-epoch-99-avg-1.int8.onnx",
+        decoder: "./decoder-epoch-99-avg-1.onnx",
+        joiner: "./joiner-epoch-99-avg-1.int8.onnx",
+      },
       tokens: "./tokens.txt",
       numThreads: 1,
       debug: 0,
       provider: "cpu",
     },
     decodingMethod: "greedy_search",
-    enableEndpointDetection: true,
+    enableEndpoint: 1,
     rule1MinTrailingSilence: 2.4,
     rule2MinTrailingSilence: 1.2,
     rule3MinUtteranceLength: 20,
@@ -112,10 +116,27 @@ export async function startRealtime(
   });
   const source = audioCtx.createMediaStreamSource(stream);
   const node = new AudioWorkletNode(audioCtx, "mic-capture");
+  // Worklet 必须接入一条可被音频引擎持续拉取的输出图；只 source.connect(node)
+  // 而无下游时 Chromium 会裁剪节点，真实麦克风已授权但永远没有 PCM 回调。
+  // 零增益 sink 保持静音，避免把麦克风回放到扬声器形成啸叫。
+  const sink = audioCtx.createGain();
+  sink.gain.value = 0;
+  source.connect(node);
+  node.connect(sink).connect(audioCtx.destination);
+  await audioCtx.resume();
+  if (audioCtx.state !== "running") {
+    source.disconnect();
+    node.disconnect();
+    sink.disconnect();
+    stream.getTracks().forEach((t) => t.stop());
+    await audioCtx.close().catch(() => undefined);
+    throw new Error(`音频上下文未启动（state=${audioCtx.state}）——请再次点击麦克风按钮`);
+  }
 
   const segs: TranscriptSegment[] = [];
   let currentText = "";
   let ended = false;
+  let hasDecoded = false;
   let segStart = 0;
   let clock = 0; // 已喂秒数
 
@@ -125,17 +146,26 @@ export async function startRealtime(
     const samples = e.data.samples!;
     recStream.acceptWaveform(TARGET_SR, samples);
     clock += samples.length / TARGET_SR;
-    while (rec.isReady(recStream)) rec.decode(recStream);
+    while (rec.isReady(recStream)) {
+      rec.decode(recStream);
+      hasDecoded = true;
+    }
+    // Sherpa 浏览器 WASM 在第一次 decode 前调用 getResult 会抛
+    // RuntimeError("null function")；POC 按秒读结果曾绕过该窗口。结果与
+    // endpoint 投影必须以「至少一次 decode 已完成」为权威门。
+    if (!hasDecoded) return;
     // 端点检测（句界）→ 落段
     if (rec.isEndpoint(recStream)) {
       const raw = rec.getResult(recStream);
       const parsed = typeof raw === "string" ? (JSON.parse(raw) as { text?: string }) : raw;
       const text = String(parsed.text ?? "").trim();
-      if (text && text !== currentText) {
+      // endpoint 的最终文本通常与上一帧 partial 相等；拿 currentText 去重会把
+      // 整句清空。只与已落段比对，partial 相等仍须闭合成正式 segment。
+      if (text && segs.at(-1)?.text !== text) {
         segs.push({ id: segs.length, text, start: segStart, end: clock });
-        currentText = "";
-        segStart = clock;
       }
+      currentText = "";
+      segStart = clock;
       rec.reset(recStream);
     } else {
       const raw = rec.getResult(recStream);
@@ -151,14 +181,36 @@ export async function startRealtime(
       createdAt: Date.now(),
     });
   };
-  source.connect(node);
 
   return {
     async stop() {
       ended = true;
       node.port.postMessage({ type: "stop" });
       recStream.inputFinished();
+      while (rec.isReady(recStream)) {
+        rec.decode(recStream);
+        hasDecoded = true;
+      }
+      if (hasDecoded) {
+        const raw = rec.getResult(recStream);
+        const parsed = typeof raw === "string" ? (JSON.parse(raw) as { text?: string }) : raw;
+        const finalText = String(parsed.text ?? currentText).trim() || currentText;
+        if (finalText && segs.at(-1)?.text !== finalText) {
+          segs.push({ id: segs.length, text: finalText, start: segStart, end: clock });
+        }
+        currentText = "";
+        onDoc({
+          segments: [...segs],
+          language: "zh",
+          engine: "sherpa",
+          model: "zipformer-bilingual-streaming",
+          duration: clock,
+          createdAt: Date.now(),
+        });
+      }
       source.disconnect();
+      node.disconnect();
+      sink.disconnect();
       stream.getTracks().forEach((t) => t.stop());
       await audioCtx.close().catch(() => undefined);
     },

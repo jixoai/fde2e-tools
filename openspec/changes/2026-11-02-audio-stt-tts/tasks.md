@@ -181,3 +181,15 @@
       假称生效，④create_speech 只回显 filename 未真下载。audio-smoke 追加
       WebMCP 第二轮真推理＋状态回读＋RIFF 下载回归。真实人用/麦克风轮与最终
       HTML 报告仍待完成，故 7.4/7.5 暂不勾选。）
+      （2026-11-04 麦克风轮：远程测试机为 Mac mini，无实体输入设备；默认输入
+      BlackHole 2ch，另有 LarkAudioDevice，两者经 FFmpeg 独立录音探针均为全零，
+      故不得伪称「实体麦克风通过」。改用 Chromium 官方
+      `--use-file-for-fake-audio-capture` 跑生产 getUserMedia→AudioWorklet→
+      Zipformer→TranscriptDoc 全链，发现并修复 ⑤运行时配置读不存在的短文件名
+      而 manifest/MEMFS 保留上游真名，导致 isReady 恒 false；⑥Worklet 无下游被
+      浏览器裁剪；⑦首次 decode 前 getResult 抛 null function；⑧endpoint 把
+      final==partial 误当重复后清空；⑨stop 不 flush/闭段；⑩端点开关误写成
+      wrapper 不识别的 enableEndpointDetection（真实键＝enableEndpoint），静音不
+      自动闭段。永久 audio-smoke 已覆盖完整句「开放时间早上九点至下午五点」、
+      3 秒尾静音自动 endpoint 及停止后数值 end/duration。
+      实体麦克风只剩换一台具备实体输入的设备补证。）
