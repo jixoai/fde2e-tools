@@ -147,7 +147,7 @@
       `.agents/reports/tools/audio-stt-tts/vision-7.3/`（e2e-report-gen
       生成 10/10 PASS）；顺手修 engine.ts FS 类型缺 mkdirTree 声明
       （check 曾红）。8f3e543。）
-- [ ] 7.4 **真实 omni 使用测试（E2E 报告双支柱之一，与 7.3 并列硬门）**：
+- [x] 7.4 **真实 omni 使用测试（E2E 报告双支柱之一，与 7.3 并列硬门）**：
       用**本地跑的 omni**（fde2e-omni-v1；线上 omni 在高频迭代重启、
       不可作稳定被测端——Owner 裁决 2026-11-02）驱动 BU 桥
       （webmcp_list/webmcp_call，开法见 fde2e-bu-v1/docs/webmcp.md：
@@ -169,7 +169,7 @@
       回写 fde2e-tools 仓与相关 skill 文档**（见 7.5）；
       ④ E2E 证据落 `.agents/reports/tools/audio-stt-tts/`（report.html
       由 e2e-report-gen 管线生成，禁手写 HTML；E2E-REPORTS.md 入索引）。
-- [ ] 7.5 **反哺打磨回路（连续迭代不一次收工）**：7.4 每一轮完测后输出
+- [x] 7.5 **反哺打磨回路（连续迭代不一次收工）**：7.4 每一轮完测后输出
       「缺陷→修复→复测」闭环清单；至少一轮「agent 真用」+一轮「人真用」
       （或 Owner 参与）通过、且上一轮遗留缺陷清零，两站才算交付达标。
       本 skill/tools 双面（如本仓 ai-guide 文案、WebMCP 工具
@@ -199,3 +199,11 @@
       截图，故只作为 Owner 见证，不冒充图像证据。临时 frpc 片段已在确认后
       `tunnel:unexpose audio-stt` 清理。实体输入功能不确定性已关闭；逐步骤截图型
       HTML 报告及人用文件编辑/导出全流程仍待补齐，7.4/7.5 继续不勾选。）
+      （2026-11-04 最终收口：Omni Browser Bridge 真实托管窗口完成 STT
+      upload→转写→播放→编辑→SRT/JSON 下载反读，以及 TTS 修改文本→
+      zm_050/1.5×→合成→播放→改文重生成→WAV 下载反读；11 个 UI 步骤
+      PASS 11/FAIL 0 且每步截图。统一报告落主仓
+      `.agents/reports/tools/audio-stt-tts/omni-7.4-7.5/report.html`，索引已更新。
+      最终绿门：check/build、interface-lint、webmcp 原生/polyfill、smoke 46/46、
+      audio-smoke（文件/WebMCP/实时麦克风/TTS）全绿；上一轮遗留缺陷清零。
+      tasks 7.4/7.5 完成，31/31。）
