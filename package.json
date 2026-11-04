@@ -12,6 +12,9 @@
     "check": "pnpm -r run check",
     "build": "pnpm -r run build",
     "webmcp:check": "node scripts/webmcp-check.mjs",
+    "prep:audio-smoke-weights": "node deploy/models-fetch.mjs --model whisper-base-q8 && node deploy/models-fetch.mjs --model kokoro-v1_1-zh-int8 && node deploy/models-fetch.mjs --model zipformer-bilingual-streaming && node deploy/models-fetch.mjs --model silero-vad",
+    "audio-smoke": "node scripts/audio-smoke.mjs",
+    "vision:walk": "node scripts/vision-walk.mjs",
     "smoke:check": "node scripts/smoke-check.mjs",
     "dev:directory": "pnpm --filter directory dev",
     "dev:pdf-tool": "pnpm --filter pdf-tool dev",
@@ -24,7 +27,9 @@
     "dev:easy-pptx": "pnpm --filter easy-pptx dev",
     "dev:xlsx-editor": "pnpm --filter xlsx dev",
     "dev:docx-editor": "pnpm --filter docx dev",
-    "dev:pptx-editor": "pnpm --filter pptx dev"
+    "dev:pptx-editor": "pnpm --filter pptx dev",
+    "dev:audio-stt": "pnpm --filter audio-stt dev",
+    "dev:audio-tts": "pnpm --filter audio-tts dev"
   },
   "devDependencies": {
     "playwright-core": "^1.55.0",

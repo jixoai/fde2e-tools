@@ -44,6 +44,9 @@ const EXPECT = {
   xlsx: { tools: ["set_cells", "set_formula", "format_range", "add_sheet", "import_xlsx", "export_xlsx", "get_snapshot", "export_pdf", "export_png"] },
   docx: { tools: ["set_content", "append_markdown", "insert_heading", "insert_table", "export_docx", "import_docx", "export_pdf", "export_png"] },
   pptx: { tools: ["add_slide", "set_title", "add_bullets", "export_pptx", "import_pptx", "export_pdf", "export_png", "export_pages_png", "export_long_png"] },
+  // ---------- audio 两站（audio-stt-tts） ----------
+  "audio-stt": { tools: ["transcribe_audio", "list_models", "get_capabilities"] },
+  "audio-tts": { tools: ["create_speech", "list_voices", "get_capabilities"] },
 };
 
 /**

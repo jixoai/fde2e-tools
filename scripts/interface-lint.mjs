@@ -36,10 +36,16 @@ function read(p) {
 function parseRegistry() {
   const src = read("packages/shared/src/registry.ts");
   const out = {};
-  const entryRe = /id: "([a-z-]+)"[\s\S]*?tools: \[([\s\S]*?)\n    \],\n    repoPath: "apps\/([a-z-]+)"/g;
-  for (const m of src.matchAll(entryRe)) {
-    const [, id, toolsBlock, repo] = m;
-    if (id !== repo) fail(`registry 条目 id=${id} 与 repoPath=${repo} 不一致`);
+  // 条目切分：id: " 到下一 id: " 或文件尾（正则贪穿多行嵌套不可靠——editor
+  // tools:[] 与两 audio 新条目实证）。每段内独立解析。
+  const parts = src.split(/\n  \{\n    id: /).slice(1);
+  for (const part of parts) {
+    const id = (part.match(/^"([a-z-]+)"/) ?? [])[1];
+    if (!id) continue;
+    const repo = (part.match(/repoPath: "([^"]+)"/) ?? [])[1] ?? "";
+    if (!repo.startsWith("apps/")) continue; // external（editor AGPL 镜像）跳过
+    if (repo !== `apps/${id}`) fail(`registry 条目 id=${id} 与 repoPath=${repo} 不一致`);
+    const toolsBlock = (part.match(/tools: \[([\s\S]*?)\n    \],/) ?? [])[1] ?? "";
     const names = [...toolsBlock.matchAll(/\bname: "([a-z0-9_-]+)"/g)].map((x) => x[1]);
     if (!names.length) fail(`registry 条目 ${id} tools 面为空或解析失败`);
     if (new Set(names).size !== names.length) fail(`registry 条目 ${id} tools 面有重名: ${names.join(",")}`);
@@ -76,6 +82,8 @@ const SELECTOR_WHITELIST = new Set(["items", "sheets", "section", "pages"]);
 const APPS = Object.keys(registry);
 
 for (const app of APPS) {
+  // editor＝AGPL 上游镜像（external repoPath，不经本仓构建）——无本仓 webmcp.ts 可读
+  if (app === "editor") continue;
   const { names, src } = parseAppTools(app);
   // 三面一致（断言 4 的 app 侧）
   const reg = registry[app] ?? [];

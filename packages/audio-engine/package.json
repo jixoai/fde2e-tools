@@ -1,0 +1,20 @@
+{
+  "name": "@fde2e-tools/audio-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "音频引擎装载层（audio-stt-tts）：模型 manifest 单源、设备能力探测（can(x) 语义）、Cache API 缓存层；双引擎装配在各 app 按需 import（transformers.js npm 依赖按 app 懒加载，sherpa wasm vendor 产物按 app 懒加载）",
+  "exports": {
+    "./manifest": "./src/manifest.ts",
+    "./capabilities": "./src/capabilities.ts",
+    "./cache": "./src/cache.ts",
+    "./downloader": "./src/downloader.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "license": "Apache-2.0"
+}

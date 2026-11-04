@@ -424,6 +424,45 @@ export const TOOLS: ToolMeta[] = [
     tools: [],
     repoPath: "external:ghcr.io/ranuts/document（AGPL 未修改镜像，不经本仓构建）",
   },
+  // ---------- audio-stt / audio-tts（audio-stt-tts change，2026-11 开工）----------
+  // 浏览器本地语音双工具（WebGPU/WASM 推理，零云端）：模型权重不入仓、
+  // 按模型 manifest 分发（deploy/models-fetch.sh），许可白名单见各站 ai-guide。
+  {
+    id: "audio-stt",
+    name: "本地语音转文字",
+    tagline: "音频→带时间轴文本（whisper/SenseVoice 本地推理）",
+    description:
+      "音频文件或麦克风 → 带时间轴的转写稿。双引擎档位：Whisper base q8（多语兜底 77MB）与 SenseVoice-Small int8（中文优先 228MB，含情绪事件标签）＋Zipformer 流式（麦克风实时，真流式）。30s 分片转写＋长音频 pipeline 重建防御；段级同步/编辑；导出 SRT/VTT/TXT/JSON。全部在本浏览器推理，音频不离开设备（首次使用需下载所选模型）。",
+    tags: ["语音", "转写", "字幕", "srt", "stt", "whisper", "sensevoice", "语音识别", "asr", "麦克风"],
+    subdomain: "stt.tool.fde2e.com",
+    aiGuideSummary:
+      "音频填 <input id=input-file>（wav/mp3/m4a/ogg/flac/webm/mp4/mov），选模型 id=model-select，点 transcribe-btn 转写；段列表 id=segments 点段跳播、段文可编辑；导出 export-srt/vtt/txt/json。WebMCP：transcribe_audio（fileUrl→TranscriptDoc JSON）＋list_models＋get_capabilities。麦克风实时＝mic-btn（Zipformer 真流式）。",
+    urlParams: [],
+    tools: [
+      { name: "transcribe_audio", description: "音频 URL → TranscriptDoc JSON（segments+words 时间轴；模型可选 whisper-base-q8/sensevoice-small-int8；首次需下载模型）" },
+      { name: "list_models", description: "枚举转写模型档位（id/引擎/体积/许可）——transcribe_audio 的 model 取值域" },
+      { name: "get_capabilities", description: "只读能力面（引擎/分片参数/导出格式/支持格式清单）" },
+    ],
+    repoPath: "apps/audio-stt",
+  },
+  {
+    id: "audio-tts",
+    name: "本地语音合成",
+    tagline: "文本→语音（Kokoro 中文 103 音色本地合成）",
+    description:
+      "文本 → 24kHz 语音（wav 下载/试听）。Kokoro v1.1-zh int8（Apache-2.0，103 音色 zf_001…zm_100，中英混说，约 188MB 首载）经 sherpa-onnx WASM 本地合成；长文自动切句流式（边生成边播）；生成历史（IndexedDB）与 A/B 并排对比。模型不支持情绪/语气标签（能力如实声明，界面无假控件）。全部本地推理，文本与音频不离开设备。",
+    tags: ["语音", "合成", "配音", "tts", "kokoro", "文字转语音", "朗读", "音色"],
+    subdomain: "tts.tool.fde2e.com",
+    aiGuideSummary:
+      "文本填 <textarea id=input-text>，音色 id=voice-select（103 选，按名字如 zf_001），语速 #speed-range（0.5-2.0），点 generate-btn 合成 → audio-player 试听 / download-btn 下载 audio-tts-export.wav。WebMCP：create_speech（text/voice/speed/filename→下载 wav）＋list_voices（103 音色）＋get_capabilities。本模型不支持情绪标签。",
+    urlParams: [],
+    tools: [
+      { name: "create_speech", description: "文本 → 合成并下载 .wav（Kokoro v1.1-zh；voice=音色名见 list_voices；speed 0.5-2.0；长文自动切句流式；返回时长/句数）" },
+      { name: "list_voices", description: "枚举 103 音色（sid/name/分组）——create_speech 的 voice 取值域" },
+      { name: "get_capabilities", description: "只读能力面（模型/音色数/语速范围/许可；不支持的情绪标签如实标注）" },
+    ],
+    repoPath: "apps/audio-tts",
+  },
 ];
 
 export function getTool(id: string): ToolMeta | undefined {

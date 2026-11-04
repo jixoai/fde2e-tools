@@ -1,0 +1,10 @@
+/*
+ * 全局样式 —— Tailwind v4 + shadcn（base-nova）+ solid-glass 官方主题。
+ * 导入顺序与 source() 收窄纪律同仓内各站（见 apps/easy-xlsx/src/app.css 头注）。
+ */
+@import "tailwindcss" source("../");
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fde2e-tools/shared/theme/solid-glass.css";
+
+@source "../../../packages/shared/src";

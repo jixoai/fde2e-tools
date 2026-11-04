@@ -4,3 +4,6 @@ dist/
 .DS_Store
 .env*
 !.env.example
+models/
+.models-cache/
+apps/audio-stt/src/vendor/transformers/

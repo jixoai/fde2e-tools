@@ -32,12 +32,23 @@ apps/
   docx/        专业文档编辑器（TipTap v3；md 子集单源解析；docx@9/mammoth 双向桥；WebMCP 六语义算子）
   pptx/        专业幻灯编辑器（PPTist v2 整库嵌入，src/pptist/ 逐字 vendor；**本目录 AGPL-3.0**；
                Vue 岛挂载＋Pinia store 驱动 WebMCP 五工具；见 apps/pptx/README.md 许可边界）
+  audio-stt/   本地语音转文字（whisper q8＋SenseVoice int8 双档；sherpa wasm＋transformers.js
+               双轨装载；分片转写＋段级同步/编辑；SRT/VTT/TXT/JSON 导出；麦克风实时 Zipformer 真流式）
+  audio-tts/   本地语音合成（Kokoro v1.1-zh int8 103 音色；sherpa wasm＋MEMFS 动态装载；
+               句切流式边生成边播；历史＋A/B 对比）
 packages/
   shared/      工具 registry 单源 / solid-glass 主题 vendor / shadcn 官方组件收编 /
                WebMCP 注册助手 + 官方 polyfill vendor / 下载助手（downloadBlob/safeFilename）
+  audio-engine/ 音频引擎装载层（模型 manifest 单源 bytes+sha256 / 设备能力探测 tier 门 /
+               Cache API 缓存层 / downloader-core 浏览器集成）
 deploy/
   tools-upload.sh   上传脚本（tar-over-ssh；目标目录 TOOLS_DEST 由编排者给）
   editor-fetch.sh   编辑器站二期：钉 digest 拉取/运行/冒烟（AGPL 合规形态）
+  models-fetch.sh   音频模型权重拉取（manifest 单源驱动；sha 门 fail-closed；seed-upload）
+scripts/（音频三件）
+  audio-stt-smoke.mjs     STT 站浏览器 E2E 冒烟（真转写 TranscriptDoc 断言）
+  poc-sherpa-sensevoice.cjs  SenseVoice offline POC（RTF 0.22 实测）
+  poc-sherpa-streaming.cjs   Zipformer 流式 POC（RTF 0.144 真流式裁决）
 scripts/
   webmcp-check.mjs  WebMCP 绿门（headless Chromium + WebMCP flag 下 getTools() 断言
                     + 三站 create_* executeTool 全链真下载 + 非法入参矩阵）
