@@ -193,3 +193,9 @@
       自动闭段。永久 audio-smoke 已覆盖完整句「开放时间早上九点至下午五点」、
       3 秒尾静音自动 endpoint 及停止后数值 end/duration。
       实体麦克风只剩换一台具备实体输入的设备补证。）
+      （2026-11-04 实体麦克风补证：临时曝光
+      `https://local-sword-audio-stt.fde2e.com` 后，Owner 在局域网 MacBook 的
+      Chrome 中完成真实麦克风授权、发声与实时转写，明确确认功能通过；本轮未留
+      截图，故只作为 Owner 见证，不冒充图像证据。临时 frpc 片段已在确认后
+      `tunnel:unexpose audio-stt` 清理。实体输入功能不确定性已关闭；逐步骤截图型
+      HTML 报告及人用文件编辑/导出全流程仍待补齐，7.4/7.5 继续不勾选。）
