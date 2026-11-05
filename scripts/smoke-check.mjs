@@ -1242,18 +1242,18 @@ async function main() {
     });
 
     // ---------- img-tool ----------
-    await check("directory：registry 渲染 + 纯前端搜索（audio 两卡加入后 13 卡全现役、0 建设中占位）", async () => {
+    await check("directory：registry 渲染 + 纯前端搜索（Film 卡加入后 14 卡全现役、0 建设中占位）", async () => {
       await withPage("directory", "", async (page) => {
-        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length >= 13, { timeout: 30000 });
+        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length >= 14, { timeout: 30000 });
         const total = await page.evaluate(() => document.querySelectorAll('[data-slot="card"]').length);
-        if (total !== 13) throw new Error(`卡片数不符: ${total}（期望 13＝11 现役＋audio 两卡 + 0 建设中占位）`);
+        if (total !== 14) throw new Error(`卡片数不符: ${total}（期望 14＝原 13 现役＋视频剪辑工作台 + 0 建设中占位）`);
         const comingSoon = await page.evaluate(() => document.querySelectorAll('[data-testid="coming-soon-badge"]').length);
         if (comingSoon !== 0) throw new Error(`建设中 Badge 数不符: ${comingSoon}（期望 0）`);
         // 「图片」命中 img-tool + pptx 编辑器（特性描述含「图片表格图表」，2026-10-31 起）
         await page.fill('input[aria-label="搜索工具"]', "图片");
         await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 2, { timeout: 30000 });
         const count = await page.textContent("main, body");
-        if (!count.includes("2 / 13")) throw new Error("搜索计数未显示 2 / 13");
+        if (!count.includes("2 / 14")) throw new Error("搜索计数未显示 2 / 14");
         await page.fill('input[aria-label="搜索工具"]', "表格生成");
         await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
         await page.fill('input[aria-label="搜索工具"]', "univer");
@@ -1279,6 +1279,26 @@ async function main() {
         await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
         // 「whisper」命中 audio-stt
         await page.fill('input[aria-label="搜索工具"]', "whisper");
+        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
+      });
+    });
+
+    await check("directory：视频剪辑工作台卡（搜索/入口/35 项 WebMCP 单源投影）", async () => {
+      await withPage("directory", "", async (page) => {
+        await page.fill('input[aria-label="搜索工具"]', "视频剪辑");
+        await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
+        const card = await page.evaluate(() => {
+          const el = document.querySelector('[data-slot="card"]');
+          return {
+            text: el?.textContent ?? "",
+            href: el?.querySelector('a[href*="film.tool.fde2e.com"]')?.getAttribute("href") ?? "",
+          };
+        });
+        if (!card.text.includes("浏览器视频剪辑工作台")) throw new Error("Film 黄页卡名称缺失");
+        if (!card.text.includes("WebMCP 35 项")) throw new Error("Film 黄页卡未按 35 项摘要呈现");
+        if (!card.text.includes("film_state") || !card.text.includes("edit_apply")) throw new Error("Film 黄页卡 WebMCP 代表面缺失");
+        if (card.href !== "https://film.tool.fde2e.com/") throw new Error(`Film 黄页入口异常: ${card.href}`);
+        await page.fill('input[aria-label="搜索工具"]', "OPFS WebCodecs");
         await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
       });
     });

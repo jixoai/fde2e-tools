@@ -26,10 +26,12 @@ const DIRECTORY_AI_GUIDE = `===== AI 使用说明（给自动化代理读的纯�
   WebMCP 直接驱动编辑器内核）；easy-xlsx/docx/pptx＝轻量快速档（表单一键生成文件）。
 - 各工具页首都有 <pre id="ai-guide">，是给自动化代理读的完整用法说明（含 URL 参数契约）。
 - URL 参数契约是稳定接口：智能体按参数调用工具，契约变更会同步登记在各工具 ai-guide。
-- 加新工具＝仓库 packages/shared registry 加一条，黄页自动收录。`;
+- 加新工具＝packages/shared registry 加一条；本仓工具再建 apps/<id>，外部静态工具登记 external repoPath。黄页自动收录。`;
 
 function ToolCard({ tool, previewable }: { tool: ToolMeta; previewable: boolean }) {
   const home = toolHomeUrl(tool);
+  const webMcpNames = tool.tools.map((entry) => entry.name);
+  const webMcpPreview = webMcpNames.slice(0, 4).join(" / ");
   // 建设中占位目（registry comingSoon）：向同名轻量快速档（easy-<id>）引流
   const easyAlt = tool.comingSoon ? getTool(`easy-${tool.id}`) : undefined;
   return (
@@ -85,8 +87,8 @@ function ToolCard({ tool, previewable }: { tool: ToolMeta; previewable: boolean 
         )}
         <p className="m-0 font-mono text-xs/5 text-muted-foreground">{tool.aiGuideSummary}</p>
         {tool.tools.length > 0 && (
-          <p className="m-0 text-xs text-muted-foreground">
-            WebMCP：{tool.tools.map((t) => t.name).join(" / ")}
+          <p className="m-0 text-xs text-muted-foreground" title={webMcpNames.join(" / ")}>
+            WebMCP {tool.tools.length} 项：{webMcpPreview}{tool.tools.length > 4 ? " / …" : ""}
           </p>
         )}
       </CardContent>
