@@ -426,7 +426,8 @@ export const TOOLS: ToolMeta[] = [
   },
   // ---------- 浏览器视频剪辑（web-openfilm-editor，独立 MIT fork 仓）----------
   // 外部静态工具：实现与 35 项 WebMCP 面都在 fde2e-tools-film；本 registry 只做
-  // 黄页/搜索/agent 枚举投影，不复制实现或 schema。
+  // 黄页/搜索/agent 枚举投影，不复制实现或 schema。上游锚定＝openfilm/openfilm@9375992
+  // （完整 provenance/MIT 义务见 fde2e-tools-film/FORK.md）。
   {
     id: "film",
     name: "浏览器视频剪辑工作台",
@@ -475,7 +476,7 @@ export const TOOLS: ToolMeta[] = [
       { name: "produce_render", description: "探测/请求视频渲染能力" },
       { name: "produce_export_status", description: "读取编码与导出环境状态" },
     ],
-    repoPath: "external:fde2e-tools-film/packages/openfilm（MIT fork，独立仓）",
+    repoPath: "external:fde2e-tools-film/packages/openfilm（MIT fork，upstream openfilm/openfilm@9375992）",
   },
   // ---------- audio-stt / audio-tts（audio-stt-tts change，2026-11 开工）----------
   // 浏览器本地语音双工具（WebGPU/WASM 推理，零云端）：模型权重不入仓、
