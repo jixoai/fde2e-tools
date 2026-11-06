@@ -425,7 +425,7 @@ export const TOOLS: ToolMeta[] = [
     repoPath: "external:ghcr.io/ranuts/document（AGPL 未修改镜像，不经本仓构建）",
   },
   // ---------- 浏览器视频剪辑（web-openfilm-editor，独立 MIT fork 仓）----------
-  // 外部静态工具：实现与 35 项 WebMCP 面都在 fde2e-tools-film；本 registry 只做
+  // 外部静态工具：实现与 44 项 WebMCP 面都在 fde2e-tools-film；本 registry 只做
   // 黄页/搜索/agent 枚举投影，不复制实现或 schema。上游锚定＝openfilm/openfilm@9375992
   // （完整 provenance/MIT 义务见 fde2e-tools-film/FORK.md）。
   {
@@ -437,7 +437,7 @@ export const TOOLS: ToolMeta[] = [
     tags: ["视频", "剪辑", "时间轴", "OPFS", "WebCodecs", "ffmpeg", "导出", "WebMCP", "项目包"],
     subdomain: "film.tool.fde2e.com",
     aiGuideSummary:
-      "35 项 WebMCP 分四族：film_* 读取工程，edit_* 原子剪辑/版本，projects_* 管理项目/素材/项目包/示例，produce_* 探测产出能力；可从 projects_load_example({id:'one-prompt'}) 或 projects_create 开始。媒体接料仅接受本地二进制、base64/data URL 或三域 HTTPS 白单，不接受 provider/API key。",
+      "44 项 WebMCP 分四族：film_* 读取工程，edit_* 原子剪辑/版本，projects_* 管理项目/素材/项目包/示例，produce_* 检查画面与导出成品；可从 projects_load_example({id:'one-prompt'}) 或 projects_create 开始。媒体接料仅接受本地二进制、base64/data URL、Film 同源媒体或三域 HTTPS 白单，不接受 provider/API key。",
     urlParams: [],
     tools: [
       { name: "film_state", description: "读取当前工程的画布、轨道、片段、问题与本机能力" },
@@ -472,8 +472,17 @@ export const TOOLS: ToolMeta[] = [
       { name: "projects_delete", description: "破坏性删除整个项目" },
       { name: "projects_export_package", description: "导出带 manifest/checksum 的项目包" },
       { name: "projects_load_example", description: "复制并打开内置校验示例" },
-      { name: "produce_look", description: "探测/请求静帧产出能力" },
-      { name: "produce_render", description: "探测/请求视频渲染能力" },
+      { name: "produce_look", description: "检查代表帧、联系表与重绘确定性" },
+      { name: "produce_render", description: "异步导出视频、音频、字幕与项目包" },
+      { name: "edit_list_deleted_versions", description: "列出可恢复的已删除版本" },
+      { name: "edit_delete_versions", description: "把指定版本移入回收站" },
+      { name: "edit_recover_versions", description: "恢复回收站版本" },
+      { name: "edit_restore_film", description: "仅恢复指定版本的时间线" },
+      { name: "projects_import_package", description: "校验并导入完整项目包" },
+      { name: "projects_rename", description: "修改项目名称" },
+      { name: "projects_read_file", description: "读取原始文件字节或触发下载" },
+      { name: "projects_package_channel", description: "签发单次精确来源项目传输授权" },
+      { name: "produce_cancel_export", description: "取消运行中的导出" },
       { name: "produce_export_status", description: "读取编码与导出环境状态" },
     ],
     repoPath: "external:fde2e-tools-film/packages/openfilm（MIT fork，upstream openfilm/openfilm@9375992）",

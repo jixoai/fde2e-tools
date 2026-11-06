@@ -1,0 +1,32 @@
+name: directory
+on:
+  push:
+    branches: [main]
+    paths: ['apps/directory/**', 'packages/shared/**', 'pnpm-lock.yaml', '.github/workflows/directory.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g pnpm@12.10.0
+      - run: pnpm --filter directory... install --frozen-lockfile --ignore-scripts
+      - run: pnpm --filter directory check
+      - run: pnpm --filter directory build
+      - name: Build provenance
+        run: |
+          node -e 'const fs=require("node:fs");fs.writeFileSync("apps/directory/dist/build-revision.json",JSON.stringify({revision:process.env.GITHUB_SHA,runId:process.env.GITHUB_RUN_ID})+"\n")'
+          cd apps/directory/dist
+          find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: directory-${{ github.sha }}
+          path: apps/directory/dist/
+          if-no-files-found: error
+          retention-days: 30

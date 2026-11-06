@@ -1283,7 +1283,7 @@ async function main() {
       });
     });
 
-    await check("directory：视频剪辑工作台卡（搜索/入口/35 项 WebMCP 单源投影）", async () => {
+    await check("directory：视频剪辑工作台卡（搜索/入口/44 项 WebMCP 单源投影）", async () => {
       await withPage("directory", "", async (page) => {
         await page.fill('input[aria-label="搜索工具"]', "视频剪辑");
         await page.waitForFunction(() => document.querySelectorAll('[data-slot="card"]').length === 1, { timeout: 30000 });
@@ -1295,7 +1295,7 @@ async function main() {
           };
         });
         if (!card.text.includes("浏览器视频剪辑工作台")) throw new Error("Film 黄页卡名称缺失");
-        if (!card.text.includes("WebMCP 35 项")) throw new Error("Film 黄页卡未按 35 项摘要呈现");
+        if (!card.text.includes("WebMCP 44 项")) throw new Error("Film 黄页卡未按 44 项摘要呈现");
         if (!card.text.includes("film_state") || !card.text.includes("edit_apply")) throw new Error("Film 黄页卡 WebMCP 代表面缺失");
         if (card.href !== "https://film.tool.fde2e.com/") throw new Error(`Film 黄页入口异常: ${card.href}`);
         await page.fill('input[aria-label="搜索工具"]', "OPFS WebCodecs");
